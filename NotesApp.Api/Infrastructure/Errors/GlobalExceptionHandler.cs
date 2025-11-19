@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using NotesApp.Application.Exceptions;
 
 namespace NotesApp.Api.Infrastructure.Errors
 {
@@ -29,8 +30,8 @@ namespace NotesApp.Api.Infrastructure.Errors
 
             var statusCode = exception switch
             {
-                ValidationException => StatusCodes.Status400BadRequest,
-                // Add here: NotFoundException => StatusCodes.Status404NotFound,
+                ApplicationValidationException => StatusCodes.Status400BadRequest,
+                // TODO : later: NotFoundException => StatusCodes.Status404NotFound,
                 _ => StatusCodes.Status500InternalServerError
             };
 
@@ -52,15 +53,9 @@ namespace NotesApp.Api.Infrastructure.Errors
             };
 
             // If this is a FluentValidation exception, include per-field errors
-            if (exception is ValidationException validationException)
-            {
-                var errors = validationException.Errors
-                    .GroupBy(e => e.PropertyName)
-                    .ToDictionary(
-                        g => g.Key,
-                        g => g.Select(e => e.ErrorMessage).ToArray());
-
-                problemDetails.Extensions["errors"] = errors;
+            if (exception is ApplicationValidationException validationException)
+            {   
+                problemDetails.Extensions["errors"] = validationException.Errors;
             }
 
             httpContext.Response.StatusCode = statusCode;

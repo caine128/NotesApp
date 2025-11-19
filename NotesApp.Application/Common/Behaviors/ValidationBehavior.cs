@@ -1,5 +1,6 @@
 ﻿using FluentValidation;
 using MediatR;
+using NotesApp.Application.Exceptions;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -28,7 +29,7 @@ namespace NotesApp.Application.Common.Behaviors
             if (!_validators.Any())
             {
                 // no validators registered for this request -> continue
-                return await next();
+                return await next(cancellationToken);
             }
 
             var context = new ValidationContext<TRequest>(request);
@@ -40,14 +41,20 @@ namespace NotesApp.Application.Common.Behaviors
                                              .Where(f => f is not null)
                                              .ToList();
 
-            if (failures.Count != 0)
+            if (failures.Count > 0)
             {
-                // We intentionally throw here; the global exception handler
-                // will convert this into a 400 ProblemDetails response.
-                throw new ValidationException(failures);
+                // Group by property name: "Title" -> ["Title is required", "Title too long"]
+                var errorDictionary = failures
+                    .GroupBy(f => f.PropertyName)
+                    .ToDictionary(
+                        g => g.Key,
+                        g => g.Select(f => f.ErrorMessage).ToArray());
+
+                // Throw our own exception, not FluentValidation's
+                throw new ApplicationValidationException(errorDictionary);
             }
 
-            return await next();
+            return await next(cancellationToken);
         }
     }
 }

@@ -1,26 +1,17 @@
-using MediatR;
-using NotesApp.Application.Tasks.Commands.CreateTask;
-using Microsoft.AspNetCore.Diagnostics;
-using Microsoft.AspNetCore.Mvc;
+using NotesApp.Application;              
+using NotesApp.Infrastructure;
 using NotesApp.Api.Infrastructure.Errors;
 
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// --- MediatR ---
-builder.Services.AddMediatR(cfg =>
-{
-    // Register all handlers from Application assembly
-    cfg.RegisterServicesFromAssembly(typeof(CreateTaskCommand).Assembly);
-});
+// 1) Application layer DI
+builder.Services.AddApplicationServices(builder.Configuration);
 
-// --- FluentValidation: scan Application assembly for validators ---
-builder.Services.AddValidatorsFromAssembly(typeof(CreateTaskCommand).Assembly);
+// 2) Infrastructure layer DI
+builder.Services.AddInfrastructureServices(builder.Configuration);
 
-// --- Register ValidationBehavior as a pipeline behavior ---
-builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
-
+// 3) Controllers + ProblemDetails + Exception handling
 // ProblemDetails: standardized error responses (RFC 9457 / 7807)
 builder.Services.AddProblemDetails(options =>
 {

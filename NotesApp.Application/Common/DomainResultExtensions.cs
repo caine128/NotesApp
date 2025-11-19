@@ -36,7 +36,8 @@ namespace NotesApp.Application.Common
             }
 
             var errors = domainResult.Errors
-                .Select(e => new Error(e.Message).WithMetadata("Code", e.Code));
+                                 .Select(e => new Error(e.Code)     // code as main text/id
+                                 .WithMetadata("Message", e.Message)); // human-readable message
 
             return Result.Fail<TDest>(errors);
         }
@@ -55,7 +56,8 @@ namespace NotesApp.Application.Common
             }
 
             var errors = domainResult.Errors
-                .Select(e => new Error(e.Message).WithMetadata("Code", e.Code));
+                                 .Select(e => new Error(e.Code)
+                                 .WithMetadata("Message", e.Message));
 
             return Result.Fail<TDest>(errors);
         }

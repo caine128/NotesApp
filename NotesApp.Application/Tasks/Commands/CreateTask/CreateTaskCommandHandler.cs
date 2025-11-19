@@ -15,37 +15,59 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
     {
         private readonly ITaskRepository _taskRepository;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly ISystemClock _clock;
 
         public CreateTaskCommandHandler(ITaskRepository taskRepository,
-                                        IUnitOfWork unitOfWork)
+                                        IUnitOfWork unitOfWork,
+                                        ISystemClock clock)
         {
             _taskRepository = taskRepository;
             _unitOfWork = unitOfWork;
+            _clock = clock;
         }
 
-        public async Task<Result<TaskDto>> Handle(CreateTaskCommand request,
+        public async Task<Result<TaskDto>> Handle(CreateTaskCommand command,
                                                   CancellationToken cancellationToken)
         {
-            // domain factory does domain-level validation
-            DomainResult<TaskItem> createResult = TaskItem.Create(tenantId: request.TenantId,
-                                                                  date: request.Date,
-                                                                  title: request.Title,
-                                                                  content: request.Content,
-                                                                  reminderAtUtc: request.ReminderAtUtc);
+            // 📌 1) Get current time from our clock abstraction (testable, consistent)
+            var utcNow = _clock.UtcNow;
 
-            if (createResult.IsFailure)
+            // 📌 2) Domain creation (enforces invariants: non-empty user, non-empty title, etc.)
+            var createResult = TaskItem.Create(userId: command.UserId,
+                                               date: command.Date,
+                                               title: command.Title,
+                                               utcNow: utcNow);
+
+
+            if (createResult.IsFailure || createResult.Value is null)
             {
-                // map domain errors to Result<TaskDto>
-                return Result.Fail<TaskDto>(createResult.Errors
-                    .Select(e => new Error(e.Code).WithMessage(e.Message)));
+                // Convert DomainResult<TaskItem> -> Result<TaskDto>
+                return createResult.ToResult<TaskItem, TaskDto>(task => task.ToDto());
             }
 
-            var task = createResult.Value;
+            var taskItem = createResult.Value;
 
-            _taskRepository.Add(task);
+            // 📌 3) Domain: set reminder if provided (also returns DomainResult)
+            if (command.ReminderAtUtc.HasValue)
+            {
+                var reminderResult = taskItem.SetReminder(command.ReminderAtUtc, utcNow);
+
+                if (reminderResult.IsFailure)
+                {
+                    // DomainResult (no value) -> Result<TaskDto> using value factory
+                    return reminderResult.ToResult(() => taskItem.ToDto());
+                }
+            }
+
+            // 📌 4) Persistence: repository + unit of work
+            //     (Infra errors here are exceptional and bubble as exceptions)
+            await _taskRepository.AddAsync(taskItem, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            return Result.Ok(task.ToDto());
+            // 📌 5) Map domain entity -> DTO using our mapping extension
+            var dto = taskItem.ToDto();
+            return Result.Ok(dto);
+
         }
     }
 }

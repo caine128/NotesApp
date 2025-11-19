@@ -4,7 +4,7 @@ using System.Text;
 
 namespace NotesApp.Application.Tasks
 {
-    public sealed class TaskDto
+    public sealed record TaskDto
     {
         public Guid TaskId { get; init; }
         public Guid UserId { get; init; }
