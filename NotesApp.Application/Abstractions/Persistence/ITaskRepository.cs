@@ -5,9 +5,13 @@ using System.Text;
 
 namespace NotesApp.Application.Abstractions.Persistence
 {
-    public interface ITaskRepository
+    public interface ITaskRepository : IRepository<TaskItem>
     {
-        Task AddAsync(TaskItem task, CancellationToken cancellationToken = default);
-        // TODO : later .. methods for getting/updating tasks, queries, etc.
+        Task<IReadOnlyList<TaskItem>> GetForDayAsync(Guid userId,
+                                                     DateOnly date,
+                                                     CancellationToken cancellationToken = default);
+
+        // TODO : Later you can add:
+        // Task<IReadOnlyList<TaskItem>> GetForMonthAsync(Guid userId, int year, int month, CancellationToken ct = default);
     }
 }

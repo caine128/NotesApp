@@ -31,7 +31,7 @@ namespace NotesApp.Api.Infrastructure.Errors
             var statusCode = exception switch
             {
                 ApplicationValidationException => StatusCodes.Status400BadRequest,
-                // TODO : later: NotFoundException => StatusCodes.Status404NotFound,
+                // TODO :  NotFoundException => StatusCodes.Status404NotFound,
                 _ => StatusCodes.Status500InternalServerError
             };
 
@@ -52,7 +52,7 @@ namespace NotesApp.Api.Infrastructure.Errors
                 Instance = httpContext.Request.Path
             };
 
-            // If this is a FluentValidation exception, include per-field errors
+            // If this is an application validation exception, include per-field errors
             if (exception is ApplicationValidationException validationException)
             {   
                 problemDetails.Extensions["errors"] = validationException.Errors;
