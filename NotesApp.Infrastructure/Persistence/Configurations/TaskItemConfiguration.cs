@@ -16,9 +16,9 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
             // Primary key
             builder.HasKey(t => t.Id);
 
-            // Concurrency token, if your base Entity has RowVersion (byte[])
-            // builder.Property(t => t.RowVersion)
-            //        .IsRowVersion();
+            // Concurrency token from base Entity<TId>
+            builder.Property(t => t.RowVersion)
+                   .IsRowVersion();
 
             // Properties
             builder.Property(t => t.UserId)
@@ -38,9 +38,18 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
             builder.Property(t => t.ReminderAtUtc)
                    .HasColumnType("datetime2"); // or "timestamp" etc. for PostgreSQL; provider will adjust
 
-            // Audit fields if present in base entity
-            // builder.Property(t => t.CreatedAtUtc).IsRequired();
-            // builder.Property(t => t.UpdatedAtUtc).IsRequired();
+            // Audit fields from base entity
+            builder.Property(t => t.CreatedAtUtc)
+                   .IsRequired()
+                   .HasColumnType("datetime2");
+
+            builder.Property(t => t.UpdatedAtUtc)
+                   .IsRequired()
+                   .HasColumnType("datetime2");
+
+            builder.Property(t => t.IsDeleted)
+                   .IsRequired()
+                   .HasDefaultValue(false);
 
             // Soft-delete: filter out deleted tasks automatically
             builder.HasQueryFilter(t => !t.IsDeleted);

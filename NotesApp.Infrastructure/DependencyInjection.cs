@@ -1,11 +1,11 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Internal;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Infrastructure.Persistence;
 using NotesApp.Infrastructure.Persistence.Repositories;
+using NotesApp.Infrastructure.Time;
 using System;
 using System.Collections.Generic;
 using System.Text;
