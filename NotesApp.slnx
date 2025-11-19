@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="NotesApp.Api/NotesApp.Api.csproj" Id="240b82fe-4789-4035-8a1c-0d536fdd005c" />
+    <Project Path="NotesApp.Application/NotesApp.Application.csproj" Id="29ba29bd-16e1-4bf1-9f9b-4a12d15c74d6" />
+    <Project Path="NotesApp.Domain/NotesApp.Domain.csproj" Id="155cae44-771a-486b-88d7-fbcec4a25486" />
+    <Project Path="NotesApp.Infrastructure/NotesApp.Infrastructure.csproj" Id="8c2ea11c-5fd8-4a6e-aff5-4019c2612002" />
+    <Project Path="NotesApp.Worker/NotesApp.Worker.csproj" Id="0d1c2b3d-1b4b-437d-9c24-4ee8bd1187b1" />
+  </Folder>
+  <Folder Name="/tests/" />
+</Solution>
