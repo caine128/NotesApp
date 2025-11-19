@@ -9,6 +9,8 @@
   <ItemGroup>
     <PackageReference Include="FluentResults" Version="4.0.0" />
     <PackageReference Include="FluentValidation" Version="12.1.0" />
+    <PackageReference Include="MediatR" Version="13.1.0" />
+    <PackageReference Include="MediatR.Extensions.Microsoft.DependencyInjectionFixed" Version="5.1.2" />
   </ItemGroup>
 
   <ItemGroup>
@@ -17,8 +19,6 @@
 
   <ItemGroup>
     <Folder Include="Abstractions\Services\" />
-    <Folder Include="Abstractions\Persistence\" />
-    <Folder Include="Tasks\Commands\CreateTask\" />
   </ItemGroup>
 
 </Project>
