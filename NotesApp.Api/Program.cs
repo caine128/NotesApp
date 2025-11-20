@@ -1,6 +1,8 @@
+﻿using FluentResults.Extensions.AspNetCore;
+using NotesApp.Api.FluentResults;
+using NotesApp.Api.Infrastructure.Errors;
 using NotesApp.Application;              
 using NotesApp.Infrastructure;
-using NotesApp.Api.Infrastructure.Errors;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -35,6 +37,12 @@ app.UseStatusCodePages();
 
 // Convert unhandled exceptions into ProblemDetails using the registered IExceptionHandler(s)
 app.UseExceptionHandler();
+
+// Configure FluentResults ↔ ASP.NET Core mapping
+AspNetCoreResult.Setup(config =>
+{
+    config.DefaultProfile = new NotesAppResultEndpointProfile();
+});
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

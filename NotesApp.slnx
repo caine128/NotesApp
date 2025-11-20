@@ -6,5 +6,7 @@
     <Project Path="NotesApp.Infrastructure/NotesApp.Infrastructure.csproj" Id="8c2ea11c-5fd8-4a6e-aff5-4019c2612002" />
     <Project Path="NotesApp.Worker/NotesApp.Worker.csproj" Id="0d1c2b3d-1b4b-437d-9c24-4ee8bd1187b1" />
   </Folder>
-  <Folder Name="/tests/" />
+  <Folder Name="/tests/">
+    <Project Path="NotesApp.Application.Tests/NotesApp.Application.Tests.csproj" Id="310c88a8-3c40-4f59-9d99-9fec19b2ac56" />
+  </Folder>
 </Solution>
