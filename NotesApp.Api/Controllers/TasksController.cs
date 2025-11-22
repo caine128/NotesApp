@@ -1,5 +1,6 @@
 ﻿using FluentResults.Extensions.AspNetCore;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using NotesApp.Application.Tasks;
@@ -10,6 +11,7 @@ namespace NotesApp.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class TasksController : ControllerBase
     {
         private readonly IMediator _mediator;
