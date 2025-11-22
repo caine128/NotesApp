@@ -4,12 +4,14 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>35a8c1a4-302f-4b87-9d82-b6f87250d35a</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="FluentResults" Version="4.0.0" />
     <PackageReference Include="FluentResults.Extensions.AspNetCore" Version="0.2.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.11.0" />
   </ItemGroup>
 
   <ItemGroup>

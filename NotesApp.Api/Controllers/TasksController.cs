@@ -47,6 +47,7 @@ namespace NotesApp.Api.Controllers
             [FromQuery] DateOnly date,
             CancellationToken cancellationToken)
         {
+            // TODO (later): ignore userId query parameter and derive it from JWT claims
             // Same pattern: query -> Result<IReadOnlyList<TaskDto>> -> ToActionResult()
             var query = new GetTasksForDayQuery(userId, date);
 

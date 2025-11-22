@@ -3,6 +3,7 @@ using NotesApp.Api.FluentResults;
 using NotesApp.Api.Infrastructure.Errors;
 using NotesApp.Application;              
 using NotesApp.Infrastructure;
+using Scalar.AspNetCore;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -48,12 +49,26 @@ AspNetCoreResult.Setup(config =>
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+
+    // Scalar interactive UI at /scalar
+    app.MapScalarApiReference(options =>
+    {
+        options
+            .WithTitle("NotesApp API")
+            .WithTheme(ScalarTheme.Moon); // optional, just looks nice
+    });
 }
 
 // usual middleware
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
+
+
+app.MapGet("/", () => Results.Text(
+    "NotesApp API is running. " +
+    "Try /openapi/v1.json for the OpenAPI document " +
+    "or /api/Tasks for task endpoints."));
 
 app.MapControllers();
 app.Run();

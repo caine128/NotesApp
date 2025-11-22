@@ -23,12 +23,17 @@ namespace NotesApp.Infrastructure
 
             services.AddDbContext<AppDbContext>(options =>
             {
-                // Choose the provider you want here:
-                // SQL Server example:
-                options.UseSqlServer(connectionString);
+                options.UseSqlServer(connectionString, sqlOptions =>
+                {
+                    // If you have migrations in Infrastructure:
+                    // sqlOptions.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName);
 
-                // If you later switch to PostgreSQL, you'd use:
-                // options.UseNpgsql(connectionString);
+                    // Connection resiliency
+                    sqlOptions.EnableRetryOnFailure(
+                        maxRetryCount: 3,
+                        maxRetryDelay: TimeSpan.FromSeconds(5),
+                        errorNumbersToAdd: null);
+                });
             });
 
             // 2) Repositories + UnitOfWork
