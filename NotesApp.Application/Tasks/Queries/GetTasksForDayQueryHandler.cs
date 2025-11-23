@@ -9,6 +9,14 @@ using System.Text;
 
 namespace NotesApp.Application.Tasks.Queries
 {
+    /// <summary>
+    /// Query handler that returns all tasks for the current authenticated user
+    /// on a given calendar date.
+    ///
+    /// - Resolves the current user from ICurrentUserService (JWT/claims).
+    /// - Delegates persistence to ITaskRepository.
+    /// - Maps domain entities to TaskDto via mapping extensions.
+    /// </summary>
     public sealed class GetTasksForDayQueryHandler
                 : IRequestHandler<GetTasksForDayQuery, Result<IReadOnlyList<TaskDto>>>
     {
@@ -30,11 +38,20 @@ namespace NotesApp.Application.Tasks.Queries
         {
             var userId = await _currentUserService.GetUserIdAsync(cancellationToken);
 
+            _logger.LogInformation("Fetching tasks for user {UserId} on date {Date}",
+                                   userId,
+                                   request.Date);
+
             var tasks = await _taskRepository.GetForDayAsync(userId,
                                                              request.Date,
                                                              cancellationToken);
 
             var dtoList = tasks.ToDtoList();
+
+            _logger.LogInformation("Found {TaskCount} tasks for user {UserId} on date {Date}",
+                                   dtoList.Count,
+                                   userId,
+                                   request.Date);
 
             return Result.Ok<IReadOnlyList<TaskDto>>(dtoList);
         }
