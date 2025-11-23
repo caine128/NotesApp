@@ -1,13 +1,10 @@
 ﻿using FluentResults;
-using FluentValidation;
 using MediatR;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
-using NotesApp.Domain.Common;
+using NotesApp.Application.Common.Interfaces;
 using NotesApp.Domain.Entities;
-using System;
-using System.Collections.Generic;
-using System.Text;
+
 
 namespace NotesApp.Application.Tasks.Commands.CreateTask
 {
@@ -15,31 +12,37 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
     {
         private readonly ITaskRepository _taskRepository;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
 
         public CreateTaskCommandHandler(ITaskRepository taskRepository,
                                         IUnitOfWork unitOfWork,
+                                        ICurrentUserService currentUserService,
                                         ISystemClock clock)
         {
             _taskRepository = taskRepository;
             _unitOfWork = unitOfWork;
+            _currentUserService = currentUserService;
             _clock = clock;
         }
 
         public async Task<Result<TaskDto>> Handle(CreateTaskCommand command,
                                                   CancellationToken cancellationToken)
         {
-            // 📌 1) Get current time from our clock abstraction (testable, consistent)
+            // 1) Resolve current internal user Id from token/claims.
+            var userId = await _currentUserService.GetUserIdAsync(cancellationToken);
+
+            // 2) Get the current UTC time via your clock abstraction (or DateTime.UtcNow).
             var utcNow = _clock.UtcNow;
 
-            // 📌 2) Domain creation (enforces invariants: non-empty user, non-empty title, etc.)
-            var createResult = TaskItem.Create(userId: command.UserId,
+            // 3) Create domain object using the internal user Id.
+            var createResult = TaskItem.Create(userId: userId,
                                                date: command.Date,
                                                title: command.Title,
                                                utcNow: utcNow);
 
 
-            if (createResult.IsFailure || createResult.Value is null)
+            if (createResult.IsFailure)
             {
                 // Convert DomainResult<TaskItem> -> Result<TaskDto>
                 return createResult.ToResult<TaskItem, TaskDto>(task => task.ToDto());

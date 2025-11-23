@@ -29,9 +29,6 @@ namespace NotesApp.Api.Controllers
             [FromBody] CreateTaskCommand command,
             CancellationToken cancellationToken)
         {
-            // TODO : 
-            // Today: UserId is in the command body.
-            // Later: we’ll populate it from JWT claims here and ignore the body’s UserId.
 
             // IMediator returns Result<TaskDto> from the handler.
             // ToActionResult() uses NotesAppResultEndpointProfile to convert it to HTTP.
@@ -45,13 +42,12 @@ namespace NotesApp.Api.Controllers
         /// </summary>
         [HttpGet("day")]
         public async Task<ActionResult<IReadOnlyList<TaskDto>>> GetTasksForDay(
-            [FromQuery] Guid userId,
             [FromQuery] DateOnly date,
             CancellationToken cancellationToken)
         {
             // TODO (later): ignore userId query parameter and derive it from JWT claims
             // Same pattern: query -> Result<IReadOnlyList<TaskDto>> -> ToActionResult()
-            var query = new GetTasksForDayQuery(userId, date);
+            var query = new GetTasksForDayQuery(date);
 
             return await _mediator
                 .Send(query, cancellationToken)

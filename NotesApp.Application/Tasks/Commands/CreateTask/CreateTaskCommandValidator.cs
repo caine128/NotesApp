@@ -9,8 +9,6 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
     {
         public CreateTaskCommandValidator()
         {
-            RuleFor(x => x.UserId)
-                .NotEmpty().WithMessage("UserId is required.");
 
             RuleFor(x => x.Title)
                 .NotEmpty().WithMessage("Task title is required.")

@@ -6,6 +6,5 @@ using System.Text;
 
 namespace NotesApp.Application.Tasks.Queries
 {
-    public sealed record GetTasksForDayQuery(Guid UserId,
-                                             DateOnly Date) : IRequest<Result<IReadOnlyList<TaskDto>>>;
+    public sealed record GetTasksForDayQuery(DateOnly Date) : IRequest<Result<IReadOnlyList<TaskDto>>>;
 }
