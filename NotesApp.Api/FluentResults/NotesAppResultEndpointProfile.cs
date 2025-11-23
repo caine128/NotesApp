@@ -7,12 +7,10 @@ namespace NotesApp.Api.FluentResults
     /// <summary>
     /// Central place that converts FluentResults.Result / Result&lt;T&gt;
     /// into HTTP responses using RFC7807 ProblemDetails.
-    /// 
+    ///
     /// - Successful results: default behaviour (200 + value, 204 for no-value).
     /// - Failed results: we build a ProblemDetails payload with an "errors" array.
-    /// 
-    /// You can later refine this to map specific error types (NotFound, Forbidden, etc.)
-    /// to different HTTP status codes.
+    /// - Specific ErrorCodes can be mapped to specific HTTP status codes.
     /// </summary>
     public sealed class NotesAppResultEndpointProfile : DefaultAspNetCoreResultEndpointProfile
     {
@@ -28,14 +26,36 @@ namespace NotesApp.Api.FluentResults
             // TODO : Later you can inspect result.Errors and return 404, 401, 409, etc.
             int statusCode = StatusCodes.Status400BadRequest;
 
+            // Extract any ErrorCode metadata values from the errors.
+            var errorCodes = result.Errors
+                .Select(e =>
+                    e.Metadata.TryGetValue("ErrorCode", out var value) && value is string s
+                        ? s
+                        : null)
+                .Where(code => !string.IsNullOrWhiteSpace(code))
+                .ToList();
+
+            // Map known error codes to specific HTTP status codes.
+            if (errorCodes.Contains("Tasks.NotFound"))
+            {
+                // Hide existence vs. authorization details -> 404.
+                statusCode = StatusCodes.Status404NotFound;
+            }
+
             var errorMessages = result.Errors
                 .Select(e => e.Message)
                 .ToArray();
 
+            var title = statusCode switch
+            {
+                StatusCodes.Status404NotFound => "Resource not found",
+                _ => "Request validation or business rule failure"
+            };
+
             var problem = new ProblemDetails
             {
                 Status = statusCode,
-                Title = "Request validation or business rule failure",
+                Title = title,
                 Detail = errorMessages.Length == 1
                     ? errorMessages[0]
                     : "Multiple errors occurred. See 'errors' for details."

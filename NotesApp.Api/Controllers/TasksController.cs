@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using NotesApp.Application.Tasks;
 using NotesApp.Application.Tasks.Commands.CreateTask;
+using NotesApp.Application.Tasks.Commands.UpdateTask;
 using NotesApp.Application.Tasks.Queries;
 
 namespace NotesApp.Api.Controllers
@@ -36,6 +37,30 @@ namespace NotesApp.Api.Controllers
                 .Send(command, cancellationToken)
                 .ToActionResult();
         }
+
+
+        /// <summary>
+        /// Update an existing task's title, date and/or reminder.
+        /// </summary>
+        /// <param name="taskId">The id of the task to update (from the route).</param>
+        /// <param name="command">The update payload (date, title, reminder).</param>
+        [HttpPut("{taskId:guid}")]
+        public async Task<ActionResult<TaskDto>> UpdateTask([FromRoute] Guid taskId,
+                                                            [FromBody] UpdateTaskCommand command,
+                                                            CancellationToken cancellationToken)
+        {
+            // The route id is the single source of truth.
+            // Even if the client sends a different TaskId in the body, we override it here.
+            command.TaskId = taskId;
+
+            var result = await _mediator.Send(command, cancellationToken);
+
+            // Uses FluentResults.Extensions.AspNetCore:
+            // - Success => 200 OK with TaskDto
+            // - Failure => mapped ProblemDetails based on ErrorCode/metadata
+            return result.ToActionResult();
+        }
+
 
         /// <summary>
         /// Get all tasks for a specific user and day.
