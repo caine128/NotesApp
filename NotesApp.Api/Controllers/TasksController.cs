@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using NotesApp.Application.Tasks;
 using NotesApp.Application.Tasks.Commands.CreateTask;
+using NotesApp.Application.Tasks.Commands.DeleteTask;
 using NotesApp.Application.Tasks.Commands.UpdateTask;
 using NotesApp.Application.Tasks.Queries;
 
@@ -76,6 +77,30 @@ namespace NotesApp.Api.Controllers
 
             return await _mediator
                 .Send(query, cancellationToken)
+                .ToActionResult();
+        }
+
+
+        /// <summary>
+        /// Soft-deletes a task for the current user.
+        /// 
+        /// Returns:
+        /// - 204 NoContent on success
+        /// - 404 NotFound if the task does not belong to the current user or does not exist
+        /// - 400 / 500 via ProblemDetails for validation or unexpected errors.
+        /// </summary>
+        [HttpDelete("{taskId:guid}")]
+        public async Task<IActionResult> DeleteTask(Guid taskId, CancellationToken cancellationToken)
+        {
+            var command = new DeleteTaskCommand
+            {
+                TaskId = taskId
+            };
+
+            // Result -> ActionResult mapping is handled by FluentResults.Extensions.AspNetCore
+            // and our NotesAppResultEndpointProfile (Result.Ok -> 204 NoContent).
+            return await _mediator
+                .Send(command, cancellationToken)
                 .ToActionResult();
         }
     }
