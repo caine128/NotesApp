@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using NotesApp.Application.Tasks;
 using NotesApp.Application.Tasks.Commands.CreateTask;
 using NotesApp.Application.Tasks.Commands.DeleteTask;
+using NotesApp.Application.Tasks.Commands.SetTaskCompletion;
 using NotesApp.Application.Tasks.Commands.UpdateTask;
 using NotesApp.Application.Tasks.Queries;
 
@@ -27,9 +28,8 @@ namespace NotesApp.Api.Controllers
         /// Create a new task for a specific day.
         /// </summary>
         [HttpPost]
-        public async Task<ActionResult<TaskDto>> CreateTask(
-            [FromBody] CreateTaskCommand command,
-            CancellationToken cancellationToken)
+        public async Task<ActionResult<TaskDto>> CreateTask([FromBody] CreateTaskCommand command,
+                                                            CancellationToken cancellationToken)
         {
 
             // IMediator returns Result<TaskDto> from the handler.
@@ -67,9 +67,8 @@ namespace NotesApp.Api.Controllers
         /// Get all tasks for a specific user and day.
         /// </summary>
         [HttpGet("day")]
-        public async Task<ActionResult<IReadOnlyList<TaskDto>>> GetTasksForDay(
-            [FromQuery] DateOnly date,
-            CancellationToken cancellationToken)
+        public async Task<ActionResult<IReadOnlyList<TaskDto>>> GetTasksForDay([FromQuery] DateOnly date,
+                                                                               CancellationToken cancellationToken)
         {
             // TODO (later): ignore userId query parameter and derive it from JWT claims
             // Same pattern: query -> Result<IReadOnlyList<TaskDto>> -> ToActionResult()
@@ -90,7 +89,8 @@ namespace NotesApp.Api.Controllers
         /// - 400 / 500 via ProblemDetails for validation or unexpected errors.
         /// </summary>
         [HttpDelete("{taskId:guid}")]
-        public async Task<IActionResult> DeleteTask(Guid taskId, CancellationToken cancellationToken)
+        public async Task<IActionResult> DeleteTask(Guid taskId,
+                                                    CancellationToken cancellationToken)
         {
             var command = new DeleteTaskCommand
             {
@@ -103,5 +103,63 @@ namespace NotesApp.Api.Controllers
                 .Send(command, cancellationToken)
                 .ToActionResult();
         }
+
+
+        [HttpGet("month-overview")]
+        public async Task<ActionResult<IReadOnlyList<DayTasksOverviewDto>>> GetMonthOverview([FromQuery] int year,
+                                                                                             [FromQuery] int month,
+                                                                                             CancellationToken cancellationToken)
+        {
+            var query = new GetMonthOverviewQuery(year, month);
+
+            var result = await _mediator.Send(query, cancellationToken);
+
+            // Uses FluentResults.Extensions.AspNetCore + our ResultEndpointProfile
+            // to map Result<T> -> ActionResult<T> + ProblemDetails.
+            return result.ToActionResult();
+        }
+
+
+        /// <summary>
+        /// Returns an overview of tasks per month for the authenticated user
+        /// for the specified year. Each entry contains total, completed, and pending counts.
+        /// </summary>
+        [HttpGet("year-overview")]
+        public async Task<ActionResult<IReadOnlyList<MonthTasksOverviewDto>>> GetYearOverview([FromQuery] int year,
+                                                                                              CancellationToken cancellationToken)
+        {
+            var query = new GetYearOverviewQuery(year);
+
+            var result = await _mediator.Send(query, cancellationToken);
+
+            return result.ToActionResult();
+        }
+
+
+
+        /// <summary>
+        /// Sets the completion state of a task (completed or pending).
+        /// 
+        /// This is a partial update (PATCH) because we only change the IsCompleted flag,
+        /// not the whole task resource.
+        /// </summary>
+        [HttpPatch("{taskId:guid}/completion")]
+        public async Task<ActionResult<TaskDto>> SetTaskCompletion(Guid taskId,
+                                                                   [FromBody] SetTaskCompletionRequest request,
+                                                                   CancellationToken cancellationToken)
+        {
+            var command = new SetTaskCompletionCommand(taskId, request.IsCompleted);
+
+            return await _mediator
+                .Send(command, cancellationToken)
+                .ToActionResult();
+        }
+
+
+
+        /// <summary>
+        /// Request payload used to set the completion state of a task.
+        /// </summary>
+        public sealed record SetTaskCompletionRequest(bool IsCompleted);
     }
 }
