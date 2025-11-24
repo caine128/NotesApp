@@ -19,13 +19,15 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
 
         // Generic repository methods
 
-        public async Task<TaskItem?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+        public async Task<TaskItem?> GetByIdAsync(Guid id,
+                                                  CancellationToken cancellationToken = default)
         {
             return await _context.Tasks
                 .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
         }
 
-        public async Task AddAsync(TaskItem entity, CancellationToken cancellationToken = default)
+        public async Task AddAsync(TaskItem entity,
+                                   CancellationToken cancellationToken = default)
         {
             await _context.Tasks.AddAsync(entity, cancellationToken);
         }

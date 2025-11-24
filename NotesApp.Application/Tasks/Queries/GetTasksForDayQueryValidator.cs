@@ -10,9 +10,9 @@ namespace NotesApp.Application.Tasks.Queries
     {
         public GetTasksForDayQueryValidator()
         {
-
-            // Date is a value type (DateOnly), so it’s always set.
-            // If later you have rules like “not in the past”, you can add them here.
+            RuleFor(x => x.Date)
+                .Must(d => d != default)
+                .WithMessage("Date is required.");
         }
     }
 }

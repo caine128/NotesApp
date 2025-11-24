@@ -10,11 +10,11 @@ namespace NotesApp.Infrastructure.Persistence
 {
     public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
     {
+        // DbSets = tables in the database
         public DbSet<User> Users => Set<User>();
         public DbSet<UserLogin> UserLogins => Set<UserLogin>();
-        // DbSets = tables in the database
         public DbSet<TaskItem> Tasks => Set<TaskItem>();
-        // TODO : public DbSet<Note> Notes => Set<Note>();
+        public DbSet<Note> Notes => Set<Note>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

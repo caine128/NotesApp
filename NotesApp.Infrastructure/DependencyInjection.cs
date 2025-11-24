@@ -40,6 +40,7 @@ namespace NotesApp.Infrastructure
 
             // 2) Repositories + UnitOfWork
             services.AddScoped<ITaskRepository, TaskRepository>();
+            services.AddScoped<INoteRepository, NoteRepository>();
             services.AddScoped<IUnitOfWork, UnitOfWork>();
 
             // 3) System clock (for time abstraction)

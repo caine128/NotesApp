@@ -37,7 +37,12 @@ namespace NotesApp.Domain.Entities
         {
         }
 
-        private Note(Guid id, Guid userId, DateOnly date, string title, string content, DateTime utcNow)
+        private Note(Guid id,
+                     Guid userId,
+                     DateOnly date,
+                     string title,
+                     string content,
+                     DateTime utcNow)
             : base(id, utcNow)
         {
             UserId = userId;
@@ -48,7 +53,11 @@ namespace NotesApp.Domain.Entities
 
         // FACTORY
 
-        public static DomainResult<Note> Create(Guid userId, DateOnly date, string? title, string? content, DateTime utcNow)
+        public static DomainResult<Note> Create(Guid userId,
+                                                DateOnly date,
+                                                string? title,
+                                                string? content,
+                                                DateTime utcNow)
         {
             var errors = new List<DomainError>();
 
@@ -58,6 +67,11 @@ namespace NotesApp.Domain.Entities
             if (userId == Guid.Empty)
             {
                 errors.Add(new DomainError("Note.UserId.Empty", "UserId must be a non-empty GUID."));
+            }
+
+            if (date == default)
+            {
+                errors.Add(new DomainError("Note.Date.Default", "Date must be a valid calendar date."));
             }
 
             // Invariant: at least title or content must have data
@@ -72,7 +86,12 @@ namespace NotesApp.Domain.Entities
             }
 
             var id = Guid.NewGuid();
-            var note = new Note(id, userId, date, normalizedTitle, normalizedContent, utcNow);
+            var note = new Note(id,
+                                userId,
+                                date,
+                                normalizedTitle,
+                                normalizedContent,
+                                utcNow);
             return DomainResult<Note>.Success(note);
         }
 
@@ -80,6 +99,13 @@ namespace NotesApp.Domain.Entities
 
         public DomainResult Update(string? title, string? content, DateOnly date, DateTime utcNow)
         {
+            if (IsDeleted)
+            {
+                return DomainResult.Failure(
+                    new DomainError("Note.Deleted", "Cannot update a deleted note.")
+                );
+            }
+
             var errors = new List<DomainError>();
 
             var normalizedTitle = title?.Trim() ?? string.Empty;
@@ -89,11 +115,6 @@ namespace NotesApp.Domain.Entities
             if (normalizedTitle.Length == 0 && normalizedContent.Length == 0)
             {
                 errors.Add(new DomainError("Note.Empty", "Note must have at least a title or some content."));
-            }
-
-            if (IsDeleted)
-            {
-                errors.Add(new DomainError("Note.Deleted", "Cannot update a deleted note."));
             }
 
             if (errors.Count > 0)
@@ -109,21 +130,35 @@ namespace NotesApp.Domain.Entities
             return DomainResult.Success();
         }
 
-        public DomainResult SetSummaryAndTags(string? summary, string? tags, DateTime utcNow)
+
+        /// <summary>
+        /// Move the note to another day (e.g. user drags it to another date).
+        /// </summary>
+        public DomainResult MoveToDate(DateOnly newDate, DateTime utcNow)
         {
             if (IsDeleted)
             {
                 return DomainResult.Failure(
-                    new DomainError("Note.Deleted", "Cannot set summary on a deleted note.")
+                    new DomainError("Note.Deleted", "Cannot move a deleted note.")
                 );
             }
 
-            Summary = summary;
-            Tags = tags;
-            Touch(utcNow);
+            if (newDate == default)
+            {
+                return DomainResult.Failure(
+                    new DomainError("Note.Date.Default", "Date must be a valid calendar date.")
+                );
+            }
+
+            if (Date != newDate)
+            {
+                Date = newDate;
+                Touch(utcNow);
+            }
 
             return DomainResult.Success();
         }
+
 
         public DomainResult SoftDelete(DateTime utcNow)
         {
@@ -168,5 +203,23 @@ namespace NotesApp.Domain.Entities
 
             return "Untitled note";
         }
+
+        // TODO : For Ai Later
+        public DomainResult SetSummaryAndTags(string? summary, string? tags, DateTime utcNow)
+        {
+            if (IsDeleted)
+            {
+                return DomainResult.Failure(
+                    new DomainError("Note.Deleted", "Cannot set summary on a deleted note.")
+                );
+            }
+
+            Summary = summary;
+            Tags = tags;
+            Touch(utcNow);
+
+            return DomainResult.Success();
+        }
+
     }
 }
