@@ -1,6 +1,7 @@
 ﻿using FluentAssertions;
 using NotesApp.Api.IntegrationTests.Infrastructure.Hosting;
 using NotesApp.Application.Tasks;
+using NotesApp.Application.Tasks.Models;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -10,12 +11,7 @@ using System.Text;
 namespace NotesApp.Api.IntegrationTests.Tasks
 {
     /// <summary>
-    /// Integration tests for the PATCH /api/tasks/{taskId}/completion endpoint.
-    ///
-    /// These tests:
-    /// - Use the real API host with TestAuthHandler (no real Entra calls).
-    /// - Verify that only the owner can change completion state.
-    /// - Verify that IsCompleted is reflected in the day view.
+    /// Integration tests for task completion via PATCH /api/tasks/{id}/completion.
     /// </summary>
     public sealed class TaskCompletionEndpointsTests : IClassFixture<NotesAppApiFactory>
     {
@@ -27,112 +23,160 @@ namespace NotesApp.Api.IntegrationTests.Tasks
         }
 
         [Fact]
-        public async Task Set_completion_roundtrip_succeeds_for_owner()
+        public async Task Can_mark_task_completed_and_it_reflects_in_detail_and_day_summary()
         {
-            // Arrange: user A and a specific date
-            var userId = Guid.NewGuid();
-            var client = _factory.CreateClientAsUser(userId);
-
-            var date = new DateOnly(2025, 3, 10);
+            // Arrange
+            var client = _factory.CreateClientAsDefaultUser();
+            var date = new DateOnly(2025, 11, 10);
 
             var createPayload = new
             {
-                date,
-                title = "Completion test task",
-                // Explicitly null reminder to keep test simple
-                reminderAtUtc = (DateTime?)null
+                Date = date,
+                Title = "Toggle completion task",
+                Description = (string?)null,
+                StartTime = (TimeOnly?)null,
+                EndTime = (TimeOnly?)null,
+                Location = (string?)null,
+                TravelTime = (TimeSpan?)null,
+                ReminderAtUtc = (DateTime?)null
             };
 
-            // 1) Create the task
-            var createResponse = await client.PostAsJsonAsync("api/tasks", createPayload);
+            var createResponse = await client.PostAsJsonAsync("/api/tasks", createPayload);
             createResponse.EnsureSuccessStatusCode();
 
-            var createdTask =
-                await createResponse.Content.ReadFromJsonAsync<TaskDto>();
+            var created = await createResponse.Content.ReadFromJsonAsync<TaskDetailDto>();
+            created.Should().NotBeNull();
 
-            createdTask.Should().NotBeNull();
-            createdTask!.IsCompleted.Should().BeFalse("new tasks should start as not completed");
+            var taskId = created!.TaskId;
 
-            var taskId = createdTask.TaskId;
+            // Act 1: Mark as completed
+            var completionPayload = new { IsCompleted = true };
 
-            // 2) Set completion to true via PATCH
-            var completionPayload = new { isCompleted = true };
+            var completionResponse =
+                await client.PatchAsJsonAsync($"/api/tasks/{taskId}/completion", completionPayload);
 
-            using var patchRequest = new HttpRequestMessage(
-                HttpMethod.Patch,
-                $"api/tasks/{taskId}/completion")
-            {
-                Content = JsonContent.Create(completionPayload)
-            };
-
-            var completionResponse = await client.SendAsync(patchRequest);
             completionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-            var updatedTask =
-                await completionResponse.Content.ReadFromJsonAsync<TaskDto>();
+            var completedDetail = await completionResponse.Content.ReadFromJsonAsync<TaskDetailDto>();
+            completedDetail.Should().NotBeNull();
+            completedDetail!.TaskId.Should().Be(taskId);
+            completedDetail.IsCompleted.Should().BeTrue();
 
-            updatedTask.Should().NotBeNull();
-            updatedTask!.TaskId.Should().Be(taskId);
-            updatedTask.IsCompleted.Should().BeTrue("after PATCH IsCompleted=true, the task should be completed");
+            // Verify day summary reflects completion
+            var dayResponse = await client.GetAsync($"/api/tasks/day?date={date:yyyy-MM-dd}");
+            dayResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-            // 3) Verify via GET day that the task appears as completed
-            var getResponse =
-                await client.GetAsync($"api/tasks/day?date={date:yyyy-MM-dd}");
+            var summaries =
+                await dayResponse.Content.ReadFromJsonAsync<IReadOnlyList<TaskSummaryDto>>();
 
-            getResponse.EnsureSuccessStatusCode();
+            summaries.Should().NotBeNull();
+            summaries!.Should().ContainSingle(s => s.TaskId == taskId);
 
-            var tasksForDay =
-                await getResponse.Content.ReadFromJsonAsync<IReadOnlyList<TaskDto>>();
-
-            tasksForDay.Should().NotBeNull();
-            tasksForDay!
-                .Should()
-                .Contain(t => t.TaskId == taskId && t.IsCompleted);
+            summaries.Single(s => s.TaskId == taskId).IsCompleted.Should().BeTrue();
         }
 
         [Fact]
-        public async Task Set_completion_fails_for_other_user()
+        public async Task Can_mark_task_back_to_pending_and_operation_is_idempotent()
         {
-            // Arrange: owner and another user
-            var ownerId = Guid.NewGuid();
-            var otherUserId = Guid.NewGuid();
-
-            var clientOwner = _factory.CreateClientAsUser(ownerId);
-            var clientOther = _factory.CreateClientAsUser(otherUserId);
-
-            var date = new DateOnly(2025, 3, 11);
+            // Arrange
+            var client = _factory.CreateClientAsDefaultUser();
+            var date = new DateOnly(2025, 11, 10);
 
             var createPayload = new
             {
-                date,
-                title = "Other user completion test",
-                reminderAtUtc = (DateTime?)null
+                Date = date,
+                Title = "Idempotent completion toggling",
+                Description = (string?)null,
+                StartTime = (TimeOnly?)null,
+                EndTime = (TimeOnly?)null,
+                Location = (string?)null,
+                TravelTime = (TimeSpan?)null,
+                ReminderAtUtc = (DateTime?)null
             };
 
-            // Owner creates the task
-            var createResponse = await clientOwner.PostAsJsonAsync("api/tasks", createPayload);
+            var createResponse = await client.PostAsJsonAsync("/api/tasks", createPayload);
             createResponse.EnsureSuccessStatusCode();
 
-            var createdTask =
-                await createResponse.Content.ReadFromJsonAsync<TaskDto>();
+            var created = await createResponse.Content.ReadFromJsonAsync<TaskDetailDto>();
+            created.Should().NotBeNull();
 
-            createdTask.Should().NotBeNull();
-            var taskId = createdTask!.TaskId;
+            var taskId = created!.TaskId;
 
-            // Act: other user tries to set completion
-            var completionPayload = new { isCompleted = true };
+            // First set completed
+            var completePayload = new { IsCompleted = true };
+            var completeResponse =
+                await client.PatchAsJsonAsync($"/api/tasks/{taskId}/completion", completePayload);
 
-            using var patchRequest = new HttpRequestMessage(
-                HttpMethod.Patch,
-                $"api/tasks/{taskId}/completion")
+            completeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            // Act: mark pending twice
+            var pendingPayload = new { IsCompleted = false };
+
+            var pendingResponse1 =
+                await client.PatchAsJsonAsync($"/api/tasks/{taskId}/completion", pendingPayload);
+            pendingResponse1.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var pendingResponse2 =
+                await client.PatchAsJsonAsync($"/api/tasks/{taskId}/completion", pendingPayload);
+            pendingResponse2.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var detail = await pendingResponse2.Content.ReadFromJsonAsync<TaskDetailDto>();
+            detail.Should().NotBeNull();
+            detail!.IsCompleted.Should().BeFalse();
+
+            // Verify day summary is also pending
+            var dayResponse = await client.GetAsync($"/api/tasks/day?date={date:yyyy-MM-dd}");
+            dayResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var summaries =
+                await dayResponse.Content.ReadFromJsonAsync<IReadOnlyList<TaskSummaryDto>>();
+
+            summaries.Should().NotBeNull();
+            summaries!.Should().ContainSingle(s => s.TaskId == taskId);
+
+            summaries.Single(s => s.TaskId == taskId).IsCompleted.Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task Cannot_change_completion_of_task_belonging_to_another_user()
+        {
+            // Arrange
+            var ownerId = Guid.NewGuid();
+            var attackerId = Guid.NewGuid();
+
+            var ownerClient = _factory.CreateClientAsUser(ownerId);
+            var attackerClient = _factory.CreateClientAsUser(attackerId);
+
+            var date = new DateOnly(2025, 11, 10);
+
+            var createPayload = new
             {
-                Content = JsonContent.Create(completionPayload)
+                Date = date,
+                Title = "Owner's completion task",
+                Description = (string?)null,
+                StartTime = (TimeOnly?)null,
+                EndTime = (TimeOnly?)null,
+                Location = (string?)null,
+                TravelTime = (TimeSpan?)null,
+                ReminderAtUtc = (DateTime?)null
             };
 
-            var completionResponse = await clientOther.SendAsync(patchRequest);
+            var createResponse = await ownerClient.PostAsJsonAsync("/api/tasks", createPayload);
+            createResponse.EnsureSuccessStatusCode();
 
-            // Assert: we respond with NotFound (consistent with Update/Delete behavior)
-            completionResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            var created = await createResponse.Content.ReadFromJsonAsync<TaskDetailDto>();
+            created.Should().NotBeNull();
+
+            var taskId = created!.TaskId;
+
+            // Act: attacker tries to set completion
+            var completionPayload = new { IsCompleted = true };
+
+            var attackerResponse =
+                await attackerClient.PatchAsJsonAsync($"/api/tasks/{taskId}/completion", completionPayload);
+
+            // Assert: 404 NotFound
+            attackerResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
     }
 }

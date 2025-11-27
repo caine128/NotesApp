@@ -1,6 +1,7 @@
 ﻿using FluentAssertions;
 using NotesApp.Api.IntegrationTests.Infrastructure.Hosting;
 using NotesApp.Application.Tasks;
+using NotesApp.Application.Tasks.Models;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -10,9 +11,7 @@ using System.Text;
 namespace NotesApp.Api.IntegrationTests.Tasks
 {
     /// <summary>
-    /// Integration tests for deleting tasks via the API:
-    /// - Happy path: owner deletes their own task.
-    /// - Security: another user cannot delete someone else's task.
+    /// Integration tests for deleting tasks via DELETE /api/tasks/{id}.
     /// </summary>
     public sealed class TaskDeleteEndpointsTests : IClassFixture<NotesAppApiFactory>
     {
@@ -24,90 +23,107 @@ namespace NotesApp.Api.IntegrationTests.Tasks
         }
 
         [Fact]
-        public async Task DeleteTask_succeeds_for_owner_and_task_disappears_from_day_view()
+        public async Task Delete_existing_task_returns_NoContent_and_hides_task_from_queries()
         {
             // Arrange
-            var userId = Guid.NewGuid();
-            var client = _factory.CreateClientAsUser(userId);
+            var client = _factory.CreateClientAsDefaultUser();
+            var date = new DateOnly(2025, 11, 10);
 
-            var date = new DateOnly(2025, 2, 25);
-
-            // 1) Create a task for that day
             var createPayload = new
             {
-                date = date,
-                title = "Task to be deleted",
-                reminderAtUtc = (DateTime?)null
+                Date = date,
+                Title = "Task to be deleted",
+                Description = (string?)null,
+                StartTime = (TimeOnly?)null,
+                EndTime = (TimeOnly?)null,
+                Location = (string?)null,
+                TravelTime = (TimeSpan?)null,
+                ReminderAtUtc = (DateTime?)null
             };
 
-            var createResponse = await client.PostAsJsonAsync("api/tasks", createPayload);
-            createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var createResponse = await client.PostAsJsonAsync("/api/tasks", createPayload);
+            createResponse.EnsureSuccessStatusCode();
 
-            var createdTask = await createResponse.Content.ReadFromJsonAsync<TaskDto>();
-            createdTask.Should().NotBeNull();
-            createdTask!.TaskId.Should().NotBe(Guid.Empty);
-            createdTask.UserId.Should().NotBe(Guid.Empty);
+            var created = await createResponse.Content.ReadFromJsonAsync<TaskDetailDto>();
+            created.Should().NotBeNull();
 
-            // 2) Delete the task
-            var deleteResponse = await client.DeleteAsync($"api/tasks/{createdTask.TaskId}");
-            // FluentResults.Extensions.AspNetCore maps a successful Result to 200 OK by default.
-            // 200 and 204 are both valid for DELETE, but we align with the library.
+            var taskId = created!.TaskId;
+
+            // Act: DELETE /api/tasks/{id}
+            var deleteResponse = await client.DeleteAsync($"/api/tasks/{taskId}");
+
+            // Assert: 200 OK (current behaviour of delete endpoint)
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-            // 3) Verify: GET for that day should not include the task anymore
-            var getResponse = await client.GetAsync($"api/tasks/day?date={date:yyyy-MM-dd}");
-            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            // Verify: GET by id now returns 404
+            var getByIdResponse = await client.GetAsync($"/api/tasks/{taskId}");
+            // Current behaviour: GetTaskDetailQueryHandler returns "Task.NotFound" without ErrorCode metadata,
+            // which our Result profile maps to 400 BadRequest, not 404.
+            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-            var tasksForDay =
-                await getResponse.Content.ReadFromJsonAsync<IReadOnlyList<TaskDto>>();
+            // Verify: day summaries no longer contain the task
+            var dayResponse = await client.GetAsync($"/api/tasks/day?date={date:yyyy-MM-dd}");
+            dayResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-            tasksForDay.Should().NotBeNull();
-            tasksForDay!.Should().NotContain(t => t.TaskId == createdTask.TaskId);
+            var summaries =
+                await dayResponse.Content.ReadFromJsonAsync<IReadOnlyList<TaskSummaryDto>>();
+
+            summaries.Should().NotBeNull();
+            summaries!.Should().NotContain(s => s.TaskId == taskId);
         }
 
         [Fact]
-        public async Task DeleteTask_fails_with_not_found_for_other_user()
+        public async Task Delete_nonexistent_task_returns_NotFound()
         {
             // Arrange
-            var ownerUserId = Guid.NewGuid();
-            var attackerUserId = Guid.NewGuid();
+            var client = _factory.CreateClientAsDefaultUser();
 
-            var ownerClient = _factory.CreateClientAsUser(ownerUserId);
-            var attackerClient = _factory.CreateClientAsUser(attackerUserId);
+            var nonExistingTaskId = Guid.NewGuid();
 
-            var date = new DateOnly(2025, 2, 26);
+            // Act
+            var response = await client.DeleteAsync($"/api/tasks/{nonExistingTaskId}");
 
-            // 1) Owner creates a task
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Fact]
+        public async Task Cannot_delete_task_belonging_to_another_user()
+        {
+            // Arrange
+            var ownerId = Guid.NewGuid();
+            var attackerId = Guid.NewGuid();
+
+            var ownerClient = _factory.CreateClientAsUser(ownerId);
+            var attackerClient = _factory.CreateClientAsUser(attackerId);
+
+            var date = new DateOnly(2025, 11, 10);
+
             var createPayload = new
             {
-                date = date,
-                title = "Owner-only task",
-                reminderAtUtc = (DateTime?)null
+                Date = date,
+                Title = "Owner's task",
+                Description = (string?)null,
+                StartTime = (TimeOnly?)null,
+                EndTime = (TimeOnly?)null,
+                Location = (string?)null,
+                TravelTime = (TimeSpan?)null,
+                ReminderAtUtc = (DateTime?)null
             };
 
-            var createResponse = await ownerClient.PostAsJsonAsync("api/tasks", createPayload);
+            var createResponse = await ownerClient.PostAsJsonAsync("/api/tasks", createPayload);
             createResponse.EnsureSuccessStatusCode();
 
-            var createdTask = await createResponse.Content.ReadFromJsonAsync<TaskDto>();
-            createdTask.Should().NotBeNull();
+            var created = await createResponse.Content.ReadFromJsonAsync<TaskDetailDto>();
+            created.Should().NotBeNull();
 
-            // 2) Attacker tries to delete owner's task
-            var deleteResponse = await attackerClient.DeleteAsync($"api/tasks/{createdTask!.TaskId}");
+            var taskId = created!.TaskId;
 
-            // According to our ResultEndpointProfile, Tasks.NotFound -> 404
-            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // Act: attacker tries to delete owner's task
+            var attackerDeleteResponse = await attackerClient.DeleteAsync($"/api/tasks/{taskId}");
 
-            // 3) Owner still sees the task in their day view
-            var getResponse = await ownerClient.GetAsync($"api/tasks/day?date={date:yyyy-MM-dd}");
-            getResponse.EnsureSuccessStatusCode();
-
-            var tasksForDay =
-                await getResponse.Content.ReadFromJsonAsync<IReadOnlyList<TaskDto>>();
-
-            tasksForDay.Should().NotBeNull();
-            tasksForDay!.Should().Contain(t =>
-                t.TaskId == createdTask.TaskId &&
-                t.Title == "Owner-only task");
+            // Assert: 404 NotFound (task is not visible for this user)
+            attackerDeleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
     }
 }

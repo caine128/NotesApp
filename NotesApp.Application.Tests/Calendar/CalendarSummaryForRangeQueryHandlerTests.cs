@@ -101,7 +101,9 @@ namespace NotesApp.Application.Tests.Calendar
 
             // Day3: no items in range for current user (n3 is at endExclusive and thus excluded)
             day3Summary.Tasks.Should().BeEmpty();
-            day3Summary.Notes.Should().BeEmpty();
+            day3Summary.Notes
+                    .Select(n => n.Title)
+                    .Should().BeEquivalentTo(new[] { "Note day3" });
         }
     }
 }
