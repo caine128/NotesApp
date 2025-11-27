@@ -8,6 +8,7 @@ using NotesApp.Application.Tasks.Commands.CreateTask;
 using NotesApp.Application.Tasks.Commands.DeleteTask;
 using NotesApp.Application.Tasks.Commands.SetTaskCompletion;
 using NotesApp.Application.Tasks.Commands.UpdateTask;
+using NotesApp.Application.Tasks.Models;
 using NotesApp.Application.Tasks.Queries;
 
 namespace NotesApp.Api.Controllers
@@ -28,9 +29,9 @@ namespace NotesApp.Api.Controllers
         /// Create a new task for a specific day.
         /// </summary>
         [HttpPost]
-        [ProducesResponseType(typeof(TaskDto), StatusCodes.Status201Created)]
+        [ProducesResponseType(typeof(TaskDetailDto), StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<TaskDto>> CreateTask([FromBody] CreateTaskCommand command,
+        public async Task<ActionResult<TaskDetailDto>> CreateTask([FromBody] CreateTaskCommand command,
                                                             CancellationToken cancellationToken)
         {
 
@@ -48,10 +49,10 @@ namespace NotesApp.Api.Controllers
         /// <param name="taskId">The id of the task to update (from the route).</param>
         /// <param name="command">The update payload (date, title, reminder).</param>
         [HttpPut("{taskId:guid}")]
-        [ProducesResponseType(typeof(TaskDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(TaskDetailDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<ActionResult<TaskDto>> UpdateTask([FromRoute] Guid taskId,
+        public async Task<ActionResult<TaskDetailDto>> UpdateTask([FromRoute] Guid taskId,
                                                             [FromBody] UpdateTaskCommand command,
                                                             CancellationToken cancellationToken)
         {
@@ -67,23 +68,75 @@ namespace NotesApp.Api.Controllers
             return result.ToActionResult();
         }
 
+        [HttpGet("{taskId:guid}")]
+        [ProducesResponseType(typeof(TaskDetailDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<TaskDetailDto>> GetTaskDetail(Guid taskId,
+                                                                     CancellationToken cancellationToken)
+        {
+            var query = new GetTaskDetailQuery(taskId);
+
+            return await _mediator
+                .Send(query, cancellationToken)
+                .ToActionResult();
+        }
+
 
         /// <summary>
         /// Get all tasks for a specific user and day.
         /// </summary>
         [HttpGet("day")]
-        [ProducesResponseType(typeof(IReadOnlyList<TaskDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(IReadOnlyList<TaskSummaryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<IReadOnlyList<TaskDto>>> GetTasksForDay([FromQuery] DateOnly date,
+        public async Task<ActionResult<IReadOnlyList<TaskSummaryDto>>> GetTaskSummariesForDay([FromQuery] DateOnly date,
                                                                                CancellationToken cancellationToken)
         {
             // TODO (later): ignore userId query parameter and derive it from JWT claims
             // Same pattern: query -> Result<IReadOnlyList<TaskDto>> -> ToActionResult()
-            var query = new GetTasksForDayQuery(date);
+            var query = new GetTaskSummariesForDayQuery(date);
 
             return await _mediator
                 .Send(query, cancellationToken)
                 .ToActionResult();
+        }
+
+        /// <summary>
+        /// Gets task summaries (timeline-level) for a date range.
+        /// Useful for list views, custom ranges, etc.
+        /// </summary>
+        /// <param name="start">Inclusive start date.</param>
+        /// <param name="endExclusive">Exclusive end date.</param>
+        // GET /api/tasks/range?start=2025-11-01&end=2025-11-08
+        [ProducesResponseType(typeof(IReadOnlyList<TaskSummaryDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [HttpGet("range")]
+        public async Task<ActionResult<IReadOnlyList<TaskSummaryDto>>> GetTaskSummariesForRange(
+                                                                         [FromQuery] DateOnly start,
+                                                                         [FromQuery] DateOnly endExclusive,
+                                                                         CancellationToken cancellationToken)
+        {
+            var query = new GetTaskSummariesForRangeQuery(start, endExclusive);
+            return await _mediator.Send(query, cancellationToken).ToActionResult();
+        }
+
+
+        /// <summary>
+        /// Gets task overviews (title + date only) for a date range.
+        /// Typically used for month-like views or light-weight task lists.
+        /// </summary>
+        /// <param name="start">Inclusive start date.</param>
+        /// <param name="endExclusive">Exclusive end date.</param>
+        // GET /api/tasks/overview?start=...&end=...
+        [HttpGet("overview")]
+        [ProducesResponseType(typeof(IReadOnlyList<TaskOverviewDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<IReadOnlyList<TaskOverviewDto>>> GetTaskOverviewForRange(
+            [FromQuery] DateOnly start,
+            [FromQuery] DateOnly endExclusive,
+            CancellationToken cancellationToken)
+        {
+            var query = new GetTaskOverviewForRangeQuery(start, endExclusive);
+            return await _mediator.Send(query, cancellationToken).ToActionResult();
         }
 
 
@@ -115,42 +168,6 @@ namespace NotesApp.Api.Controllers
         }
 
 
-        [HttpGet("month-overview")]
-        [ProducesResponseType(typeof(IReadOnlyList<DayTasksOverviewDto>), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<IReadOnlyList<DayTasksOverviewDto>>> GetMonthOverview([FromQuery] int year,
-                                                                                             [FromQuery] int month,
-                                                                                             CancellationToken cancellationToken)
-        {
-            var query = new GetMonthOverviewQuery(year, month);
-
-            var result = await _mediator.Send(query, cancellationToken);
-
-            // Uses FluentResults.Extensions.AspNetCore + our ResultEndpointProfile
-            // to map Result<T> -> ActionResult<T> + ProblemDetails.
-            return result.ToActionResult();
-        }
-
-
-        /// <summary>
-        /// Returns an overview of tasks per month for the authenticated user
-        /// for the specified year. Each entry contains total, completed, and pending counts.
-        /// </summary>
-        [HttpGet("year-overview")]
-        [ProducesResponseType(typeof(IReadOnlyList<MonthTasksOverviewDto>), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<IReadOnlyList<MonthTasksOverviewDto>>> GetYearOverview([FromQuery] int year,
-                                                                                              CancellationToken cancellationToken)
-        {
-            var query = new GetYearOverviewQuery(year);
-
-            var result = await _mediator.Send(query, cancellationToken);
-
-            return result.ToActionResult();
-        }
-
-
-
         /// <summary>
         /// Sets the completion state of a task (completed or pending).
         /// 
@@ -158,10 +175,10 @@ namespace NotesApp.Api.Controllers
         /// not the whole task resource.
         /// </summary>
         [HttpPatch("{taskId:guid}/completion")]
-        [ProducesResponseType(typeof(TaskDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(TaskDetailDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<ActionResult<TaskDto>> SetTaskCompletion(Guid taskId,
+        public async Task<ActionResult<TaskDetailDto>> SetTaskCompletion(Guid taskId,
                                                                    [FromBody] SetTaskCompletionRequest request,
                                                                    CancellationToken cancellationToken)
         {

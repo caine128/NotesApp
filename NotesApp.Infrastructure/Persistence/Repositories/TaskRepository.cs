@@ -42,71 +42,34 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
             _context.Tasks.Remove(entity);
         }
 
+
         // Task-specific query methods
 
-        public async Task<IReadOnlyList<TaskItem>> GetForDayAsync(Guid userId,
-                                                                  DateOnly date,
-                                                                  CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<TaskItem>> GetForDayAsync(
+         Guid userId,
+         DateOnly date,
+         CancellationToken cancellationToken = default)
         {
             return await _context.Tasks
-                .Where(t => t.UserId == userId && t.Date == date)
-                .OrderBy(t => t.ReminderAtUtc ?? DateTime.MaxValue)
+                .Where(t => t.UserId == userId
+                            && t.Date == date
+                            && !t.IsDeleted)
                 .ToListAsync(cancellationToken);
         }
 
-        public async Task<IReadOnlyList<DayTasksOverviewDto>> GetOverviewForDateRangeAsync(
+        public async Task<IReadOnlyList<TaskItem>> GetForDateRangeAsync(
             Guid userId,
             DateOnly fromInclusive,
             DateOnly toExclusive,
             CancellationToken cancellationToken = default)
         {
-            // This is a read-only, aggregated query: use AsNoTracking for performance.
             return await _context.Tasks
-                .AsNoTracking()
-                .Where(t =>
-                    t.UserId == userId &&
-                    !t.IsDeleted &&
-                    t.Date >= fromInclusive &&
-                    t.Date < toExclusive)
-                .GroupBy(t => t.Date)
-                .Select(g => new DayTasksOverviewDto
-                {
-                    Date = g.Key,
-                    TotalTasks = g.Count(),
-                    CompletedTasks = g.Count(t => t.IsCompleted),
-                    HasAnyReminder = g.Any(t => t.ReminderAtUtc != null)
-                })
-                .OrderBy(x => x.Date)
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
+                .Where(t => t.UserId == userId
+                            && t.Date >= fromInclusive
+                            && t.Date < toExclusive
+                            && !t.IsDeleted)
+                .ToListAsync(cancellationToken);
         }
 
-        public async Task<IReadOnlyList<MonthTasksOverviewDto>> GetYearOverviewAsync(Guid userId,
-                                                                                     int year,
-                                                                                     CancellationToken cancellationToken = default)
-        {
-            // Aggregate per month for the specified year and user.
-            // EF Core 8+ supports DateOnly and translates Year/Month properties to SQL properly.
-            var results = await _context.Tasks
-                .AsNoTracking()
-                .Where(t =>
-                    t.UserId == userId &&
-                    !t.IsDeleted &&
-                    t.Date.Year == year)
-                .GroupBy(t => new { t.Date.Year, t.Date.Month })
-                .Select(g => new MonthTasksOverviewDto
-                {
-                    Year = g.Key.Year,
-                    Month = g.Key.Month,
-                    TotalTasks = g.Count(),
-                    CompletedTasks = g.Count(t => t.IsCompleted),
-                    PendingTasks = g.Count() - g.Count(t => t.IsCompleted)
-                })
-                .OrderBy(x => x.Month)
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            return results;
-        }
     }
 }

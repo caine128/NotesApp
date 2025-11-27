@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Notes.Models;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -18,23 +19,23 @@ namespace NotesApp.Application.Notes.Queries
     /// 3. Map domain entities to NoteDto list.
     /// 4. Wrap in Result<IReadOnlyList<NoteDto>>.
     /// </summary>
-    public sealed class GetNotesForDayQueryHandler
-        : IRequestHandler<GetNotesForDayQuery, Result<IReadOnlyList<NoteDto>>>
+    public sealed class GetNoteSummariesForDayQueryHandler
+        : IRequestHandler<GetNoteSummariesForDayQuery, Result<IReadOnlyList<NoteSummaryDto>>>
     {
         private readonly INoteRepository _noteRepository;
         private readonly ICurrentUserService _currentUserService;
-        private readonly ILogger<GetNotesForDayQueryHandler> _logger;
+        private readonly ILogger<GetNoteSummariesForDayQueryHandler> _logger;
 
-        public GetNotesForDayQueryHandler(INoteRepository noteRepository,
+        public GetNoteSummariesForDayQueryHandler(INoteRepository noteRepository,
                                           ICurrentUserService currentUserService,
-                                          ILogger<GetNotesForDayQueryHandler> logger)
+                                          ILogger<GetNoteSummariesForDayQueryHandler> logger)
         {
             _noteRepository = noteRepository;
             _currentUserService = currentUserService;
             _logger = logger;
         }
 
-        public async Task<Result<IReadOnlyList<NoteDto>>> Handle(GetNotesForDayQuery request,
+        public async Task<Result<IReadOnlyList<NoteSummaryDto>>> Handle(GetNoteSummariesForDayQuery request,
                                                                  CancellationToken cancellationToken)
         {
             var userId = await _currentUserService.GetUserIdAsync(cancellationToken);
@@ -47,14 +48,16 @@ namespace NotesApp.Application.Notes.Queries
                                                              request.Date,
                                                              cancellationToken);
 
-            var dtoList = notes.ToDtoList();
+            var dtoList = notes
+                    .OrderBy(n => n.Date)   // mostly same day, but fine
+                    .ToSummaryDtoList();
 
             _logger.LogInformation("Found {NoteCount} notes for user {UserId} on date {Date}",
                                    dtoList.Count,
                                    userId,
                                    request.Date);
 
-            return Result.Ok<IReadOnlyList<NoteDto>>(dtoList);
+            return Result.Ok<IReadOnlyList<NoteSummaryDto>>(dtoList);
         }
     }
 }

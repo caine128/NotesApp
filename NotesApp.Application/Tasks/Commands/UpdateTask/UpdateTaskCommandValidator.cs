@@ -13,25 +13,39 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
     {
         public UpdateTaskCommandValidator()
         {
-            // TaskId is required
             RuleFor(x => x.TaskId)
                 .NotEmpty()
                 .WithMessage("Task id is required.");
 
-            // Date cannot be the default value
             RuleFor(x => x.Date)
                 .Must(d => d != default)
                 .WithMessage("Date is required.");
 
-            // Title must not be empty (domain enforces this as well,
-            // but we give the user earlier feedback here)
             RuleFor(x => x.Title)
                 .NotEmpty()
                 .WithMessage("Title is required.")
                 .MaximumLength(200)
                 .WithMessage("Title cannot exceed 200 characters.");
 
-            // Optional: basic sanity check on ReminderAtUtc
+            RuleFor(x => x.Description)
+                .MaximumLength(4000)
+                .WithMessage("Description cannot exceed 4000 characters.");
+
+            RuleFor(x => x.Location)
+                .MaximumLength(200)
+                .WithMessage("Location cannot exceed 200 characters.");
+
+            RuleFor(x => x)
+                .Must(x =>
+                    !x.StartTime.HasValue ||
+                    !x.EndTime.HasValue ||
+                    x.EndTime.Value >= x.StartTime.Value)
+                .WithMessage("EndTime cannot be earlier than StartTime.");
+
+            RuleFor(x => x.TravelTime)
+                .Must(t => t == null || t.Value >= TimeSpan.Zero)
+                .WithMessage("TravelTime cannot be negative.");
+
             RuleFor(x => x.ReminderAtUtc)
                 .Must(r => r == null || r.Value.Kind == DateTimeKind.Utc)
                 .WithMessage("Reminder time must be in UTC (DateTimeKind.Utc) if provided.");

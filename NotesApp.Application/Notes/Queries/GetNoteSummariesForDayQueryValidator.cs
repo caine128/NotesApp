@@ -9,9 +9,9 @@ namespace NotesApp.Application.Notes.Queries
     /// Validator for GetNotesForDayQuery.
     /// Guards against obviously invalid dates.
     /// </summary>
-    public sealed class GetNotesForDayQueryValidator : AbstractValidator<GetNotesForDayQuery>
+    public sealed class GetNoteSummariesForDayQueryValidator : AbstractValidator<GetNoteSummariesForDayQuery>
     {
-        public GetNotesForDayQueryValidator()
+        public GetNoteSummariesForDayQueryValidator()
         {
             RuleFor(x => x.Date)
                 .Must(d => d != default)

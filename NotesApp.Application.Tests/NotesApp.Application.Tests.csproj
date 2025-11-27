@@ -27,4 +27,9 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Calendar\" />
+    <Folder Include="Notes\" />
+  </ItemGroup>
+
 </Project>

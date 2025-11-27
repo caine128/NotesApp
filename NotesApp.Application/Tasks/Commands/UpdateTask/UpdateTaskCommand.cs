@@ -1,5 +1,6 @@
 ﻿using FluentResults;
 using MediatR;
+using NotesApp.Application.Tasks.Models;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -15,7 +16,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
     /// The TaskId comes from the route (API) and is also present here
     /// so the handler can load the correct TaskItem from the repository.
     /// </summary>
-    public sealed class UpdateTaskCommand : IRequest<Result<TaskDto>>
+    public sealed class UpdateTaskCommand : IRequest<Result<TaskDetailDto>>
     {
         /// <summary>
         /// The id of the task to update.
@@ -31,6 +32,16 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
         /// New title for the task (required, non-empty).
         /// </summary>
         public string Title { get; init; } = string.Empty;
+
+        public string? Description { get; init; }
+
+        public TimeOnly? StartTime { get; init; }
+
+        public TimeOnly? EndTime { get; init; }
+
+        public string? Location { get; init; }
+
+        public TimeSpan? TravelTime { get; init; }
 
         /// <summary>
         /// Optional new reminder time in UTC. Use null to clear any reminder.

@@ -13,14 +13,8 @@ namespace NotesApp.Application.Abstractions.Persistence
     /// 
     /// Implementation lives in Infrastructure and uses EF Core / AppDbContext.
     /// </summary>
-    public interface INoteRepository : IRepository<Note>
+    public interface INoteRepository : ICalendarEntityRepository<Note>
     {
-        /// <summary>
-        /// Returns all notes for a given user and calendar date.
-        /// Soft-deleted notes are automatically filtered out by EF global filters.
-        /// </summary>
-        Task<IReadOnlyList<Note>> GetForDayAsync(Guid userId,
-                                                 DateOnly date,
-                                                 CancellationToken cancellationToken = default);
+      
     }
 }

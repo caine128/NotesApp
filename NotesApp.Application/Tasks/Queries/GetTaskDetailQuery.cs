@@ -1,10 +1,12 @@
 ﻿using FluentResults;
 using MediatR;
+using NotesApp.Application.Tasks.Models;
 using System;
 using System.Collections.Generic;
 using System.Text;
 
 namespace NotesApp.Application.Tasks.Queries
 {
-    public sealed record GetTasksForDayQuery(DateOnly Date) : IRequest<Result<IReadOnlyList<TaskDto>>>;
+    public sealed record GetTaskDetailQuery(Guid TaskId)
+    : IRequest<Result<TaskDetailDto>>;
 }

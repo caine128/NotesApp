@@ -1,0 +1,14 @@
+﻿using FluentResults;
+using MediatR;
+using NotesApp.Application.Notes.Models;
+using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace NotesApp.Application.Notes.Queries
+{
+    public sealed record GetNoteOverviewForRangeQuery(
+    DateOnly Start,
+    DateOnly EndExclusive
+) : IRequest<Result<IReadOnlyList<NoteOverviewDto>>>;
+}

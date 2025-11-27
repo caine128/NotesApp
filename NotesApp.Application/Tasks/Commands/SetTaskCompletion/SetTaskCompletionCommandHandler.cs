@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Tasks.Models;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -20,7 +21,7 @@ namespace NotesApp.Application.Tasks.Commands.SetTaskCompletion
     /// 6) Returns the updated TaskDto wrapped in a FluentResults.Result.
     /// </summary>
     public sealed class SetTaskCompletionCommandHandler
-        : IRequestHandler<SetTaskCompletionCommand, Result<TaskDto>>
+        : IRequestHandler<SetTaskCompletionCommand, Result<TaskDetailDto>>
     {
         private readonly ITaskRepository _taskRepository;
         private readonly IUnitOfWork _unitOfWork;
@@ -41,7 +42,7 @@ namespace NotesApp.Application.Tasks.Commands.SetTaskCompletion
             _logger = logger;
         }
 
-        public async Task<Result<TaskDto>> Handle(SetTaskCompletionCommand command,
+        public async Task<Result<TaskDetailDto>> Handle(SetTaskCompletionCommand command,
                                                   CancellationToken cancellationToken)
         {
             // 1) Resolve current internal user Id from token/claims.
@@ -60,7 +61,7 @@ namespace NotesApp.Application.Tasks.Commands.SetTaskCompletion
                     command.TaskId,
                     currentUserId);
 
-                return Result.Fail<TaskDto>(
+                return Result.Fail<TaskDetailDto>(
                     new Error("Task not found.")
                         .WithMetadata("ErrorCode", "Tasks.NotFound"));
             }
@@ -78,7 +79,7 @@ namespace NotesApp.Application.Tasks.Commands.SetTaskCompletion
                 // Convert DomainResult -> Result<TaskDto> with the current DTO as value.
                 // This preserves any domain error codes/messages while still returning
                 // the current state of the task to the client.
-                return completionResult.ToResult(() => taskItem.ToDto());
+                return completionResult.ToResult(() => taskItem.ToDetailDto());
             }
 
             // 4) Mark the entity as modified so EF Core tracks the change.
@@ -88,7 +89,7 @@ namespace NotesApp.Application.Tasks.Commands.SetTaskCompletion
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             // 6) Return updated DTO as Result.Ok<T>
-            var dto = taskItem.ToDto();
+            var dto = taskItem.ToDetailDto();
             return Result.Ok(dto);
         }
     }

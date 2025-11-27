@@ -5,10 +5,10 @@ using System.Text;
 
 namespace NotesApp.Application.Tasks.Queries
 {
-    public sealed class GetTasksForDayQueryValidator
-                : AbstractValidator<GetTasksForDayQuery>
+    public sealed class GetTaskSummariesForDayQueryValidator
+                : AbstractValidator<GetTaskSummariesForDayQuery>
     {
-        public GetTasksForDayQueryValidator()
+        public GetTaskSummariesForDayQueryValidator()
         {
             RuleFor(x => x.Date)
                 .Must(d => d != default)

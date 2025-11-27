@@ -3,12 +3,14 @@ using MediatR;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Tasks.Models;
 using NotesApp.Domain.Entities;
 
 
 namespace NotesApp.Application.Tasks.Commands.CreateTask
 {
-    public sealed class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand, Result<TaskDto>>
+    public sealed class CreateTaskCommandHandler 
+        : IRequestHandler<CreateTaskCommand, Result<TaskDetailDto>>
     {
         private readonly ITaskRepository _taskRepository;
         private readonly IUnitOfWork _unitOfWork;
@@ -26,7 +28,7 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
             _clock = clock;
         }
 
-        public async Task<Result<TaskDto>> Handle(CreateTaskCommand command,
+        public async Task<Result<TaskDetailDto>> Handle(CreateTaskCommand command,
                                                   CancellationToken cancellationToken)
         {
             // 1) Resolve current internal user Id from token/claims.
@@ -39,13 +41,18 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
             var createResult = TaskItem.Create(userId: userId,
                                                date: command.Date,
                                                title: command.Title,
+                                               description: command.Description,
+                                               startTime: command.StartTime,
+                                               endTime: command.EndTime,
+                                               location: command.Location,
+                                               travelTime: command.TravelTime,
                                                utcNow: utcNow);
 
 
             if (createResult.IsFailure)
             {
                 // Convert DomainResult<TaskItem> -> Result<TaskDto>
-                return createResult.ToResult<TaskItem, TaskDto>(task => task.ToDto());
+                return createResult.ToResult<TaskItem, TaskDetailDto>(task => task.ToDetailDto());
             }
 
             var taskItem = createResult.Value;
@@ -58,7 +65,7 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
                 if (reminderResult.IsFailure)
                 {
                     // DomainResult (no value) -> Result<TaskDto> using value factory
-                    return reminderResult.ToResult(() => taskItem.ToDto());
+                    return reminderResult.ToResult(() => taskItem.ToDetailDto());
                 }
             }
 
@@ -68,7 +75,7 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             // 📌 5) Map domain entity -> DTO using our mapping extension
-            var dto = taskItem.ToDto();
+            var dto = taskItem.ToDetailDto();
             return Result.Ok(dto);
 
         }

@@ -53,17 +53,33 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
             _dbContext.Notes.Remove(entity);
         }
 
+
         // --- INoteRepository-specific methods ---------------------------------
 
         public async Task<IReadOnlyList<Note>> GetForDayAsync(Guid userId,
                                                               DateOnly date,
                                                               CancellationToken cancellationToken = default)
         {
-            // Global query filter on IsDeleted is applied automatically by EF.
             return await _dbContext.Notes
-                .Where(n => n.UserId == userId && n.Date == date)
-                .OrderBy(n => n.CreatedAtUtc) // stable ordering for UI
+                .Where(n => n.UserId == userId
+                            && n.Date == date
+                            && !n.IsDeleted)
                 .ToListAsync(cancellationToken);
         }
+
+        public async Task<IReadOnlyList<Note>> GetForDateRangeAsync(Guid userId,
+                                                                    DateOnly fromInclusive,
+                                                                    DateOnly toExclusive,
+                                                                    CancellationToken cancellationToken = default)
+        {
+            return await _dbContext.Notes
+                .Where(n => n.UserId == userId
+                            && n.Date >= fromInclusive
+                            && n.Date < toExclusive
+                            && !n.IsDeleted)
+                .ToListAsync(cancellationToken);
+        }
+
+
     }
 }

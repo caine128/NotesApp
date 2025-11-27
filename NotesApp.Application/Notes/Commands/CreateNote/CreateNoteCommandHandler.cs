@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Notes.Models;
 using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -21,7 +22,7 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
     /// 4. Returns a NoteDto wrapped in a FluentResults.Result.
     /// </summary>
     public sealed class CreateNoteCommandHandler
-        : IRequestHandler<CreateNoteCommand, Result<NoteDto>>
+        : IRequestHandler<CreateNoteCommand, Result<NoteDetailDto>>
     {
         private readonly INoteRepository _noteRepository;
         private readonly IUnitOfWork _unitOfWork;
@@ -42,7 +43,7 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
             _logger = logger;
         }
 
-        public async Task<Result<NoteDto>> Handle(
+        public async Task<Result<NoteDetailDto>> Handle(
             CreateNoteCommand command,
             CancellationToken cancellationToken)
         {
@@ -57,12 +58,14 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
                                            date: command.Date,
                                            title: command.Title,
                                            content: command.Content,
+                                           summary: command.Summary,
+                                           tags: command.Tags,
                                            utcNow: utcNow);
 
             if (createResult.IsFailure)
             {
                 // Convert DomainResult<Note> -> Result<NoteDto>
-                return createResult.ToResult<Note, NoteDto>(note => note.ToDto());
+                return createResult.ToResult<Note, NoteDetailDto>(note => note.ToDetailDto());
             }
 
             var note = createResult.Value;
@@ -77,7 +80,7 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
                                    note.Date);
 
             // 5) Map domain entity -> DTO
-            var dto = note.ToDto();
+            var dto = note.ToDetailDto();
             return Result.Ok(dto);
         }
     }

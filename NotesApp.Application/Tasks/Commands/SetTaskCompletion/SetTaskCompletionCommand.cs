@@ -1,5 +1,6 @@
 ﻿using FluentResults;
 using MediatR;
+using NotesApp.Application.Tasks.Models;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -14,5 +15,5 @@ namespace NotesApp.Application.Tasks.Commands.SetTaskCompletion
     public sealed record SetTaskCompletionCommand(
         Guid TaskId,
         bool IsCompleted
-    ) : IRequest<Result<TaskDto>>;
+    ) : IRequest<Result<TaskDetailDto>>;
 }

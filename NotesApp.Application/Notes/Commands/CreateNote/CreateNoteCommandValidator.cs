@@ -35,6 +35,14 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
             RuleFor(x => x.Content)
                 .MaximumLength(4000)
                 .WithMessage("Content cannot exceed 4000 characters.");
+
+            RuleFor(x => x.Tags)
+                 .MaximumLength(1000)
+                 .WithMessage("Tags cannot exceed 1000 characters.");
+
+            RuleFor(x => x.Summary)
+               .MaximumLength(4000)
+               .WithMessage("Summary cannot exceed 4000 characters.");
         }
     }
 }

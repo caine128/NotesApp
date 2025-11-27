@@ -11,7 +11,7 @@ namespace NotesApp.Domain.Entities
     /// - UserId must be non-empty.
     /// - A note must have at least a title OR some content.
     /// </summary>
-    public sealed class Note : Entity<Guid>
+    public sealed class Note : Entity<Guid>, ICalendarEntity
     {
         /// <summary>
         /// Owner of this note (also our tenant boundary).
@@ -38,31 +38,39 @@ namespace NotesApp.Domain.Entities
         }
 
         private Note(Guid id,
-                     Guid userId,
-                     DateOnly date,
-                     string title,
-                     string content,
-                     DateTime utcNow)
-            : base(id, utcNow)
+                 Guid userId,
+                 DateOnly date,
+                 string title,
+                 string content,
+                 string? summary,
+                 string? tags,
+                 DateTime utcNow)
+        : base(id, utcNow)
         {
             UserId = userId;
             Date = date;
             Title = title;
             Content = content;
+            Summary = summary;
+            Tags = tags;
         }
 
         // FACTORY
 
         public static DomainResult<Note> Create(Guid userId,
-                                                DateOnly date,
-                                                string? title,
-                                                string? content,
-                                                DateTime utcNow)
+                                            DateOnly date,
+                                            string? title,
+                                            string? content,
+                                            string? summary,
+                                            string? tags,
+                                            DateTime utcNow)
         {
             var errors = new List<DomainError>();
 
             var normalizedTitle = title?.Trim() ?? string.Empty;
             var normalizedContent = content?.Trim() ?? string.Empty;
+            var normalizedSummary = summary?.Trim();
+            var normalizedTags = tags?.Trim();
 
             if (userId == Guid.Empty)
             {
@@ -91,13 +99,21 @@ namespace NotesApp.Domain.Entities
                                 date,
                                 normalizedTitle,
                                 normalizedContent,
+                                normalizedSummary,
+                                normalizedTags,
                                 utcNow);
+
             return DomainResult<Note>.Success(note);
         }
 
         // BEHAVIOURS
 
-        public DomainResult Update(string? title, string? content, DateOnly date, DateTime utcNow)
+        public DomainResult Update(string? title,
+                                   string? content,
+                                   string? summary,
+                                   string? tags,
+                                   DateOnly date,
+                                   DateTime utcNow)
         {
             if (IsDeleted)
             {
@@ -110,11 +126,18 @@ namespace NotesApp.Domain.Entities
 
             var normalizedTitle = title?.Trim() ?? string.Empty;
             var normalizedContent = content?.Trim() ?? string.Empty;
+            var normalizedSummary = summary?.Trim();
+            var normalizedTags = tags?.Trim();
 
             // Same invariant as Create
             if (normalizedTitle.Length == 0 && normalizedContent.Length == 0)
             {
                 errors.Add(new DomainError("Note.Empty", "Note must have at least a title or some content."));
+            }
+
+            if (date == default)
+            {
+                errors.Add(new DomainError("Note.Date.Default", "Date must be a valid calendar date."));
             }
 
             if (errors.Count > 0)
@@ -124,7 +147,10 @@ namespace NotesApp.Domain.Entities
 
             Title = normalizedTitle;
             Content = normalizedContent;
+            Summary = normalizedSummary;
+            Tags = normalizedTags;
             Date = date;
+
             Touch(utcNow);
 
             return DomainResult.Success();
