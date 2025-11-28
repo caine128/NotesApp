@@ -26,7 +26,8 @@ namespace NotesApp.Api.IntegrationTests.Tasks
         public async Task Can_mark_task_completed_and_it_reflects_in_detail_and_day_summary()
         {
             // Arrange
-            var client = _factory.CreateClientAsDefaultUser();
+            var ownerId = Guid.NewGuid();
+            var client = _factory.CreateClientAsUser(ownerId);
             var date = new DateOnly(2025, 11, 10);
 
             var createPayload = new
@@ -79,7 +80,8 @@ namespace NotesApp.Api.IntegrationTests.Tasks
         public async Task Can_mark_task_back_to_pending_and_operation_is_idempotent()
         {
             // Arrange
-            var client = _factory.CreateClientAsDefaultUser();
+            var ownerId = Guid.NewGuid();
+            var client = _factory.CreateClientAsUser(ownerId);
             var date = new DateOnly(2025, 11, 10);
 
             var createPayload = new
@@ -141,7 +143,8 @@ namespace NotesApp.Api.IntegrationTests.Tasks
         public async Task Changing_completion_of_nonexistent_task_returns_not_found()
         {
             // Arrange
-            var client = _factory.CreateClientAsDefaultUser();
+            var userId = Guid.NewGuid();
+            var client = _factory.CreateClientAsUser(userId);
             var nonExistentTaskId = Guid.NewGuid();
 
             var payload = new

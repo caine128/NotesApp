@@ -612,6 +612,22 @@ namespace NotesApp.Api.IntegrationTests.Notes
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
 
+        [Fact]
+        public async Task Get_notes_for_day_without_auth_returns_unauthorized()
+        {
+            // Arrange
+            var unauthenticatedClient = _factory.CreateClient();
+            var date = new DateOnly(2025, 11, 10);
+
+            // Act
+            var response = await unauthenticatedClient.GetAsync(
+                $"/api/notes/day?date={date:yyyy-MM-dd}");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+
         #endregion
 
         #region Helpers

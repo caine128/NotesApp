@@ -26,7 +26,8 @@ namespace NotesApp.Api.IntegrationTests.Tasks
         public TasksEndpointsTests(NotesAppApiFactory factory)
         {
             _factory = factory;
-            _client = _factory.CreateClientAsDefaultUser();
+            var userId = Guid.NewGuid();
+            _client = _factory.CreateClientAsUser(userId);
         }
 
         [Fact]
@@ -235,7 +236,7 @@ namespace NotesApp.Api.IntegrationTests.Tasks
         public async Task Get_tasks_for_range_returns_tasks_ordered_by_date_then_start_time()
         {
             // Arrange
-            var client = _factory.CreateClientAsDefaultUser();
+            var client = _factory.CreateClientAsUser(Guid.NewGuid());
 
             var start = new DateOnly(2025, 11, 1);
             var endExclusive = start.AddDays(5);
@@ -298,6 +299,23 @@ namespace NotesApp.Api.IntegrationTests.Tasks
             overview.Should().NotBeNull();
             overview!.Select(o => o.Title).Should().BeEquivalentTo(new[] { "Task 1", "Task 2" });
             overview.Select(o => o.Date).Should().BeEquivalentTo(new[] { date1, date2 });
+        }
+
+
+        [Fact]
+        public async Task Get_tasks_for_day_without_auth_returns_unauthorized()
+        {
+            // Arrange: raw client without the test auth handler's Authorization header
+            var unauthenticatedClient = _factory.CreateClient();
+
+            var date = new DateOnly(2025, 11, 10);
+
+            // Act
+            var response = await unauthenticatedClient.GetAsync(
+                $"/api/tasks/day?date={date:yyyy-MM-dd}");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         }
 
         private static async Task<TaskDetailDto> CreateSimpleTask(HttpClient client,

@@ -204,6 +204,23 @@ namespace NotesApp.Api.IntegrationTests.Calendar
         }
 
         [Fact]
+        public async Task Get_calendar_summary_for_day_without_auth_returns_unauthorized()
+        {
+            // Arrange
+            var unauthenticatedClient = _factory.CreateClient();
+            var date = new DateOnly(2025, 11, 10);
+
+            // Act
+            var response = await unauthenticatedClient.GetAsync(
+                $"/api/calendar/summary/day?date={date:yyyy-MM-dd}");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+
+
+        [Fact]
         public async Task GetCalendarOverviewForRange_Returns_Titles_Per_Day_And_Respects_User_Boundaries()
         {
             // Arrange

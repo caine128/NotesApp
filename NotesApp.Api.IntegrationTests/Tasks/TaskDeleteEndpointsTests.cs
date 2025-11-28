@@ -27,7 +27,8 @@ namespace NotesApp.Api.IntegrationTests.Tasks
         public async Task Delete_existing_task_returns_NoContent_and_hides_task_from_queries()
         {
             // Arrange
-            var client = _factory.CreateClientAsDefaultUser();
+            var userId = Guid.NewGuid();
+            var client = _factory.CreateClientAsUser(userId);
             var date = new DateOnly(2025, 11, 10);
 
             var createPayload = new
@@ -75,7 +76,8 @@ namespace NotesApp.Api.IntegrationTests.Tasks
         public async Task Delete_nonexistent_task_returns_NotFound()
         {
             // Arrange
-            var client = _factory.CreateClientAsDefaultUser();
+            var userId = Guid.NewGuid();
+            var client = _factory.CreateClientAsUser(userId);
 
             var nonExistingTaskId = Guid.NewGuid();
 

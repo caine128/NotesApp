@@ -44,7 +44,16 @@ namespace NotesApp.Api.IntegrationTests.Infrastructure.Auth
             // Try to read a user id from the test header.
             var headerValue = Context.Request.Headers[UserIdHeaderName].FirstOrDefault();
 
-            Guid userId;
+
+            // If no header or invalid GUID => treat as unauthenticated.
+            if (string.IsNullOrWhiteSpace(headerValue) || !Guid.TryParse(headerValue, out var userId))
+            {
+                // This tells ASP.NET Core: "no user from this scheme".
+                // [Authorize] will then result in 401.
+                return Task.FromResult(AuthenticateResult.NoResult());
+            }
+
+            /*Guid userId;
             if (!string.IsNullOrWhiteSpace(headerValue) && Guid.TryParse(headerValue, out var parsed))
             {
                 userId = parsed;
@@ -52,22 +61,27 @@ namespace NotesApp.Api.IntegrationTests.Infrastructure.Auth
             else
             {
                 userId = DefaultUserId;
-            }
-
+            }*/
+           
             // Claims aligned with what your CurrentUserService expects
             var claims = new[]
             {
-                new Claim("sub", userId.ToString()),                      // standard subject claim
-                new Claim(ClaimTypes.NameIdentifier, userId.ToString()),  // for ClaimTypes.NameIdentifier lookups
-                new Claim(ClaimTypes.Name, "Integration Test User"),
-                
-                // Add a realistic email so CurrentUserService -> User.Create gets a non-null email
-                new Claim(ClaimTypes.Email, "integration.test.user@example.com"),
-                new Claim("email", "integration.test.user@example.com"),
+                 // Entra-style user id
+                 new Claim("oid", userId.ToString()),
 
-                // Add an issuer to simulate a real IdP (used as "provider" string)
-                new Claim("iss", "https://test.local")
-            };
+                 // Standard OIDC subject and .NET NameIdentifier for compatibility
+                 new Claim("sub", userId.ToString()),
+                 new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+
+                 new Claim(ClaimTypes.Name, "Integration Test User"),
+
+                 // Email (so User.Create has something meaningful)
+                 new Claim(ClaimTypes.Email, "integration.test.user@example.com"),
+                 new Claim("email", "integration.test.user@example.com"),
+
+                 // Simulated issuer & tenant id for provider resolution
+                 new Claim("iss", "https://test.local"),
+                 new Claim("tid", "00000000-0000-0000-0000-000000000000")};
 
             var identity = new ClaimsIdentity(claims, SchemeName);
             var principal = new ClaimsPrincipal(identity);

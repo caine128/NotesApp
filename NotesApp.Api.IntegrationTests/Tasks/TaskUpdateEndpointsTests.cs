@@ -26,7 +26,9 @@ namespace NotesApp.Api.IntegrationTests.Tasks
         public async Task Update_existing_task_updates_all_mutable_fields()
         {
             // Arrange: create client + initial task
-            var client = _factory.CreateClientAsDefaultUser();
+            var userId = Guid.NewGuid();
+            var client = _factory.CreateClientAsUser(userId);
+
 
             var originalDate = new DateOnly(2025, 11, 10);
 
@@ -101,7 +103,9 @@ namespace NotesApp.Api.IntegrationTests.Tasks
         public async Task Updating_nonexistent_task_returns_not_found()
         {
             // Arrange
-            var client = _factory.CreateClientAsDefaultUser();
+            var userId = Guid.NewGuid();
+            var client = _factory.CreateClientAsUser(userId);
+
             var nonExistentTaskId = Guid.NewGuid();
 
             var date = new DateOnly(2025, 11, 10);
@@ -132,7 +136,9 @@ namespace NotesApp.Api.IntegrationTests.Tasks
         public async Task Update_with_empty_title_returns_bad_request()
         {
             // Arrange
-            var client = _factory.CreateClientAsDefaultUser();
+            var userId = Guid.NewGuid();
+            var client = _factory.CreateClientAsUser(userId);
+
             var date = new DateOnly(2025, 11, 10);
 
             var createPayload = new

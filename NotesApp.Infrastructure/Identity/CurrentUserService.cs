@@ -70,19 +70,24 @@ namespace NotesApp.Infrastructure.Identity
 
             // --- 1) Extract core claims from the principal ---
 
-            // External ID: prefer standard "sub", fall back to NameIdentifier
+            // Prefer Entra's 'oid' for user identity when available.
+            // Fall back to 'sub', then NameIdentifier for other providers.
             var externalId =
+                principal.FindFirst("oid")?.Value ??
                 principal.FindFirst("sub")?.Value ??
                 principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
             if (string.IsNullOrWhiteSpace(externalId))
             {
                 throw new InvalidOperationException(
-                    "Cannot resolve current user because neither 'sub' nor NameIdentifier claim is present.");
+                    "Cannot resolve current user because none of 'oid', 'sub', or NameIdentifier claims are present.");
             }
 
-            // Provider: use issuer (iss) when available; fall back to a default label.
-            var provider = principal.FindFirst("iss")?.Value ?? "UnknownIssuer";
+            // Provider: prefer issuer URL ('iss'); if not present, fall back to tenant id ('tid') or a default label.
+            var provider =
+                principal.FindFirst("iss")?.Value ??
+                principal.FindFirst("tid")?.Value ??
+                "UnknownIssuer";
 
             // Email & display name are optional, we do best-effort extraction.
             var email =

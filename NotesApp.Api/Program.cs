@@ -1,5 +1,6 @@
 ﻿using FluentResults.Extensions.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using NotesApp.Api.Configuration;
@@ -44,7 +45,7 @@ builder.Services
             // Authority & Audience from your strongly-typed config
             options.Authority = authOptions.Authority;
             options.Audience = authOptions.Audience;
-
+            options.MapInboundClaims = false;
             // Validate issuer, audience, lifetime, signature, etc.
             options.TokenValidationParameters = new TokenValidationParameters
             {
@@ -73,7 +74,13 @@ builder.Services
 
 
 // 5) Add authorization services as usual
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // Require an authenticated user for all endpoints by default
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
 
 // 6) Controllers + ProblemDetails + Exception handling
 // ProblemDetails: standardized error responses (RFC 9457 / 7807)
