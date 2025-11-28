@@ -35,11 +35,21 @@ namespace NotesApp.Api.Controllers
                                                             CancellationToken cancellationToken)
         {
 
-            // IMediator returns Result<TaskDto> from the handler.
-            // ToActionResult() uses NotesAppResultEndpointProfile to convert it to HTTP.
-            return await _mediator
-                .Send(command, cancellationToken)
-                .ToActionResult();
+            var result = await _mediator.Send(command, cancellationToken);
+
+            if (result.IsFailed)
+            {
+                // Let the profile + GlobalExceptionHandler do their job.
+                return result.ToActionResult();
+            }
+
+            var dto = result.Value;
+
+            // 201 Created + Location header pointing to GET /api/tasks/{taskId}
+            return CreatedAtAction(
+                nameof(GetTaskDetail),
+                new { taskId = dto.TaskId },   // TaskDetailDto.TaskId
+                dto);
         }
 
 
@@ -160,11 +170,16 @@ namespace NotesApp.Api.Controllers
                 TaskId = taskId
             };
 
-            // Result -> ActionResult mapping is handled by FluentResults.Extensions.AspNetCore
-            // and our NotesAppResultEndpointProfile (Result.Ok -> 204 NoContent).
-            return await _mediator
-                .Send(command, cancellationToken)
-                .ToActionResult();
+            var result = await _mediator.Send(command, cancellationToken);
+
+            if (result.IsFailed)
+            {
+                // This will map Tasks.NotFound to 404, others to 400/500.
+                return result.ToActionResult();
+            }
+
+            // Successful soft-delete => 204 NoContent
+            return NoContent();
         }
 
 

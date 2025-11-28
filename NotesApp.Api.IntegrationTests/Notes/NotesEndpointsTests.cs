@@ -51,7 +51,7 @@ namespace NotesApp.Api.IntegrationTests.Notes
             var createResponse = await _defaultClient.PostAsJsonAsync("/api/notes", createPayload);
 
             // Assert 1: Creation succeeded and returns NoteDetailDto (currently 200 OK)
-            createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
             var created = await createResponse.Content.ReadFromJsonAsync<NoteDetailDto>();
             created.Should().NotBeNull();
@@ -97,6 +97,27 @@ namespace NotesApp.Api.IntegrationTests.Notes
             summary.Title.Should().Be(createPayload.Title);
             summary.Date.Should().Be(date);
         }
+
+        [Fact]
+        public async Task Create_note_with_empty_title_and_content_returns_bad_request()
+        {
+            // Arrange
+            var payload = new
+            {
+                Date = new DateOnly(2025, 11, 10),
+                Title = "   ",         // invalid (whitespace)
+                Content = (string?)null,
+                Summary = (string?)null,
+                Tags = (string?)null
+            };
+
+            // Act
+            var response = await _defaultClient.PostAsJsonAsync("/api/notes", payload);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
 
         [Fact]
         public async Task Notes_for_day_are_isolated_between_different_users()
@@ -259,6 +280,55 @@ namespace NotesApp.Api.IntegrationTests.Notes
             overview!.Select(o => o.Title).Should().BeEquivalentTo(new[] { "Note 1", "Note 2" });
             overview.Select(o => o.Date).Should().BeEquivalentTo(new[] { date1, date2 });
         }
+
+        [Fact]
+        public async Task Get_note_overview_for_range_respects_user_boundaries()
+        {
+            // Arrange
+            var user1Id = Guid.NewGuid();
+            var user2Id = Guid.NewGuid();
+
+            var user1Client = _factory.CreateClientAsUser(user1Id);
+            var user2Client = _factory.CreateClientAsUser(user2Id);
+
+            var start = new DateOnly(2025, 11, 1);
+            var date1 = start;                 // 1st – user 1
+            var date2 = start.AddDays(1);      // 2nd – user 1
+            var date3 = start.AddDays(2);      // 3rd – user 2
+            var date4 = start.AddDays(3);      // 4th – user 2
+            var endExclusive = start.AddDays(5);
+
+            // User 1 data (should be visible to user 1)
+            await CreateSimpleNote(user1Client, date1, "User1-Note-1");
+            await CreateSimpleNote(user1Client, date2, "User1-Note-2");
+
+            // User 2 data (must NOT leak into user 1's overview)
+            await CreateSimpleNote(user2Client, date3, "User2-Note-1");
+            await CreateSimpleNote(user2Client, date4, "User2-Note-2");
+
+            // Act: user 1 requests overview for the whole range
+            var response = await user1Client.GetAsync(
+                $"/api/notes/overview?start={start:yyyy-MM-dd}&endExclusive={endExclusive:yyyy-MM-dd}");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var overview =
+                await response.Content.ReadFromJsonAsync<IReadOnlyList<NoteOverviewDto>>();
+
+            overview.Should().NotBeNull();
+            var list = overview!.ToList();
+
+            // User 1 should only see their own dates
+            list.Select(o => o.Date).Should().BeEquivalentTo(new[] { date1, date2 });
+
+            // And the titles in overview should be composed only from user 1's notes
+            list.Select(o => o.Title)
+                .Should()
+                .OnlyContain(title => title.Contains("User1", StringComparison.OrdinalIgnoreCase));
+        }
+
+
 
         [Fact]
         public async Task Get_notes_for_invalid_range_returns_bad_request()
@@ -454,14 +524,12 @@ namespace NotesApp.Api.IntegrationTests.Notes
             // Act: DELETE /api/notes/{id}
             var deleteResponse = await client.DeleteAsync($"/api/notes/{noteId}");
 
-            // Assert: 200 OK (current behaviour of delete endpoint)
-            deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            // Assert: 204 NoContent
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-            // GET by id should no longer succeed
+            // GET by id should no longer succeed → 404 NotFound
             var getByIdResponse = await client.GetAsync($"/api/notes/{noteId}");
-            // With current implementation, GetNoteDetailQuery returns "Note.NotFound" (no metadata),
-            // which the Result profile maps as a generic failure -> 400.
-            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
             // Day summaries should no longer contain the note
             var dayResponse = await client.GetAsync($"/api/notes/day?date={date:yyyy-MM-dd}");
@@ -524,12 +592,13 @@ namespace NotesApp.Api.IntegrationTests.Notes
             attackerResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
 
+
         #endregion
 
         #region Detail for non-existing note
 
         [Fact]
-        public async Task Get_nonexistent_note_detail_returns_bad_request_with_current_handler()
+        public async Task Get_nonexistent_note_detail_returns_not_found()
         {
             // IMPORTANT: current GetNoteDetailQuery handler returns "Note.NotFound" (no metadata),
             // which the Result endpoint profile maps as a generic failure -> 400 (not 404).
@@ -540,7 +609,7 @@ namespace NotesApp.Api.IntegrationTests.Notes
             var response = await client.GetAsync($"/api/notes/{randomId}");
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
 
         #endregion

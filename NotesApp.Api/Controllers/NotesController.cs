@@ -33,10 +33,19 @@ namespace NotesApp.Api.Controllers
         public async Task<ActionResult<NoteDetailDto>> CreateNote([FromBody] CreateNoteCommand command,
                                                             CancellationToken cancellationToken)
         {
-            // MediatR + Result pattern:
-            // Command → Result<NoteDto> → ToActionResult() → ProblemDetails/201/etc.
-            return await _mediator.Send(command, cancellationToken)
-                                        .ToActionResult();
+            var result = await _mediator.Send(command, cancellationToken);
+
+            if (result.IsFailed)
+            {
+                return result.ToActionResult();
+            }
+
+            var dto = result.Value;
+
+            return CreatedAtAction(
+                nameof(GetNoteDetail),
+                new { noteId = dto.NoteId },   // NoteDetailDto.NoteId
+                dto);
         }
 
         [HttpGet("{noteId:guid}")]
@@ -130,9 +139,15 @@ namespace NotesApp.Api.Controllers
         {
             var command = new DeleteNoteCommand(noteId);
 
-            return await _mediator
-                .Send(command, cancellationToken)
-                .ToActionResult();
+            var result = await _mediator.Send(command, cancellationToken);
+
+            if (result.IsFailed)
+            {
+                // Uses ErrorCode = "Notes.NotFound" for 404.
+                return result.ToActionResult();
+            }
+
+            return NoContent();
         }
     }
 }

@@ -2,6 +2,7 @@
 using NotesApp.Api.IntegrationTests.Infrastructure.Hosting;
 using NotesApp.Application.Tasks;
 using NotesApp.Application.Tasks.Models;
+using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -52,14 +53,12 @@ namespace NotesApp.Api.IntegrationTests.Tasks
             // Act: DELETE /api/tasks/{id}
             var deleteResponse = await client.DeleteAsync($"/api/tasks/{taskId}");
 
-            // Assert: 200 OK (current behaviour of delete endpoint)
-            deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            // Assert: 204 NoContent (final behaviour of delete endpoint)
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-            // Verify: GET by id now returns 404
-            var getByIdResponse = await client.GetAsync($"/api/tasks/{taskId}");
-            // Current behaviour: GetTaskDetailQueryHandler returns "Task.NotFound" without ErrorCode metadata,
-            // which our Result profile maps to 400 BadRequest, not 404.
-            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // GET by id should no longer succeed → 404 NotFound
+            var getByIdResponse = await client.GetAsync($"/api/notes/{taskId}");
+            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
             // Verify: day summaries no longer contain the task
             var dayResponse = await client.GetAsync($"/api/tasks/day?date={date:yyyy-MM-dd}");

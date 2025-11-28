@@ -98,6 +98,37 @@ namespace NotesApp.Api.IntegrationTests.Tasks
         }
 
         [Fact]
+        public async Task Updating_nonexistent_task_returns_not_found()
+        {
+            // Arrange
+            var client = _factory.CreateClientAsDefaultUser();
+            var nonExistentTaskId = Guid.NewGuid();
+
+            var date = new DateOnly(2025, 11, 10);
+
+            var updatePayload = new
+            {
+                Date = date,
+                Title = "Updated title",
+                Description = "Some updated description",
+                StartTime = (TimeOnly?)null,
+                EndTime = (TimeOnly?)null,
+                Location = (string?)null,
+                TravelTime = (TimeSpan?)null,
+                ReminderAtUtc = (DateTime?)null
+            };
+
+            // Act
+            var response = await client.PutAsJsonAsync(
+                $"/api/tasks/{nonExistentTaskId}",
+                updatePayload);
+
+            // Assert: controller should map "not found" to 404
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+
+        [Fact]
         public async Task Update_with_empty_title_returns_bad_request()
         {
             // Arrange

@@ -33,8 +33,9 @@ namespace NotesApp.Application.Tasks.Queries
 
             if (task is null || task.UserId != userId)
             {
-                return Result.Fail(new Error("Task.NotFound"));
-                    
+                return Result.Fail(new Error("Task.NotFound")
+                         .WithMetadata("ErrorCode", "Tasks.NotFound"));
+
             }
 
             var dto = task.ToDetailDto();

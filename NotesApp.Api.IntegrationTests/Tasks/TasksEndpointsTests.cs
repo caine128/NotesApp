@@ -51,7 +51,7 @@ namespace NotesApp.Api.IntegrationTests.Tasks
             var createResponse = await _client.PostAsJsonAsync("/api/tasks", createPayload);
 
             // Assert 1: Creation succeeded and returns TaskDetailDto (currently 200 OK)
-            createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
             var created = await createResponse.Content.ReadFromJsonAsync<TaskDetailDto>();
             created.Should().NotBeNull();
@@ -100,6 +100,52 @@ namespace NotesApp.Api.IntegrationTests.Tasks
             summary.Location.Should().Be(createPayload.Location);
             summary.TravelTime.Should().Be(createPayload.TravelTime);
         }
+
+        [Fact]
+        public async Task Get_nonexistent_task_detail_returns_not_found()
+        {
+            // Arrange
+            var nonExistentTaskId = Guid.NewGuid();
+
+            // Act
+            var response = await _client.GetAsync($"api/tasks/{nonExistentTaskId}");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+
+        [Fact]
+        public async Task Get_tasks_for_invalid_range_returns_bad_request()
+        {
+            // Arrange: EndExclusive <= Start should be rejected by validator
+            var start = new DateOnly(2025, 11, 5);
+            var endExclusive = start; // invalid: equal
+
+            // Act
+            var response = await _client.GetAsync(
+                $"api/tasks/range?start={start:yyyy-MM-dd}&endExclusive={endExclusive:yyyy-MM-dd}");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+
+        [Fact]
+        public async Task Get_tasks_for_day_with_default_date_returns_bad_request()
+        {
+            // Validator enforces Date != default(DateOnly).
+            // We simulate default by passing the minimum date value explicitly.
+            var invalidDate = new DateOnly(1, 1, 1); // default(DateOnly)
+
+            // Act
+            var response = await _client.GetAsync(
+                $"api/tasks/day?date={invalidDate:yyyy-MM-dd}");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
 
         [Fact]
         public async Task Tasks_for_day_are_isolated_between_different_users()

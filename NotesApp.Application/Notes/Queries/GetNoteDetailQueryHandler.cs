@@ -31,7 +31,9 @@ namespace NotesApp.Application.Notes.Queries
 
             if (note is null || note.UserId != userId)
             {
-                return Result.Fail(new Error("Note.NotFound"));
+                return Result.Fail(
+                    new Error("Note.NotFound")
+                          .WithMetadata("ErrorCode", "Notes.NotFound"));
             }
 
             var dto = note.ToDetailDto();

@@ -138,6 +138,28 @@ namespace NotesApp.Api.IntegrationTests.Tasks
         }
 
         [Fact]
+        public async Task Changing_completion_of_nonexistent_task_returns_not_found()
+        {
+            // Arrange
+            var client = _factory.CreateClientAsDefaultUser();
+            var nonExistentTaskId = Guid.NewGuid();
+
+            var payload = new
+            {
+                IsCompleted = true
+            };
+
+            // Act
+            var response = await client.PatchAsJsonAsync(
+                $"/api/tasks/{nonExistentTaskId}/completion",
+                payload);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+
+        [Fact]
         public async Task Cannot_change_completion_of_task_belonging_to_another_user()
         {
             // Arrange
