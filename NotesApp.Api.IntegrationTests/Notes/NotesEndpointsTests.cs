@@ -223,8 +223,11 @@ namespace NotesApp.Api.IntegrationTests.Notes
             var list = summaries!.ToList();
             list.Should().HaveCount(3);
 
-            // Ordered by Date (for equal dates, repository/order makes relative order stable enough for this check)
-            list.Select(n => n.Title).Should().BeInAscendingOrder(); // "Note A", "Note B", "Note C"
+            // Ensure results are ordered by date
+            list.Select(n => n.Date).Should().BeInAscendingOrder();
+
+            // Ensure we have the expected notes, regardless of intra-day ordering
+            list.Select(n => n.Title).Should().BeEquivalentTo(new[] { "Note A", "Note B", "Note C" });
         }
 
         [Fact]

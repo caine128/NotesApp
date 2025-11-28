@@ -312,7 +312,7 @@ namespace NotesApp.Api.IntegrationTests.Calendar
                 title,
                 content = "Sample content for calendar tests",
                 summary = (string?)null,
-                tags = Array.Empty<string>()
+                tags = (string?)null          // ✅ matches CreateNoteCommand.Tags (string?)
             };
 
             var response = await client.PostAsJsonAsync("api/notes", payload);
