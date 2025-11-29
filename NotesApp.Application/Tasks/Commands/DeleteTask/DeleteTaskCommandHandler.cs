@@ -80,6 +80,8 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
             }
 
             // 4) Persist changes.
+            // NEW: mark entity modified for EF
+            _taskRepository.Update(taskItem);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Task {TaskId} soft-deleted for user {UserId}.",

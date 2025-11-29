@@ -85,6 +85,8 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
             }
 
             // 5) Persist changes
+            // NEW: mark entity as modified
+            _taskRepository.Update(taskItem);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             // 6) Map to DTO

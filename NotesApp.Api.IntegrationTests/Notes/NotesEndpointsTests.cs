@@ -22,12 +22,13 @@ namespace NotesApp.Api.IntegrationTests.Notes
     public sealed class NotesEndpointsTests : IClassFixture<NotesAppApiFactory>
     {
         private readonly NotesAppApiFactory _factory;
-        private readonly HttpClient _defaultClient;
+        private readonly HttpClient client;
 
         public NotesEndpointsTests(NotesAppApiFactory factory)
         {
             _factory = factory;
-            _defaultClient = _factory.CreateClientAsDefaultUser();
+            var userId = Guid.NewGuid();
+            client = _factory.CreateClientAsUser(userId);
         }
 
         #region Create + Get detail + Day summaries
@@ -48,7 +49,7 @@ namespace NotesApp.Api.IntegrationTests.Notes
             };
 
             // Act 1: Create the note
-            var createResponse = await _defaultClient.PostAsJsonAsync("/api/notes", createPayload);
+            var createResponse = await client.PostAsJsonAsync("/api/notes", createPayload);
 
             // Assert 1: Creation succeeded and returns NoteDetailDto (currently 200 OK)
             createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -67,7 +68,7 @@ namespace NotesApp.Api.IntegrationTests.Notes
             var noteId = created.NoteId;
 
             // Act 2: Get by id
-            var getByIdResponse = await _defaultClient.GetAsync($"/api/notes/{noteId}");
+            var getByIdResponse = await client.GetAsync($"/api/notes/{noteId}");
 
             // Assert 2: 200 OK + same detail
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -82,7 +83,7 @@ namespace NotesApp.Api.IntegrationTests.Notes
             detail.Tags.Should().Be(createPayload.Tags);
 
             // Act 3: Get summaries for the day
-            var dayResponse = await _defaultClient.GetAsync($"/api/notes/day?date={date:yyyy-MM-dd}");
+            var dayResponse = await client.GetAsync($"/api/notes/day?date={date:yyyy-MM-dd}");
 
             // Assert 3: 200 OK + NoteSummaryDto list containing our note
             dayResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -112,7 +113,7 @@ namespace NotesApp.Api.IntegrationTests.Notes
             };
 
             // Act
-            var response = await _defaultClient.PostAsJsonAsync("/api/notes", payload);
+            var response = await client.PostAsJsonAsync("/api/notes", payload);
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -185,7 +186,7 @@ namespace NotesApp.Api.IntegrationTests.Notes
             var emptyDate = new DateOnly(2030, 1, 1);
 
             // Act
-            var response = await _defaultClient.GetAsync($"/api/notes/day?date={emptyDate:yyyy-MM-dd}");
+            var response = await client.GetAsync($"/api/notes/day?date={emptyDate:yyyy-MM-dd}");
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -205,7 +206,7 @@ namespace NotesApp.Api.IntegrationTests.Notes
             var invalidDate = new DateOnly(1, 1, 1); // default(DateOnly)
 
             // Act
-            var response = await _defaultClient.GetAsync($"/api/notes/day?date={invalidDate:yyyy-MM-dd}");
+            var response = await client.GetAsync($"/api/notes/day?date={invalidDate:yyyy-MM-dd}");
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -255,7 +256,6 @@ namespace NotesApp.Api.IntegrationTests.Notes
         public async Task Get_note_overview_for_range_returns_lightweight_overview()
         {
             // Arrange
-            var client = _factory.CreateClientAsDefaultUser();
 
             var start = new DateOnly(2025, 11, 1);
             var endExclusive = start.AddDays(3);
@@ -339,7 +339,7 @@ namespace NotesApp.Api.IntegrationTests.Notes
 
             // Act
             var response =
-                await _defaultClient.GetAsync($"/api/notes/range?start={start:yyyy-MM-dd}&endExclusive={endExclusive:yyyy-MM-dd}");
+                await client.GetAsync($"/api/notes/range?start={start:yyyy-MM-dd}&endExclusive={endExclusive:yyyy-MM-dd}");
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -353,7 +353,6 @@ namespace NotesApp.Api.IntegrationTests.Notes
         public async Task Update_existing_note_updates_all_mutable_fields()
         {
             // Arrange
-            var client = _factory.CreateClientAsDefaultUser();
             var originalDate = new DateOnly(2025, 11, 10);
 
             var createPayload = new
@@ -410,7 +409,6 @@ namespace NotesApp.Api.IntegrationTests.Notes
         public async Task Update_with_empty_title_and_content_returns_bad_request()
         {
             // Arrange
-            var client = _factory.CreateClientAsDefaultUser();
             var date = new DateOnly(2025, 11, 10);
 
             var createPayload = new
@@ -501,7 +499,6 @@ namespace NotesApp.Api.IntegrationTests.Notes
         public async Task Delete_existing_note_returns_NoContent_and_hides_note_from_queries()
         {
             // Arrange
-            var client = _factory.CreateClientAsDefaultUser();
             var date = new DateOnly(2025, 11, 10);
 
             var createPayload = new
@@ -546,7 +543,6 @@ namespace NotesApp.Api.IntegrationTests.Notes
         public async Task Delete_nonexistent_note_returns_NotFound()
         {
             // Arrange
-            var client = _factory.CreateClientAsDefaultUser();
             var nonExistingNoteId = Guid.NewGuid();
 
             // Act
@@ -602,7 +598,6 @@ namespace NotesApp.Api.IntegrationTests.Notes
         {
             // IMPORTANT: current GetNoteDetailQuery handler returns "Note.NotFound" (no metadata),
             // which the Result endpoint profile maps as a generic failure -> 400 (not 404).
-            var client = _factory.CreateClientAsDefaultUser();
             var randomId = Guid.NewGuid();
 
             // Act

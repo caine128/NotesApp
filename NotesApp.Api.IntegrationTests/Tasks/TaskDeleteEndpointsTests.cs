@@ -58,7 +58,7 @@ namespace NotesApp.Api.IntegrationTests.Tasks
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
             // GET by id should no longer succeed → 404 NotFound
-            var getByIdResponse = await client.GetAsync($"/api/notes/{taskId}");
+            var getByIdResponse = await client.GetAsync($"/api/tasks/{taskId}");
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
             // Verify: day summaries no longer contain the task

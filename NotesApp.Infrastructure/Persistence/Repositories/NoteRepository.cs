@@ -33,7 +33,7 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
                                               CancellationToken cancellationToken = default)
         {
             return await _dbContext.Notes
-                .FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
+               .FirstOrDefaultAsync(n => n.Id == id && !n.IsDeleted, cancellationToken);
         }
 
         public async Task AddAsync(Note entity,

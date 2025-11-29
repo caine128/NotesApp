@@ -29,9 +29,15 @@ namespace NotesApp.Api.FluentResults
             // Extract any ErrorCode metadata values from the errors.
             var errorCodes = result.Errors
                 .Select(e =>
-                    e.Metadata.TryGetValue("ErrorCode", out var value) && value is string s
-                        ? s
-                        : null)
+                {
+                    if (e.Metadata.TryGetValue("ErrorCode", out var ec) && ec is string s1)
+                        return s1;
+
+                    if (e.Metadata.TryGetValue("Code", out var c) && c is string s2)
+                        return s2;
+
+                    return null;
+                })
                 .Where(code => !string.IsNullOrWhiteSpace(code))
                 .ToList();
 
