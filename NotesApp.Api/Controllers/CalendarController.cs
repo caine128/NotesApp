@@ -9,7 +9,7 @@ using NotesApp.Application.Calendar.Queries;
 namespace NotesApp.Api.Controllers
 {
     [Route("api/[controller]")]
-    [ApiController]
+    [Authorize(Policy = "ApiScope")]
     [Authorize]
     public sealed class CalendarController : ControllerBase
     {

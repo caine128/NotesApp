@@ -22,6 +22,7 @@ namespace NotesApp.Api.IntegrationTests.Infrastructure.Auth
     {
         public const string SchemeName = "TestAuth";
         public const string UserIdHeaderName = "X-Test-UserId";
+        public const string ScopeHeaderName = "X-Test-Scopes";
 
         // You can also use a static default Guid here if you prefer
         private static readonly Guid DefaultUserId = Guid.Parse("00000000-0000-0000-0000-000000000001");
@@ -43,7 +44,12 @@ namespace NotesApp.Api.IntegrationTests.Infrastructure.Auth
         {
             // Try to read a user id from the test header.
             var headerValue = Context.Request.Headers[UserIdHeaderName].FirstOrDefault();
-
+            
+            // Optional scopes header for tests that need to simulate API scopes
+            var scopeHeader = Context.Request.Headers[ScopeHeaderName].FirstOrDefault();
+            var scopeValue = string.IsNullOrWhiteSpace(scopeHeader)
+                ? null
+                : scopeHeader;
 
             // If no header or invalid GUID => treat as unauthenticated.
             if (string.IsNullOrWhiteSpace(headerValue) || !Guid.TryParse(headerValue, out var userId))
@@ -53,36 +59,32 @@ namespace NotesApp.Api.IntegrationTests.Infrastructure.Auth
                 return Task.FromResult(AuthenticateResult.NoResult());
             }
 
-            /*Guid userId;
-            if (!string.IsNullOrWhiteSpace(headerValue) && Guid.TryParse(headerValue, out var parsed))
-            {
-                userId = parsed;
-            }
-            else
-            {
-                userId = DefaultUserId;
-            }*/
            
             // Claims aligned with what your CurrentUserService expects
-            var claims = new[]
+            var claims = new List<Claim>
             {
                  // Entra-style user id
-                 new Claim("oid", userId.ToString()),
+                 new("oid", userId.ToString()),
 
                  // Standard OIDC subject and .NET NameIdentifier for compatibility
-                 new Claim("sub", userId.ToString()),
-                 new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+                 new("sub", userId.ToString()),
+                 new(ClaimTypes.NameIdentifier, userId.ToString()),
 
-                 new Claim(ClaimTypes.Name, "Integration Test User"),
+                 new(ClaimTypes.Name, "Integration Test User"),
 
                  // Email (so User.Create has something meaningful)
-                 new Claim(ClaimTypes.Email, "integration.test.user@example.com"),
-                 new Claim("email", "integration.test.user@example.com"),
+                 new(ClaimTypes.Email, "integration.test.user@example.com"),
+                 new("email", "integration.test.user@example.com"),
 
                  // Simulated issuer & tenant id for provider resolution
-                 new Claim("iss", "https://test.local"),
-                 new Claim("tid", "00000000-0000-0000-0000-000000000000")};
-
+                 new("iss", "https://test.local"),
+                 new("tid", "00000000-0000-0000-0000-000000000000"),
+        };
+            // ✅ Only add "scp" claim if we actually have a scope value
+            if (!string.IsNullOrWhiteSpace(scopeValue))
+            {
+                claims.Add(new Claim("scp", scopeValue));
+            }
             var identity = new ClaimsIdentity(claims, SchemeName);
             var principal = new ClaimsPrincipal(identity);
             var ticket = new AuthenticationTicket(principal, SchemeName);

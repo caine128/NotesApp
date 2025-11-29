@@ -1,4 +1,5 @@
 ﻿using FluentAssertions;
+using NotesApp.Api.IntegrationTests.Infrastructure.Auth;
 using NotesApp.Api.IntegrationTests.Infrastructure.Hosting;
 using NotesApp.Application.Tasks;
 using NotesApp.Application.Tasks.Models;
@@ -317,6 +318,46 @@ namespace NotesApp.Api.IntegrationTests.Tasks
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         }
+
+
+        [Fact]
+        public async Task Get_tasks_for_day_with_required_scope_returns_ok()
+        {
+            // Arrange
+            var client = _factory.CreateClient();
+
+            var userId = Guid.NewGuid();
+            client.DefaultRequestHeaders.Add(TestAuthHandler.UserIdHeaderName, userId.ToString());
+            client.DefaultRequestHeaders.Add(TestAuthHandler.ScopeHeaderName,
+                "api://d1047ffd-a054-4a9f-aeb0-198996f0c0c6/notes.readwrite");
+
+            var date = new DateOnly(2025, 11, 10);
+
+            // Act
+            var response = await client.GetAsync($"/api/tasks/day?date={date:yyyy-MM-dd}");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+
+        [Fact]
+        public async Task Get_tasks_for_day_without_required_scope_returns_forbidden()
+        {
+            var client = _factory.CreateClient();
+
+            var userId = Guid.NewGuid();
+            client.DefaultRequestHeaders.Add(TestAuthHandler.UserIdHeaderName, userId.ToString());
+            // Notice: no X-Test-Scopes header, or you can send a wrong scope
+
+            var date = new DateOnly(2025, 11, 10);
+
+            var response = await client.GetAsync($"/api/tasks/day?date={date:yyyy-MM-dd}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+
+        
 
         private static async Task<TaskDetailDto> CreateSimpleTask(HttpClient client,
                                                                   DateOnly date,

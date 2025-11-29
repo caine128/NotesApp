@@ -19,6 +19,10 @@ namespace NotesApp.Api.IntegrationTests.Infrastructure.Hosting
     /// </summary>
     public sealed class NotesAppApiFactory : WebApplicationFactory<Program>
     {
+
+        private const string RequiredScope =
+    "api://d1047ffd-a054-4a9f-aeb0-198996f0c0c6/notes.readwrite";
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             // ConfigureTestServices is the recommended way to override services
@@ -44,6 +48,7 @@ namespace NotesApp.Api.IntegrationTests.Infrastructure.Hosting
         {
             var client = CreateClient();
             client.DefaultRequestHeaders.Add(TestAuthHandler.UserIdHeaderName, userId.ToString());
+            client.DefaultRequestHeaders.Add(TestAuthHandler.ScopeHeaderName, RequiredScope);
             return client;
         }
 

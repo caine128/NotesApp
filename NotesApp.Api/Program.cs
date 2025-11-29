@@ -1,4 +1,5 @@
 ﻿using FluentResults.Extensions.AspNetCore;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
@@ -6,8 +7,9 @@ using Microsoft.IdentityModel.Tokens;
 using NotesApp.Api.Configuration;
 using NotesApp.Api.FluentResults;
 using NotesApp.Api.Infrastructure.Errors;
-using NotesApp.Application;              
+using NotesApp.Application;
 using NotesApp.Infrastructure;
+using NotesApp.Infrastructure.Auth;
 using Scalar.AspNetCore;
 
 
@@ -29,10 +31,47 @@ builder.Services
     .ValidateDataAnnotations()
     .ValidateOnStart(); // fail fast at startup if config is invalid
 
-// 4a) Register JwtBearer with the default scheme
-builder.Services
-    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+// 4a) Dev environment: support both Debug header and real JWT
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services
+        .AddAuthentication(options =>
+        {
+            options.DefaultScheme = "DevOrJwt";
+            options.DefaultChallengeScheme = "DevOrJwt";
+        })
+        .AddJwtBearer() // actual JWT bearer, configured below
+        .AddScheme<AuthenticationSchemeOptions, DebugAuthenticationHandler>(
+            DebugAuthenticationHandler.SchemeName, options => { })
+        .AddPolicyScheme("DevOrJwt", "Debug or Jwt", options =>
+        {
+            options.ForwardDefaultSelector = context =>
+            {
+                // If the request has the debug header, use Debug auth
+                if (context.Request.Headers.ContainsKey("X-Debug-User"))
+                {
+                    return DebugAuthenticationHandler.SchemeName;
+                }
+
+                // Otherwise, fall back to standard JwtBearer
+                return JwtBearerDefaults.AuthenticationScheme;
+            };
+        });
+}
+else
+{
+    // Production / non-dev: JWT only, no debug bypass
+    builder.Services
+    .AddAuthentication(options =>
+    {
+        // Default to JWT in general
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
     .AddJwtBearer();
+}
+
+
 
 // 4b) Configure JwtBearerOptions using DI (AuthOptions + environment)
 builder.Services
@@ -80,6 +119,24 @@ builder.Services.AddAuthorization(options =>
     options.FallbackPolicy = new AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
         .Build();
+
+    // Require our custom API scope for normal API access
+    options.AddPolicy("ApiScope", policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireAssertion(ctx =>
+        {
+            // Entra v2 tokens use "scp" (space-separated scopes)
+            var scopeClaim = ctx.User.FindFirst("scp")?.Value;
+            if (string.IsNullOrWhiteSpace(scopeClaim))
+                return false; // <-- no scope => policy fails => 403, not 500
+
+            // TODO: if you want, move this string to configuration
+            // e.g. "api://d1047ffd-a054-4a9f-aeb0-198996f0c0c6/notes.readwrite"
+            return scopeClaim.Split(' ')
+                             .Contains("api://d1047ffd-a054-4a9f-aeb0-198996f0c0c6/notes.readwrite");
+        });
+    });
 });
 
 // 6) Controllers + ProblemDetails + Exception handling
@@ -118,6 +175,7 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 
+    
     // Scalar interactive UI at /scalar
     app.MapScalarApiReference(options =>
     {
