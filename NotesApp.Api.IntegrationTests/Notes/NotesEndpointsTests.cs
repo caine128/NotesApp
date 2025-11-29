@@ -694,11 +694,16 @@ namespace NotesApp.Api.IntegrationTests.Notes
             using var scope = _factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            var note = await db.Notes.AsNoTracking().SingleAsync(n => n.Id == noteId);
+            var note = await db.Notes
+                     .IgnoreQueryFilters()  // <-- ADD THIS
+                     .AsNoTracking()
+                     .SingleAsync(n => n.Id == noteId);
 
             var outbox = await db.OutboxMessages
-                .AsNoTracking()
-                .SingleAsync(o => o.AggregateId == noteId && o.UserId == note.UserId);
+                    .AsNoTracking()
+                    .SingleAsync(o => o.AggregateId == noteId
+                          && o.UserId == note.UserId
+                          && o.MessageType == $"{nameof(Note)}.{NoteEventType.Deleted}");
 
             outbox.AggregateType.Should().Be(nameof(Note));
             outbox.MessageType.Should().Be($"{nameof(Note)}.{NoteEventType.Deleted}");

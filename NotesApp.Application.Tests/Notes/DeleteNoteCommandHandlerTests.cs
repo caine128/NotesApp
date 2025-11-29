@@ -70,10 +70,14 @@ namespace NotesApp.Application.Tests.Notes
             result.IsSuccess.Should().BeTrue();
 
             // Assert note is soft-deleted
-            var persistedNote = await context.Notes.AsNoTracking().SingleAsync(n => n.Id == note.Id);
+            // Assert note is soft-deleted
+            var persistedNote = await context.Notes
+                .IgnoreQueryFilters()  // <-- ADD THIS
+                .AsNoTracking()
+                .SingleAsync(n => n.Id == note.Id);
             persistedNote.IsDeleted.Should().BeTrue();
 
-            // Assert outbox message exists
+            // Assert outbox message exists (OutboxMessages doesn't have a query filter, but being explicit doesn't hurt)
             var outbox = await context.OutboxMessages
                 .AsNoTracking()
                 .SingleAsync(o => o.AggregateId == note.Id && o.UserId == userId);
