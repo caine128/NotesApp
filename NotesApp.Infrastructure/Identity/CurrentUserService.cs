@@ -89,14 +89,18 @@ namespace NotesApp.Infrastructure.Identity
                 principal.FindFirst("tid")?.Value ??
                 "UnknownIssuer";
 
-            // Email & display name are optional, we do best-effort extraction.
+            // Email & display name are optional in the token; we do best-effort extraction.
+            // For Entra ID, "preferred_username" is very often the user's email address.
             var email =
                 principal.FindFirst(ClaimTypes.Email)?.Value ??
-                principal.FindFirst("email")?.Value;
+                principal.FindFirst("email")?.Value ??
+                principal.FindFirst("preferred_username")?.Value ??
+                principal.FindFirst("upn")?.Value;
 
             var displayName =
                 principal.FindFirst(ClaimTypes.Name)?.Value ??
-                principal.FindFirst("name")?.Value;
+                principal.FindFirst("name")?.Value ??
+                principal.FindFirst("preferred_username")?.Value;
 
             // Timestamp for domain audit fields
             var utcNow = DateTime.UtcNow;

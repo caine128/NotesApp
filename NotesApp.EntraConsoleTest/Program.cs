@@ -32,7 +32,7 @@ Console.WriteLine("Access token acquired.");
 Console.WriteLine();
 
 Console.WriteLine("Access token (first 200 chars):");
-Console.WriteLine(result.AccessToken[..200]);
+Console.WriteLine(result.AccessToken);
 Console.WriteLine();
 
 // Now call your API
