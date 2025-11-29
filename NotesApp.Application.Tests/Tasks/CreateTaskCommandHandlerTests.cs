@@ -6,6 +6,8 @@ using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Tasks.Commands.CreateTask;
 using NotesApp.Application.Tests.Infrastructure;
+using NotesApp.Domain.Common;
+using NotesApp.Domain.Entities;
 using NotesApp.Infrastructure.Persistence;
 using NotesApp.Infrastructure.Persistence.Repositories;
 using NotesApp.Infrastructure.Time;
@@ -189,6 +191,64 @@ namespace NotesApp.Application.Tests.Tasks
 
             var tasksInDb = await context.Tasks.ToListAsync();
             tasksInDb.Should().BeEmpty();
+        }
+
+
+        [Fact]
+        public async Task Handle_creates_task_and_emits_outbox_message()
+        {
+            // Arrange
+            await using var context = SqlServerAppDbContextFactory.CreateContext();
+
+            ITaskRepository taskRepository = new TaskRepository(context);
+            IOutboxRepository outboxRepository = new OutboxRepository(context);
+            IUnitOfWork unitOfWork = new UnitOfWork(context);
+            ISystemClock clock = new SystemClock();
+
+            var userId = Guid.NewGuid();
+
+            var currentUserServiceMock = new Mock<ICurrentUserService>();
+            currentUserServiceMock
+                .Setup(s => s.GetUserIdAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(userId);
+
+            var handler = new CreateTaskCommandHandler(
+                taskRepository,
+                outboxRepository,
+                unitOfWork,
+                currentUserServiceMock.Object,
+                clock);
+
+            var date = new DateOnly(2025, 2, 20);
+            var command = new CreateTaskCommand
+            {
+                Date = date,
+                Title = "Task with outbox",
+                StartTime = new TimeOnly(10, 0),
+                EndTime = new TimeOnly(11, 0),
+                Location = "Office",
+                TravelTime = TimeSpan.FromMinutes(15),
+                ReminderAtUtc = DateTime.UtcNow.AddHours(1)
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert basic success
+            result.IsSuccess.Should().BeTrue();
+            var dto = result.Value;
+            dto.Should().NotBeNull();
+
+            // Assert an OutboxMessage row exists for this task
+            var outbox = await context.OutboxMessages
+                .AsNoTracking()
+                .SingleAsync(o => o.AggregateId == dto.TaskId && o.UserId == userId);
+
+            outbox.AggregateType.Should().Be(nameof(TaskItem));
+            outbox.MessageType.Should().Be($"{nameof(TaskItem)}.{TaskEventType.Created}");
+            outbox.Payload.Should().NotBeNullOrWhiteSpace();
+            outbox.ProcessedAtUtc.Should().BeNull();
+            outbox.AttemptCount.Should().Be(0);
         }
     }
 }

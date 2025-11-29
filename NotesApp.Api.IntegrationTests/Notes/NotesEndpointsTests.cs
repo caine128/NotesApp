@@ -1,7 +1,12 @@
 ﻿using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using NotesApp.Api.IntegrationTests.Infrastructure.Hosting;
 using NotesApp.Application.Notes;
 using NotesApp.Application.Notes.Models;
+using NotesApp.Domain.Common;
+using NotesApp.Domain.Entities;
+using NotesApp.Infrastructure.Persistence;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -228,9 +233,9 @@ namespace NotesApp.Api.IntegrationTests.Notes
             var date1 = start.AddDays(1); // 2nd
             var date2 = start.AddDays(3); // 4th
 
-            await CreateSimpleNote(client, date2, "Note C");
-            await CreateSimpleNote(client, date1, "Note B");
-            await CreateSimpleNote(client, date1, "Note A");
+            await CreateSimpleNoteAsync(client, date2, "Note C");
+            await CreateSimpleNoteAsync(client, date1, "Note B");
+            await CreateSimpleNoteAsync(client, date1, "Note A");
 
             // Act
             var response = await client.GetAsync($"/api/notes/range?start={start:yyyy-MM-dd}&endExclusive={endExclusive:yyyy-MM-dd}");
@@ -263,8 +268,8 @@ namespace NotesApp.Api.IntegrationTests.Notes
             var date1 = start;
             var date2 = start.AddDays(1);
 
-            await CreateSimpleNote(client, date1, "Note 1");
-            await CreateSimpleNote(client, date2, "Note 2");
+            await CreateSimpleNoteAsync(client, date1, "Note 1");
+            await CreateSimpleNoteAsync(client, date2, "Note 2");
 
             // Act
             var response =
@@ -299,12 +304,12 @@ namespace NotesApp.Api.IntegrationTests.Notes
             var endExclusive = start.AddDays(5);
 
             // User 1 data (should be visible to user 1)
-            await CreateSimpleNote(user1Client, date1, "User1-Note-1");
-            await CreateSimpleNote(user1Client, date2, "User1-Note-2");
+            await CreateSimpleNoteAsync(user1Client, date1, "User1-Note-1");
+            await CreateSimpleNoteAsync(user1Client, date2, "User1-Note-2");
 
             // User 2 data (must NOT leak into user 1's overview)
-            await CreateSimpleNote(user2Client, date3, "User2-Note-1");
-            await CreateSimpleNote(user2Client, date4, "User2-Note-2");
+            await CreateSimpleNoteAsync(user2Client, date3, "User2-Note-1");
+            await CreateSimpleNoteAsync(user2Client, date4, "User2-Note-2");
 
             // Act: user 1 requests overview for the whole range
             var response = await user1Client.GetAsync(
@@ -622,12 +627,128 @@ namespace NotesApp.Api.IntegrationTests.Notes
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         }
 
+        [Fact]
+        public async Task Create_note_emits_outbox_created_message()
+        {
+            // Arrange
+            var userId = Guid.NewGuid();
+            var clientForUser = _factory.CreateClientAsUser(userId);
+
+            var date = new DateOnly(2025, 11, 10);
+
+            var createPayload = new
+            {
+                Date = date,
+                Title = "Outbox create note",
+                Content = "Some content",
+                Summary = (string?)null,
+                Tags = (string?)null
+            };
+
+            // Act
+            var createResponse = await clientForUser.PostAsJsonAsync("/api/notes", createPayload);
+
+            // Assert: API success
+            createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+            var created = await createResponse.Content.ReadFromJsonAsync<NoteDetailDto>();
+            created.Should().NotBeNull();
+            var noteId = created!.NoteId;
+
+            // Assert: Outbox row exists
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var note = await db.Notes.AsNoTracking().SingleAsync(n => n.Id == noteId);
+
+            var outbox = await db.OutboxMessages
+                .AsNoTracking()
+                .SingleAsync(o => o.AggregateId == noteId && o.UserId == note.UserId);
+
+            outbox.AggregateType.Should().Be(nameof(Note));
+            outbox.MessageType.Should().Be($"{nameof(Note)}.{NoteEventType.Created}");
+            outbox.Payload.Should().NotBeNullOrWhiteSpace();
+            outbox.ProcessedAtUtc.Should().BeNull();
+            outbox.AttemptCount.Should().Be(0);
+        }
+
+
+        [Fact]
+        public async Task Delete_note_emits_outbox_deleted_message()
+        {
+            // Arrange
+            var userId = Guid.NewGuid();
+            var clientForUser = _factory.CreateClientAsUser(userId);
+
+            var date = new DateOnly(2025, 11, 10);
+
+            // 1) Create a note
+            var created = await CreateSimpleNoteAsync(clientForUser, date, "Note to delete");
+            var noteId = created.NoteId;
+
+            // 2) Delete the note
+            var deleteResponse = await clientForUser.DeleteAsync($"/api/notes/{noteId}");
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+            // 3) Assert outbox message
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var note = await db.Notes.AsNoTracking().SingleAsync(n => n.Id == noteId);
+
+            var outbox = await db.OutboxMessages
+                .AsNoTracking()
+                .SingleAsync(o => o.AggregateId == noteId && o.UserId == note.UserId);
+
+            outbox.AggregateType.Should().Be(nameof(Note));
+            outbox.MessageType.Should().Be($"{nameof(Note)}.{NoteEventType.Deleted}");
+            outbox.Payload.Should().NotBeNullOrWhiteSpace();
+        }
+
+
+        [Fact]
+        public async Task Create_note_with_invalid_payload_does_not_emit_outbox_message()
+        {
+            // Arrange
+            var userId = Guid.NewGuid();
+            var clientForUser = _factory.CreateClientAsUser(userId);
+
+            var date = new DateOnly(2025, 11, 10);
+
+            // Invalid: both Title and Content empty
+            var payload = new
+            {
+                Date = date,
+                Title = "",
+                Content = "",
+                Summary = (string?)null,
+                Tags = (string?)null
+            };
+
+            // Act
+            var response = await clientForUser.PostAsJsonAsync("/api/notes", payload);
+
+            // Assert: 400 (or 422 depending on your mapping)
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+            // Assert: no outbox rows for this user
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var count = await db.OutboxMessages
+                .AsNoTracking()
+                .CountAsync(o => o.UserId == userId);
+
+            count.Should().Be(0);
+        }
+
+
 
         #endregion
 
         #region Helpers
 
-        private static async Task<NoteDetailDto> CreateSimpleNote(
+        private static async Task<NoteDetailDto> CreateSimpleNoteAsync(
             HttpClient client,
             DateOnly date,
             string title)

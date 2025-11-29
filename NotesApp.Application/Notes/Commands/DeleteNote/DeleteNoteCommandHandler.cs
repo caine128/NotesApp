@@ -66,7 +66,7 @@ namespace NotesApp.Application.Notes.Commands.DeleteNote
 
             _noteRepository.Update(note);
 
-
+            // Build payload for the worker / diagnostics
             var payload = JsonSerializer.Serialize(new
             {
                 NoteId = note.Id,
@@ -77,14 +77,16 @@ namespace NotesApp.Application.Notes.Commands.DeleteNote
                 OccurredAtUtc = utcNow
             });
 
+            // Create OutboxMessage<Note, NoteEventType.Deleted>
             var outboxResult = OutboxMessage.Create<Note, NoteEventType>(
                 aggregate: note,
                 eventType: NoteEventType.Deleted,
                 payload: payload,
                 utcNow: utcNow);
 
-            if (outboxResult.IsFailure || outboxResult.Value is null)
+            if (outboxResult.IsFailure)
             {
+                // propagate domain errors as a regular Result
                 return outboxResult.ToResult();
             }
 
