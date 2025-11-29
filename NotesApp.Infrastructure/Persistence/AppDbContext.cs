@@ -15,7 +15,7 @@ namespace NotesApp.Infrastructure.Persistence
         public DbSet<UserLogin> UserLogins => Set<UserLogin>();
         public DbSet<TaskItem> Tasks => Set<TaskItem>();
         public DbSet<Note> Notes => Set<Note>();
-
+        public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);

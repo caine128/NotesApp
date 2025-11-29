@@ -4,9 +4,12 @@ using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Domain.Common;
+using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.Json;
 
 namespace NotesApp.Application.Tasks.Commands.DeleteTask
 {
@@ -27,6 +30,7 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
         : IRequestHandler<DeleteTaskCommand, Result>
     {
         private readonly ITaskRepository _taskRepository;
+        private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
@@ -34,12 +38,14 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
 
         public DeleteTaskCommandHandler(
             ITaskRepository taskRepository,
+            IOutboxRepository outboxRepository,
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUserService,
             ISystemClock clock,
             ILogger<DeleteTaskCommandHandler> logger)
         {
             _taskRepository = taskRepository;
+            _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -82,6 +88,30 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
             // 4) Persist changes.
             // NEW: mark entity modified for EF
             _taskRepository.Update(taskItem);
+
+            var payload = JsonSerializer.Serialize(new
+            {
+                TaskId = taskItem.Id,
+                taskItem.UserId,
+                taskItem.Date,
+                taskItem.Title,
+                Event = TaskEventType.Deleted.ToString(),
+                OccurredAtUtc = utcNow
+            });
+
+            var outboxResult = OutboxMessage.Create<TaskItem, TaskEventType>(
+                aggregate: taskItem,
+                eventType: TaskEventType.Deleted,
+                payload: payload,
+                utcNow: utcNow);
+
+            if (outboxResult.IsFailure)
+            {
+                return outboxResult.ToResult();
+            }
+
+            await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Task {TaskId} soft-deleted for user {UserId}.",

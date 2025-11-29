@@ -5,9 +5,12 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Notes.Models;
+using NotesApp.Domain.Common;
+using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.Json;
 
 namespace NotesApp.Application.Notes.Commands.UpdateNote
 {
@@ -15,18 +18,21 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
     : IRequestHandler<UpdateNoteCommand, Result<NoteDetailDto>>
     {
         private readonly INoteRepository _noteRepository;
+        private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
         private readonly ILogger<UpdateNoteCommandHandler> _logger;
 
         public UpdateNoteCommandHandler(INoteRepository noteRepository,
+                                        IOutboxRepository outboxRepository,
                                         IUnitOfWork unitOfWork,
                                         ICurrentUserService currentUserService,
                                         ISystemClock clock,
                                         ILogger<UpdateNoteCommandHandler> logger)
         {
             _noteRepository = noteRepository;
+            _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -69,6 +75,34 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
             }
 
             _noteRepository.Update(note);
+
+            // Outbox for NoteUpdated
+            var payload = JsonSerializer.Serialize(new
+            {
+                NoteId = note.Id,
+                note.UserId,
+                note.Date,
+                note.Title,
+                note.Content,
+                note.Summary,
+                note.Tags,
+                Event = NoteEventType.Updated.ToString(),
+                OccurredAtUtc = utcNow
+            });
+
+            var outboxResult = OutboxMessage.Create<Note, NoteEventType>(
+                aggregate: note,
+                eventType: NoteEventType.Updated,
+                payload: payload,
+                utcNow: utcNow);
+
+            if (outboxResult.IsFailure || outboxResult.Value is null)
+            {
+                return outboxResult.ToResult<OutboxMessage, NoteDetailDto>(_ => note.ToDetailDto());
+            }
+
+            await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(

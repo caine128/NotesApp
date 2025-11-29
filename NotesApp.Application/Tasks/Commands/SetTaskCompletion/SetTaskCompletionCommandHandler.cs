@@ -5,9 +5,12 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Tasks.Models;
+using NotesApp.Domain.Common;
+using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.Json;
 
 namespace NotesApp.Application.Tasks.Commands.SetTaskCompletion
 {
@@ -24,18 +27,21 @@ namespace NotesApp.Application.Tasks.Commands.SetTaskCompletion
         : IRequestHandler<SetTaskCompletionCommand, Result<TaskDetailDto>>
     {
         private readonly ITaskRepository _taskRepository;
+        private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
         private readonly ILogger<SetTaskCompletionCommandHandler> _logger;
 
         public SetTaskCompletionCommandHandler(ITaskRepository taskRepository,
+                                               IOutboxRepository outboxRepository,
                                                IUnitOfWork unitOfWork,
                                                ICurrentUserService currentUserService,
                                                ISystemClock clock,
                                                ILogger<SetTaskCompletionCommandHandler> logger)
         {
             _taskRepository = taskRepository;
+            _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -85,7 +91,30 @@ namespace NotesApp.Application.Tasks.Commands.SetTaskCompletion
             // 4) Mark the entity as modified so EF Core tracks the change.
             _taskRepository.Update(taskItem);
 
-            // 5) Persist changes
+            var payload = JsonSerializer.Serialize(new
+            {
+                TaskId = taskItem.Id,
+                taskItem.UserId,
+                taskItem.Date,
+                taskItem.Title,
+                taskItem.IsCompleted,
+                Event = TaskEventType.CompletionChanged.ToString(),
+                OccurredAtUtc = utcNow
+            });
+
+            var outboxResult = OutboxMessage.Create<TaskItem, TaskEventType>(
+                aggregate: taskItem,
+                eventType: TaskEventType.CompletionChanged,
+                payload: payload,
+                utcNow: utcNow);
+
+            if (outboxResult.IsFailure || outboxResult.Value is null)
+            {
+                return outboxResult.ToResult<OutboxMessage, TaskDetailDto>(_ => taskItem.ToDetailDto());
+            }
+
+            await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             // 6) Return updated DTO as Result.Ok<T>

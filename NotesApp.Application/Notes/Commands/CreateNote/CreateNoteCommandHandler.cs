@@ -5,10 +5,12 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Notes.Models;
+using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.Json;
 
 namespace NotesApp.Application.Notes.Commands.CreateNote
 {
@@ -25,18 +27,21 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
         : IRequestHandler<CreateNoteCommand, Result<NoteDetailDto>>
     {
         private readonly INoteRepository _noteRepository;
+        private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
         private readonly ILogger<CreateNoteCommandHandler> _logger;
 
         public CreateNoteCommandHandler(INoteRepository noteRepository,
+                                        IOutboxRepository outboxRepository, 
                                         IUnitOfWork unitOfWork,
                                         ICurrentUserService currentUserService,
                                         ISystemClock clock,
                                         ILogger<CreateNoteCommandHandler> logger)
         {
             _noteRepository = noteRepository;
+            _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -72,6 +77,36 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
 
             // 4) Persistence: repository + unit of work.
             await _noteRepository.AddAsync(note, cancellationToken);
+
+            // 5) Build outbox payload for NoteCreated
+            var payload = JsonSerializer.Serialize(new
+            {
+                NoteId = note.Id,
+                note.UserId,
+                note.Date,
+                note.Title,
+                note.Content,
+                note.Summary,
+                note.Tags,
+                Event = NoteEventType.Created.ToString(),
+                OccurredAtUtc = utcNow
+            });
+
+            var outboxResult = OutboxMessage.Create(aggregate: note,
+                                                    eventType: NoteEventType.Created,
+                                                    payload: payload,
+                                                    utcNow: utcNow);
+
+            if (outboxResult.IsFailure || outboxResult.Value is null)
+            {
+                // Map domain errors to Result<NoteDetailDto> while still returning the note DTO if you prefer
+                return outboxResult.ToResult<OutboxMessage, NoteDetailDto>(_ => note.ToDetailDto());
+            }
+
+            var outboxMessage = outboxResult.Value;
+            await _outboxRepository.AddAsync(outboxMessage, cancellationToken);
+
+            // 6) Commit transaction
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Created note {NoteId} for user {UserId} on {Date}",
@@ -79,7 +114,7 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
                                    note.UserId,
                                    note.Date);
 
-            // 5) Map domain entity -> DTO
+            // 7) Map domain entity -> DTO
             var dto = note.ToDetailDto();
             return Result.Ok(dto);
         }

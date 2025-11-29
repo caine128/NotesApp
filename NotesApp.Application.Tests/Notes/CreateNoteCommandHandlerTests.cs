@@ -32,6 +32,7 @@ namespace NotesApp.Application.Tests.Notes
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
             INoteRepository noteRepository = new NoteRepository(context);
+            IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
 
@@ -46,6 +47,7 @@ namespace NotesApp.Application.Tests.Notes
 
             var handler = new CreateNoteCommandHandler(
                 noteRepository,
+                outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
                 clock,
@@ -102,6 +104,7 @@ namespace NotesApp.Application.Tests.Notes
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
             INoteRepository noteRepository = new NoteRepository(context);
+            IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
 
@@ -116,6 +119,7 @@ namespace NotesApp.Application.Tests.Notes
 
             var handler = new CreateNoteCommandHandler(
                 noteRepository,
+                outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
                 clock,

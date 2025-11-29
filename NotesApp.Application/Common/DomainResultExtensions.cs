@@ -61,5 +61,24 @@ namespace NotesApp.Application.Common
 
             return Result.Fail<TDest>(errors);
         }
+
+
+        /// <summary>
+        /// Maps a DomainResult&lt;TSource&gt; to a non-generic Result, ignoring the value.
+        /// Useful when you only care about success/failure and want to propagate errors.
+        /// </summary>
+        public static Result ToResult<TSource>(this DomainResult<TSource> domainResult)
+        {
+            if (domainResult.IsSuccess)
+            {
+                return Result.Ok();
+            }
+
+            var errors = domainResult.Errors
+                .Select(e => new Error(e.Code)
+                    .WithMetadata("Message", e.Message));
+
+            return Result.Fail(errors);
+        }
     }
 }

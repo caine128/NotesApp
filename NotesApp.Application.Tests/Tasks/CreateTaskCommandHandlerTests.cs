@@ -32,6 +32,7 @@ namespace NotesApp.Application.Tests.Tasks
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
             ITaskRepository taskRepository = new TaskRepository(context);
+            IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
 
@@ -44,6 +45,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new CreateTaskCommandHandler(
                 taskRepository,
+                outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
                 clock);
@@ -114,6 +116,7 @@ namespace NotesApp.Application.Tests.Tasks
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
             ITaskRepository taskRepository = new TaskRepository(context);
+            IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
 
@@ -126,6 +129,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new CreateTaskCommandHandler(
                 taskRepository,
+                outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
                 clock);
@@ -153,6 +157,7 @@ namespace NotesApp.Application.Tests.Tasks
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
             ITaskRepository taskRepository = new TaskRepository(context);
+            IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
 
@@ -165,6 +170,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new CreateTaskCommandHandler(
                 taskRepository,
+                outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
                 clock);
