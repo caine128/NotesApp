@@ -94,6 +94,8 @@ namespace NotesApp.Domain.Entities
 
             var normalizedTitle = title?.Trim() ?? string.Empty;
             var normalizedDescription = description?.Trim();
+            var normalizedLocation = string.IsNullOrWhiteSpace(location) ? null : location.Trim();
+
 
             if (userId == Guid.Empty)
             {
@@ -130,7 +132,7 @@ namespace NotesApp.Domain.Entities
                                     normalizedDescription,
                                     startTime,
                                     endTime,
-                                    location,
+                                    normalizedLocation,
                                     travelTime,
                                     utcNow);
 
@@ -152,6 +154,8 @@ namespace NotesApp.Domain.Entities
 
             var normalizedTitle = title?.Trim() ?? string.Empty;
             var normalizedDescription = description?.Trim();
+            var normalizedLocation = string.IsNullOrWhiteSpace(location) ? null : location.Trim();
+
 
             if (normalizedTitle.Length == 0)
             {
@@ -183,7 +187,7 @@ namespace NotesApp.Domain.Entities
             Description = normalizedDescription;
             StartTime = startTime;
             EndTime = endTime;
-            Location = location;
+            Location = normalizedLocation;
             TravelTime = travelTime;
 
             Touch(utcNow);

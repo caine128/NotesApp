@@ -10,7 +10,7 @@ using System.Text;
 namespace NotesApp.Application.Tests.Tasks
 {
     /// <summary>
-    /// Tests for TaskRepository using an in-memory SQLite AppDbContext.
+    ///  Tests for TaskRepository using a SQL Server test AppDbContext.
     /// </summary>
     public sealed class TaskRepositoryTests
     {
