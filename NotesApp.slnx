@@ -10,5 +10,6 @@
     <Project Path="NotesApp.Api.IntegrationTests/NotesApp.Api.IntegrationTests.csproj" Id="ab5f1a43-b5a9-46cf-998d-7256fc5263d5" />
     <Project Path="NotesApp.Application.Tests/NotesApp.Application.Tests.csproj" Id="310c88a8-3c40-4f59-9d99-9fec19b2ac56" />
     <Project Path="NotesApp.EntraConsoleTest/NotesApp.EntraConsoleTest.csproj" Id="f4b0f4e0-761e-499c-8065-c6343c8cf4d8" />
+    <Project Path="NotesApp.Worker.Tests/NotesApp.Worker.Tests.csproj" Id="885aaa29-53e0-4dd0-80ad-ecf718b95256" />
   </Folder>
 </Solution>
