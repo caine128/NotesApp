@@ -12,6 +12,7 @@ using NotesApp.Application.Notes.Queries;
 
 namespace NotesApp.Api.Controllers
 {
+    [ApiController]
     [Route("api/[controller]")]
     [Authorize(Policy = "ApiScope")]
     [Authorize]

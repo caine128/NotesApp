@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using NotesApp.Api.Configuration;
 using NotesApp.Api.FluentResults;
 using NotesApp.Api.Infrastructure.Errors;
+using NotesApp.Api.Infrastructure.OpenApi;
 using NotesApp.Application;
 using NotesApp.Infrastructure;
 using NotesApp.Infrastructure.Auth;
@@ -16,6 +17,7 @@ using Scalar.AspNetCore;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHttpContextAccessor();
+
 // 1) Application layer DI
 builder.Services.AddApplicationServices(builder.Configuration);
 
@@ -153,8 +155,16 @@ builder.Services.AddProblemDetails(options =>
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+
+// Required for OpenAPI to discover controller endpoints (not just Minimal APIs)
+builder.Services.AddEndpointsApiExplorer();
+
+// OpenAPI document generation with security schemes for Scalar UI
+builder.Services.AddOpenApi("v1", options =>
+{
+    // Add security scheme definitions so Scalar can display auth options
+    options.AddDocumentTransformer<SecuritySchemeTransformer>();
+});
 
 var app = builder.Build();
 
@@ -173,16 +183,35 @@ AspNetCoreResult.Setup(config =>
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // DEVELOPMENT ONLY: Allow anonymous access to API documentation
+    // The FallbackPolicy (RequireAuthenticatedUser) would otherwise block these.
+    // This is safe because these endpoints are only mapped in Development.
+    // ═══════════════════════════════════════════════════════════════════════════════
 
-    
-    // Scalar interactive UI at /scalar
+    // OpenAPI JSON spec at /openapi/v1.json
+    app.MapOpenApi().AllowAnonymous();
+
+
+    // Scalar interactive UI at /scalar/v1
+    // To authenticate when testing endpoints FROM Scalar:
+    //   1. Click the "Auth" button in Scalar UI
+    //   2. Select "Debug" scheme - it's pre-filled with "dev-user"
+    //   OR
+    //   3. Select "Bearer" scheme and paste a real JWT token
     app.MapScalarApiReference(options =>
     {
         options
             .WithTitle("NotesApp API")
-            .WithTheme(ScalarTheme.Moon); // optional, just looks nice
-    });
+            .WithTheme(ScalarTheme.Moon)
+            .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient)
+            // Use new 2.x API: set Debug as preferred and pre-fill the value
+            .AddPreferredSecuritySchemes("Debug")
+            .AddApiKeyAuthentication("Debug", apiKey =>
+            {
+                apiKey.Value = "dev-user";
+            });
+    }).AllowAnonymous();
 }
 
 // usual middleware

@@ -8,6 +8,7 @@ using NotesApp.Application.Calendar.Queries;
 
 namespace NotesApp.Api.Controllers
 {
+    [ApiController]
     [Route("api/[controller]")]
     [Authorize(Policy = "ApiScope")]
     [Authorize]
