@@ -43,6 +43,7 @@ namespace NotesApp.Infrastructure
             services.AddScoped<INoteRepository, NoteRepository>();
             services.AddScoped<IOutboxRepository, OutboxRepository>();
             services.AddScoped<IUnitOfWork, UnitOfWork>();
+            services.AddScoped<IUserDeviceRepository, UserDeviceRepository>();
 
             // 3) System clock (for time abstraction)
             services.AddSingleton<ISystemClock, SystemClock>();
