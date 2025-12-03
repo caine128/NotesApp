@@ -36,18 +36,13 @@ namespace NotesApp.Application.Devices.Commands.UnregisterDevice
             var device = await _deviceRepository.GetByIdAsync(request.DeviceId, cancellationToken);
             if (device is null || device.UserId != userId)
             {
-                return Result.Fail(new Error("Device.NotFound")
-                    .WithMessage("Device could not be found for the current user."));
+                return Result.Fail(new Error("Device.NotFound"));
             }
 
-            var result = device.Deactivate(_clock.UtcNow);
-            if (result.IsFailure)
+            var domainResult = device.Deactivate(_clock.UtcNow);
+            if (domainResult.IsFailure)
             {
-                var errors = result.Errors
-                    .Select(e => new Error(e.Code).WithMessage(e.Message))
-                    .ToList();
-
-                return Result.Fail(errors);
+                domainResult.ToResult();
             }
 
             _deviceRepository.Update(device);

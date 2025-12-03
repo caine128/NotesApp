@@ -4,6 +4,8 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Devices.Models;
+using NotesApp.Application.Notes.Models;
+using NotesApp.Domain.Entities;
 using NotesApp.Domain.Users;
 using System;
 using System.Collections.Generic;
@@ -59,18 +61,16 @@ namespace NotesApp.Application.Devices.Commands.RegisterDevice
 
                 if (createResult.IsFailure)
                 {
-                    var errors = createResult.Errors
-                        .Select(e => new Error(e.Code).WithMessage(e.Message))
-                        .ToList();
-
-                    return Result.Fail(errors);
+                    // Uses your DomainResult<T> → Result<TDto> extension
+                    return createResult.ToResult<UserDevice, UserDeviceDto>(device => device.ToDto());
                 }
 
                 var device = createResult.Value;
                 await _deviceRepository.AddAsync(device, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-                return Result.Ok(MapToDto(device));
+                var dto = device.ToDto();
+                return Result.Ok(dto);
             }
             else
             {
@@ -81,11 +81,7 @@ namespace NotesApp.Application.Devices.Commands.RegisterDevice
                     var reassignResult = existing.ReassignToUser(userId, utcNow);
                     if (reassignResult.IsFailure)
                     {
-                        var errors = reassignResult.Errors
-                            .Select(e => new Error(e.Code).WithMessage(e.Message))
-                            .ToList();
-
-                        return Result.Fail(errors);
+                        return reassignResult.ToResult();
                     }
                 }
                 else
@@ -93,32 +89,32 @@ namespace NotesApp.Application.Devices.Commands.RegisterDevice
                     // Same user:
                     // - make sure it's active
                     // - update name if changed
-                    existing.Reactivate(utcNow);
+                    var reactivateResult = existing.Reactivate(utcNow);
+                    if (reactivateResult.IsFailure)
+                    {
+                        return reactivateResult.ToResult();
+                    }
+
                     if (!string.IsNullOrWhiteSpace(request.DeviceName))
                     {
-                        existing.UpdateName(request.DeviceName, utcNow);
+                        var updateNameDomainResult = existing.UpdateName(request.DeviceName, utcNow);
+                        if (updateNameDomainResult.IsFailure)
+                        {
+                            updateNameDomainResult.ToResult();
+                        }
                     }
+
                     existing.TouchLastSeen(utcNow);
                 }
 
                 _deviceRepository.Update(existing);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-                return Result.Ok(MapToDto(existing));
+                var dto=existing.ToDto();   
+                return Result.Ok(dto);
             }
         }
 
-        private static UserDeviceDto MapToDto(UserDevice device)
-        {
-            return new UserDeviceDto
-            {
-                Id = device.Id,
-                DeviceToken = device.DeviceToken,
-                Platform = device.Platform,
-                DeviceName = device.DeviceName,
-                LastSeenAtUtc = device.LastSeenAtUtc,
-                IsActive = device.IsActive
-            };
-        }
+       
     }
 }

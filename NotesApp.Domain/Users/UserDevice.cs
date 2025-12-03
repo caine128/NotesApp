@@ -11,6 +11,8 @@ namespace NotesApp.Domain.Users
     /// </summary>
     public sealed class UserDevice : Entity<Guid>
     {
+        private const int MaxDeviceNameLength = 256;
+
         /// <summary>
         /// Owner of this device. All sync / push for this device is scoped to this user.
         /// </summary>
@@ -78,6 +80,12 @@ namespace NotesApp.Domain.Users
                 errors.Add(new DomainError("UserDevice.Platform.Unknown", "Device platform must be specified."));
             }
 
+            if (normalizedName is not null && normalizedName.Length > MaxDeviceNameLength)
+            {
+                errors.Add(new DomainError("UserDevice.Name.TooLong",
+                    $"Device name must be at most {MaxDeviceNameLength} characters long."));
+            }
+
             if (errors.Count > 0)
             {
                 return DomainResult<UserDevice>.Failure(errors.ToArray());
@@ -123,7 +131,18 @@ namespace NotesApp.Domain.Users
         /// </summary>
         public DomainResult UpdateName(string? newName, DateTime utcNow)
         {
-            var normalized = newName?.Trim();
+            // Normalize
+            var normalized = string.IsNullOrWhiteSpace(newName)
+                        ? null
+                        : newName.Trim();
+
+            if (normalized is not null && normalized.Length > MaxDeviceNameLength)
+            {
+                return DomainResult.Failure(
+                    new DomainError("UserDevice.Name.TooLong",
+                        $"Device name must be at most {MaxDeviceNameLength} characters long."));
+            }
+
             DeviceName = normalized;
             LastSeenAtUtc = utcNow;
             Touch(utcNow);
