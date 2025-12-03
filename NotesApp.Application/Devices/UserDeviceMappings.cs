@@ -1,8 +1,6 @@
 ﻿using NotesApp.Application.Devices.Models;
 using NotesApp.Domain.Users;
-using System;
-using System.Collections.Generic;
-using System.Text;
+
 
 namespace NotesApp.Application.Devices
 {

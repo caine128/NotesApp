@@ -100,7 +100,7 @@ namespace NotesApp.Application.Devices.Commands.RegisterDevice
                         var updateNameDomainResult = existing.UpdateName(request.DeviceName, utcNow);
                         if (updateNameDomainResult.IsFailure)
                         {
-                            updateNameDomainResult.ToResult();
+                            return updateNameDomainResult.ToResult();
                         }
                     }
 

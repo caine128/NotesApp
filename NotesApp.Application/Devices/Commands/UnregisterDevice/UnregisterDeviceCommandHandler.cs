@@ -42,7 +42,7 @@ namespace NotesApp.Application.Devices.Commands.UnregisterDevice
             var domainResult = device.Deactivate(_clock.UtcNow);
             if (domainResult.IsFailure)
             {
-                domainResult.ToResult();
+                return domainResult.ToResult();
             }
 
             _deviceRepository.Update(device);

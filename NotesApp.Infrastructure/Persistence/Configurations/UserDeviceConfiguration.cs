@@ -26,7 +26,9 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
                    .HasMaxLength(512);
 
             builder.Property(d => d.Platform)
-                   .IsRequired();
+                   .IsRequired()
+                   .HasConversion<string>()   // or .HasConversion<int>() if you prefer
+                   .HasMaxLength(20);
 
             builder.Property(d => d.DeviceName)
                    .HasMaxLength(256);
@@ -57,6 +59,10 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
 
             // Index for queries by user (often combined with IsActive)
             builder.HasIndex(d => new { d.UserId, d.IsActive });
+
+            // Concurrency token (if your base Entity already configures this, you can remove)
+            builder.Property(d => d.RowVersion)
+                .IsRowVersion();
         }
     }
 }
