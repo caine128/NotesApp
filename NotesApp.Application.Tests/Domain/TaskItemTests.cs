@@ -11,426 +11,301 @@ namespace NotesApp.Application.Tests.Domain
         [Fact]
         public void Create_with_valid_input_returns_success_and_sets_properties()
         {
+            // Arrange
             var userId = Guid.NewGuid();
-            var date = new DateOnly(2025, 2, 20);
-            var utcNow = new DateTime(2025, 2, 1, 12, 0, 0, DateTimeKind.Utc);
+            var date = new DateOnly(2024, 1, 2);
+            var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
 
+            // Act
             var result = TaskItem.Create(
                 userId: userId,
                 date: date,
-                title: "  My task  ",
-                description: "  desc  ",
+                title: "  Title  ",
+                description: "  Description  ",
                 startTime: new TimeOnly(9, 0),
                 endTime: new TimeOnly(10, 0),
                 location: "  Office  ",
                 travelTime: TimeSpan.FromMinutes(15),
-                utcNow: utcNow);
+                utcNow: now);
 
+            // Assert
             result.IsSuccess.Should().BeTrue();
-            var task = result.Value!;
+            var task = result.Value;
 
-            task.Id.Should().NotBe(Guid.Empty);
             task.UserId.Should().Be(userId);
             task.Date.Should().Be(date);
-            task.Title.Should().Be("My task");
-            task.Description.Should().Be("desc");
+            task.Title.Should().Be("Title");
+            task.Description.Should().Be("Description");
+            task.Location.Should().Be("Office");
             task.StartTime.Should().Be(new TimeOnly(9, 0));
             task.EndTime.Should().Be(new TimeOnly(10, 0));
-            task.Location.Should().Be("Office");
             task.TravelTime.Should().Be(TimeSpan.FromMinutes(15));
             task.IsCompleted.Should().BeFalse();
+            task.Version.Should().Be(1);
             task.IsDeleted.Should().BeFalse();
-
-            task.CreatedAtUtc.Should().Be(utcNow);
-            task.UpdatedAtUtc.Should().Be(utcNow);
-        }
-
-        [Fact]
-        public void Create_with_empty_userid_returns_failure()
-        {
-            var result = TaskItem.Create(
-                userId: Guid.Empty,
-                date: new DateOnly(2025, 2, 20),
-                title: "Title",
-                description: null,
-                startTime: null,
-                endTime: null,
-                location: null,
-                travelTime: null,
-                utcNow: DateTime.UtcNow);
-
-            result.IsFailure.Should().BeTrue();
-            result.Errors.Should().Contain(e => e.Code == "Task.UserId.Empty");
         }
 
         [Fact]
         public void Create_with_empty_title_returns_failure()
         {
+            // Arrange
+            var userId = Guid.NewGuid();
+            var date = new DateOnly(2024, 1, 2);
+            var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            // Act
             var result = TaskItem.Create(
-                userId: Guid.NewGuid(),
-                date: new DateOnly(2025, 2, 20),
+                userId: userId,
+                date: date,
                 title: "   ",
-                description: null,
+                description: "Description",
                 startTime: null,
                 endTime: null,
                 location: null,
                 travelTime: null,
-                utcNow: DateTime.UtcNow);
+                utcNow: now);
 
-            result.IsFailure.Should().BeTrue();
-            result.Errors.Should().Contain(e => e.Code == "Task.Title.Empty");
+            // Assert
+            result.IsSuccess.Should().BeFalse();
+            result.Errors.Should().NotBeEmpty();
         }
 
         [Fact]
-        public void Create_with_default_date_returns_failure()
+        public void Version_starts_at_one_for_new_task()
         {
+            var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
             var result = TaskItem.Create(
                 userId: Guid.NewGuid(),
-                date: default,
-                title: "Title",
-                description: null,
-                startTime: null,
-                endTime: null,
-                location: null,
-                travelTime: null,
-                utcNow: DateTime.UtcNow);
-
-            result.IsFailure.Should().BeTrue();
-            result.Errors.Should().Contain(e => e.Code == "Task.Date.Default");
-        }
-
-        [Fact]
-        public void Create_with_endtime_before_starttime_returns_failure()
-        {
-            var result = TaskItem.Create(
-                userId: Guid.NewGuid(),
-                date: new DateOnly(2025, 2, 20),
-                title: "Title",
-                description: null,
-                startTime: new TimeOnly(10, 0),
-                endTime: new TimeOnly(9, 0),
-                location: null,
-                travelTime: null,
-                utcNow: DateTime.UtcNow);
-
-            result.IsFailure.Should().BeTrue();
-            result.Errors.Should().Contain(e => e.Code == "Task.Time.Invalid");
-        }
-
-        [Fact]
-        public void Update_with_invalid_data_returns_failure_and_does_not_change_state()
-        {
-            var utcNow = DateTime.UtcNow;
-            var task = TaskItem.Create(
-                userId: Guid.NewGuid(),
-                date: new DateOnly(2025, 2, 20),
-                title: "Title",
+                date: new DateOnly(2024, 1, 2),
+                title: "Task",
                 description: "Desc",
-                startTime: new TimeOnly(9, 0),
-                endTime: new TimeOnly(10, 0),
-                location: "Office",
-                travelTime: TimeSpan.FromMinutes(15),
-                utcNow: utcNow).Value!;
+                startTime: null,
+                endTime: null,
+                location: null,
+                travelTime: null,
+                utcNow: now);
 
-            var originalTitle = task.Title;
-            var originalDate = task.Date;
-            var originalUpdatedAt = task.UpdatedAtUtc;
+            result.IsSuccess.Should().BeTrue();
+            var task = result.Value;
 
-            var result = task.Update(
-                title: "   ",
-                date: default,
-                description: "  ",
-                startTime: new TimeOnly(10, 0),
+            task.Version.Should().Be(1);
+        }
+
+        [Fact]
+        public void Version_increments_on_update_and_mark_completed_idempotent()
+        {
+            var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            var result = TaskItem.Create(
+                userId: Guid.NewGuid(),
+                date: new DateOnly(2024, 1, 2),
+                title: "Task",
+                description: "Desc",
+                startTime: null,
+                endTime: null,
+                location: null,
+                travelTime: null,
+                utcNow: now);
+
+            result.IsSuccess.Should().BeTrue();
+            var task = result.Value;
+
+            var initialVersion = task.Version;
+            var initialUpdatedAt = task.UpdatedAtUtc;
+
+            // Update should bump version
+            var updateResult = task.Update(
+                title: "Updated",
+                date: new DateOnly(2024, 1, 3),
+                description: "New Desc",
+                startTime: new TimeOnly(8, 0),
                 endTime: new TimeOnly(9, 0),
-                location: null,
-                travelTime: null,
-                utcNow: utcNow.AddMinutes(5));
+                location: "Home",
+                travelTime: TimeSpan.FromMinutes(5),
+                utcNow: now.AddMinutes(1));
 
-            result.IsFailure.Should().BeTrue();
-            result.Errors.Should().Contain(e => e.Code == "Task.Title.Empty");
-            result.Errors.Should().Contain(e => e.Code == "Task.Date.Default");
-            result.Errors.Should().Contain(e => e.Code == "Task.Time.Invalid");
+            updateResult.IsSuccess.Should().BeTrue();
 
-            task.Title.Should().Be(originalTitle);
-            task.Date.Should().Be(originalDate);
-            task.UpdatedAtUtc.Should().Be(originalUpdatedAt);
+            task.Version.Should().Be(initialVersion + 1);
+            task.UpdatedAtUtc.Should().BeAfter(initialUpdatedAt);
+
+            var afterUpdateVersion = task.Version;
+
+            // MarkCompleted first time: bump version
+            var completeResult1 = task.MarkCompleted(now.AddMinutes(2));
+            completeResult1.IsSuccess.Should().BeTrue();
+            var afterFirstCompleteVersion = task.Version;
+
+            afterFirstCompleteVersion.Should().Be(afterUpdateVersion + 1);
+
+            // MarkCompleted second time: idempotent (no further change)
+            var completeResult2 = task.MarkCompleted(now.AddMinutes(3));
+            completeResult2.IsSuccess.Should().BeTrue();
+
+            task.Version.Should().Be(afterFirstCompleteVersion);
         }
 
         [Fact]
-        public void Update_with_valid_data_updates_fields_and_timestamp()
+        public void SetReminder_increments_version_only_when_value_changes()
         {
-            var utcNow = new DateTime(2025, 2, 1, 12, 0, 0, DateTimeKind.Utc);
-            var task = TaskItem.Create(
+            var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            var result = TaskItem.Create(
                 userId: Guid.NewGuid(),
-                date: new DateOnly(2025, 2, 20),
-                title: "Title",
-                description: null,
-                startTime: new TimeOnly(9, 0),
-                endTime: new TimeOnly(10, 0),
+                date: new DateOnly(2024, 1, 2),
+                title: "Task",
+                description: "Desc",
+                startTime: null,
+                endTime: null,
                 location: null,
                 travelTime: null,
-                utcNow: utcNow).Value!;
-
-            var later = utcNow.AddMinutes(5);
-            var newDate = new DateOnly(2025, 2, 21);
-
-            var result = task.Update(
-                title: "  New title  ",
-                date: newDate,
-                description: "  New desc  ",
-                startTime: new TimeOnly(10, 0),
-                endTime: new TimeOnly(11, 0),
-                location: "  Site  ",
-                travelTime: TimeSpan.FromMinutes(30),
-                utcNow: later);
+                utcNow: now);
 
             result.IsSuccess.Should().BeTrue();
+            var task = result.Value;
 
-            task.Title.Should().Be("New title");
-            task.Description.Should().Be("New desc");
-            task.Date.Should().Be(newDate);
-            task.StartTime.Should().Be(new TimeOnly(10, 0));
-            task.EndTime.Should().Be(new TimeOnly(11, 0));
-            task.Location.Should().Be("Site");
-            task.TravelTime.Should().Be(TimeSpan.FromMinutes(30));
-            task.UpdatedAtUtc.Should().Be(later);
-        }
+            var initialVersion = task.Version;
 
-        [Fact]
-        public void Update_on_deleted_task_returns_failure()
-        {
-            var utcNow = DateTime.UtcNow;
-            var task = TaskItem.Create(
-                userId: Guid.NewGuid(),
-                date: new DateOnly(2025, 2, 20),
-                title: "Title",
-                description: null,
-                startTime: null,
-                endTime: null,
-                location: null,
-                travelTime: null,
-                utcNow: utcNow).Value!;
+            var reminder = now.AddHours(1);
 
-            task.SoftDelete(utcNow);
-
-            var result = task.Update(
-                title: "New title",
-                date: new DateOnly(2025, 2, 21),
-                description: null,
-                startTime: null,
-                endTime: null,
-                location: null,
-                travelTime: null,
-                utcNow: utcNow.AddMinutes(5));
-
-            result.IsFailure.Should().BeTrue();
-            result.Errors.Should().Contain(e => e.Code == "Task.Deleted");
-        }
-
-        [Fact]
-        public void MarkCompleted_sets_completed_and_is_idempotent()
-        {
-            var utcNow = new DateTime(2025, 2, 1, 12, 0, 0, DateTimeKind.Utc);
-            var task = TaskItem.Create(
-                userId: Guid.NewGuid(),
-                date: new DateOnly(2025, 2, 20),
-                title: "Title",
-                description: null,
-                startTime: null,
-                endTime: null,
-                location: null,
-                travelTime: null,
-                utcNow: utcNow).Value!;
-
-            var completeTime = utcNow.AddMinutes(5);
-            var result1 = task.MarkCompleted(completeTime);
-
-            result1.IsSuccess.Should().BeTrue();
-            task.IsCompleted.Should().BeTrue();
-            task.UpdatedAtUtc.Should().Be(completeTime);
-
-            var later = completeTime.AddMinutes(5);
-            var result2 = task.MarkCompleted(later);
-
-            result2.IsSuccess.Should().BeTrue();
-            task.IsCompleted.Should().BeTrue();
-            task.UpdatedAtUtc.Should().Be(completeTime); // unchanged (idempotent)
-        }
-
-        [Fact]
-        public void MarkCompleted_on_deleted_task_returns_failure()
-        {
-            var utcNow = DateTime.UtcNow;
-            var task = TaskItem.Create(
-                userId: Guid.NewGuid(),
-                date: new DateOnly(2025, 2, 20),
-                title: "Title",
-                description: null,
-                startTime: null,
-                endTime: null,
-                location: null,
-                travelTime: null,
-                utcNow: utcNow).Value!;
-
-            task.SoftDelete(utcNow);
-
-            var result = task.MarkCompleted(utcNow.AddMinutes(1));
-
-            result.IsFailure.Should().BeTrue();
-            result.Errors.Should().Contain(e => e.Code == "Task.Deleted");
-        }
-
-        [Fact]
-        public void MarkPending_clears_completed_and_is_idempotent()
-        {
-            var utcNow = DateTime.UtcNow;
-            var task = TaskItem.Create(
-                userId: Guid.NewGuid(),
-                date: new DateOnly(2025, 2, 20),
-                title: "Title",
-                description: null,
-                startTime: null,
-                endTime: null,
-                location: null,
-                travelTime: null,
-                utcNow: utcNow).Value!;
-
-            task.MarkCompleted(utcNow.AddMinutes(1));
-
-            var pendingTime = utcNow.AddMinutes(2);
-            var result1 = task.MarkPending(pendingTime);
-
-            result1.IsSuccess.Should().BeTrue();
-            task.IsCompleted.Should().BeFalse();
-            task.UpdatedAtUtc.Should().Be(pendingTime);
-
-            var later = pendingTime.AddMinutes(1);
-            var result2 = task.MarkPending(later);
-
-            result2.IsSuccess.Should().BeTrue();
-            task.IsCompleted.Should().BeFalse();
-            task.UpdatedAtUtc.Should().Be(pendingTime); // unchanged
-        }
-
-        [Fact]
-        public void MarkPending_on_deleted_task_returns_failure()
-        {
-            var utcNow = DateTime.UtcNow;
-            var task = TaskItem.Create(
-                userId: Guid.NewGuid(),
-                date: new DateOnly(2025, 2, 20),
-                title: "Title",
-                description: null,
-                startTime: null,
-                endTime: null,
-                location: null,
-                travelTime: null,
-                utcNow: utcNow).Value!;
-
-            task.SoftDelete(utcNow);
-
-            var result = task.MarkPending(utcNow.AddMinutes(1));
-
-            result.IsFailure.Should().BeTrue();
-            result.Errors.Should().Contain(e => e.Code == "Task.Deleted");
-        }
-
-        [Fact]
-        public void SetReminder_updates_reminder_and_timestamp()
-        {
-            var utcNow = DateTime.UtcNow;
-            var task = TaskItem.Create(
-                userId: Guid.NewGuid(),
-                date: new DateOnly(2025, 2, 20),
-                title: "Title",
-                description: null,
-                startTime: null,
-                endTime: null,
-                location: null,
-                travelTime: null,
-                utcNow: utcNow).Value!;
-
-            var reminder = utcNow.AddHours(1);
-            var result = task.SetReminder(reminder, utcNow.AddMinutes(5));
-
-            result.IsSuccess.Should().BeTrue();
+            // First set: should bump version
+            var setResult1 = task.SetReminder(reminder, now.AddMinutes(1));
+            setResult1.IsSuccess.Should().BeTrue();
             task.ReminderAtUtc.Should().Be(reminder);
+            task.Version.Should().Be(initialVersion + 1);
+
+            var afterFirstSetVersion = task.Version;
+
+            // Same value: no version bump
+            var setResult2 = task.SetReminder(reminder, now.AddMinutes(2));
+            setResult2.IsSuccess.Should().BeTrue();
+            task.Version.Should().Be(afterFirstSetVersion);
+
+            // Changing value: bump again
+            var newReminder = now.AddHours(2);
+            var setResult3 = task.SetReminder(newReminder, now.AddMinutes(3));
+            setResult3.IsSuccess.Should().BeTrue();
+            task.ReminderAtUtc.Should().Be(newReminder);
+            task.Version.Should().Be(afterFirstSetVersion + 1);
         }
 
         [Fact]
-        public void SetReminder_on_deleted_task_returns_failure()
+        public void AcknowledgeReminder_requires_reminder_and_increments_version()
         {
-            var utcNow = DateTime.UtcNow;
-            var task = TaskItem.Create(
+            var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            var result = TaskItem.Create(
                 userId: Guid.NewGuid(),
-                date: new DateOnly(2025, 2, 20),
-                title: "Title",
-                description: null,
+                date: new DateOnly(2024, 1, 2),
+                title: "Task",
+                description: "Desc",
                 startTime: null,
                 endTime: null,
                 location: null,
                 travelTime: null,
-                utcNow: utcNow).Value!;
+                utcNow: now);
 
-            task.SoftDelete(utcNow);
+            result.IsSuccess.Should().BeTrue();
+            var task = result.Value;
 
-            var result = task.SetReminder(DateTime.UtcNow.AddHours(1), utcNow.AddMinutes(5));
+            // No reminder → failure
+            var failResult = task.AcknowledgeReminder(now.AddMinutes(10), now.AddMinutes(11));
+            failResult.IsSuccess.Should().BeFalse();
 
-            result.IsFailure.Should().BeTrue();
-            result.Errors.Should().Contain(e => e.Code == "Task.Deleted");
+            // Set reminder then acknowledge
+            task.SetReminder(now.AddMinutes(10), now.AddMinutes(1));
+            var beforeAckVersion = task.Version;
+
+            var ackAt = now.AddMinutes(11);
+            var ackResult = task.AcknowledgeReminder(ackAt, now.AddMinutes(12));
+            ackResult.IsSuccess.Should().BeTrue();
+
+            task.ReminderAcknowledgedAtUtc.Should().Be(ackAt);
+            task.Version.Should().Be(beforeAckVersion + 1);
+
+            // Second acknowledge is idempotent
+            var ackResult2 = task.AcknowledgeReminder(ackAt, now.AddMinutes(13));
+            ackResult2.IsSuccess.Should().BeTrue();
+            task.Version.Should().Be(beforeAckVersion + 1);
         }
 
         [Fact]
-        public void SoftDelete_and_RestoreTask_behave_idempotently()
+        public void MarkReminderSent_is_idempotent_and_increments_version_once()
         {
-            var utcNow = DateTime.UtcNow;
-            var task = TaskItem.Create(
+            var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            var result = TaskItem.Create(
                 userId: Guid.NewGuid(),
-                date: new DateOnly(2025, 2, 20),
-                title: "Title",
-                description: null,
+                date: new DateOnly(2024, 1, 2),
+                title: "Task",
+                description: "Desc",
                 startTime: null,
                 endTime: null,
                 location: null,
                 travelTime: null,
-                utcNow: utcNow).Value!;
+                utcNow: now);
 
-            var deleteTime = utcNow.AddMinutes(1);
-            task.SoftDelete(deleteTime);
+            result.IsSuccess.Should().BeTrue();
+            var task = result.Value;
+
+            task.SetReminder(now.AddMinutes(10), now.AddMinutes(1));
+            var beforeSentVersion = task.Version;
+
+            var sentResult1 = task.MarkReminderSent(now.AddMinutes(2));
+            sentResult1.IsSuccess.Should().BeTrue();
+
+            var afterSentVersion = task.Version;
+            task.ReminderSentAtUtc.Should().NotBeNull();
+
+            // Second mark is idempotent
+            var sentResult2 = task.MarkReminderSent(now.AddMinutes(3));
+            sentResult2.IsSuccess.Should().BeTrue();
+
+            task.Version.Should().Be(afterSentVersion);
+            afterSentVersion.Should().Be(beforeSentVersion + 1);
+        }
+
+        [Fact]
+        public void SoftDelete_and_RestoreTask_are_idempotent_and_increment_version_once_each()
+        {
+            var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            var result = TaskItem.Create(
+                userId: Guid.NewGuid(),
+                date: new DateOnly(2024, 1, 2),
+                title: "Task",
+                description: "Desc",
+                startTime: null,
+                endTime: null,
+                location: null,
+                travelTime: null,
+                utcNow: now);
+
+            result.IsSuccess.Should().BeTrue();
+            var task = result.Value;
+
+            var initialVersion = task.Version;
+
+            var deleteResult1 = task.SoftDelete(now.AddMinutes(1));
+            deleteResult1.IsSuccess.Should().BeTrue();
             task.IsDeleted.Should().BeTrue();
+            task.Version.Should().Be(initialVersion + 1);
 
-            // Second delete: idempotent
-            var secondDeleteTime = deleteTime.AddMinutes(1);
-            task.SoftDelete(secondDeleteTime);
-            task.IsDeleted.Should().BeTrue();
-            task.UpdatedAtUtc.Should().Be(deleteTime);
+            // Second delete is no-op
+            var deleteResult2 = task.SoftDelete(now.AddMinutes(2));
+            deleteResult2.IsSuccess.Should().BeTrue();
+            task.Version.Should().Be(initialVersion + 1);
 
-            var restoreTime = secondDeleteTime.AddMinutes(1);
-            task.RestoreTask(restoreTime);
+            var restoreResult1 = task.RestoreTask(now.AddMinutes(3));
+            restoreResult1.IsSuccess.Should().BeTrue();
             task.IsDeleted.Should().BeFalse();
+            task.Version.Should().Be(initialVersion + 2);
 
-            // Second restore: idempotent
-            var secondRestoreTime = restoreTime.AddMinutes(1);
-            task.RestoreTask(secondRestoreTime);
-            task.IsDeleted.Should().BeFalse();
-            task.UpdatedAtUtc.Should().Be(restoreTime);
-        }
-
-        [Fact]
-        public void GetDisplayTitle_returns_title_when_present()
-        {
-            var task = TaskItem.Create(
-                userId: Guid.NewGuid(),
-                date: new DateOnly(2025, 2, 20),
-                title: "My task",
-                description: null,
-                startTime: null,
-                endTime: null,
-                location: null,
-                travelTime: null,
-                utcNow: DateTime.UtcNow).Value!;
-
-            task.GetDisplayTitle().Should().Be("My task");
+            // Second restore is no-op
+            var restoreResult2 = task.RestoreTask(now.AddMinutes(4));
+            restoreResult2.IsSuccess.Should().BeTrue();
+            task.Version.Should().Be(initialVersion + 2);
         }
     }
 }

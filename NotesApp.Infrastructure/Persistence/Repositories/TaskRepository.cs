@@ -45,10 +45,9 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
 
         // Task-specific query methods
 
-        public async Task<IReadOnlyList<TaskItem>> GetForDayAsync(
-         Guid userId,
-         DateOnly date,
-         CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<TaskItem>> GetForDayAsync(Guid userId,
+                                                                  DateOnly date,
+                                                                  CancellationToken cancellationToken = default)
         {
             return await _context.Tasks
                 .Where(t => t.UserId == userId
@@ -57,11 +56,10 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
                 .ToListAsync(cancellationToken);
         }
 
-        public async Task<IReadOnlyList<TaskItem>> GetForDateRangeAsync(
-            Guid userId,
-            DateOnly fromInclusive,
-            DateOnly toExclusive,
-            CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<TaskItem>> GetForDateRangeAsync(Guid userId,
+                                                                        DateOnly fromInclusive,
+                                                                        DateOnly toExclusive,
+                                                                        CancellationToken cancellationToken = default)
         {
             return await _context.Tasks
                 .Where(t => t.UserId == userId
@@ -71,5 +69,24 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
                 .ToListAsync(cancellationToken);
         }
 
+        /// <inheritdoc />
+        public async Task<IReadOnlyList<TaskItem>> GetChangedSinceAsync(Guid userId,
+                                                                        DateTime? since,
+                                                                        CancellationToken cancellationToken = default)
+        {
+            if (since is null)
+            {
+                // Initial sync: all non-deleted tasks for the user.
+                return await _context.Tasks
+                    .Where(t => t.UserId == userId && !t.IsDeleted)
+                    .ToListAsync(cancellationToken);
+            }
+
+            // Incremental sync: include soft-deleted tasks as well.
+            return await _context.Tasks
+                .IgnoreQueryFilters()
+                .Where(t => t.UserId == userId && t.UpdatedAtUtc > since.Value)
+                .ToListAsync(cancellationToken);
+        }
     }
 }

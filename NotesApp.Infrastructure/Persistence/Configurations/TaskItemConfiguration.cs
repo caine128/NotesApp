@@ -20,7 +20,11 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
             builder.Property(t => t.RowVersion)
                    .IsRowVersion();
 
-            // Properties
+            // -------------------------
+            // Core properties
+            // -------------------------
+
+
             builder.Property(t => t.UserId)
                    .IsRequired();
 
@@ -38,7 +42,22 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
             builder.Property(t => t.ReminderAtUtc)
                    .HasColumnType("datetime2"); // or "timestamp" etc. for PostgreSQL; provider will adjust
 
+            // Versioning
+            builder.Property(t => t.Version)
+                   .IsRequired()
+                   .HasDefaultValue(1L);
+
+            // Reminder tracking fields
+            builder.Property(t => t.ReminderAcknowledgedAtUtc)
+                   .HasColumnType("datetime2");
+
+            builder.Property(t => t.ReminderSentAtUtc)
+                   .HasColumnType("datetime2");
+
+            // -------------------------
             // Audit fields from base entity
+            // -------------------------
+
             builder.Property(t => t.CreatedAtUtc)
                    .IsRequired()
                    .HasColumnType("datetime2");
@@ -54,12 +73,34 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
             // Soft-delete: filter out deleted tasks automatically
             builder.HasQueryFilter(t => !t.IsDeleted);
 
-            // Indexes to optimize typical queries:
+
+            // -------------------------
+            // Indexes
+            // -------------------------
+
             // 1) Tasks for a given user and date (day view)
             builder.HasIndex(t => new { t.UserId, t.Date });
 
             // 2) Tasks per user (useful for month aggregates, etc.)
             builder.HasIndex(t => t.UserId);
+
+            // 3) Sync-optimized index: user + UpdatedAtUtc
+            builder.HasIndex(t => new { t.UserId, t.UpdatedAtUtc });
+
+            // 4) Filtered index for overdue reminders (for ReminderMonitor worker)
+            builder.HasIndex(
+                    t => new
+                    {
+                        t.UserId,
+                        t.ReminderAtUtc,
+                        t.ReminderAcknowledgedAtUtc,
+                        t.ReminderSentAtUtc
+                    })
+                   .HasDatabaseName("IX_Tasks_OverdueReminders")
+                   .HasFilter("[ReminderAtUtc] IS NOT NULL " +
+                              "AND [ReminderAcknowledgedAtUtc] IS NULL " +
+                              "AND [ReminderSentAtUtc] IS NULL " +
+                              "AND [IsDeleted] = 0");
         }
     }
 }

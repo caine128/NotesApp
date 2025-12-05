@@ -39,6 +39,11 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
             // If you want to cap the size, you can do:
             // .HasMaxLength(4000) or .HasColumnType("nvarchar(max)");
 
+            // Versioning
+            builder.Property(n => n.Version)
+                   .IsRequired()
+                   .HasDefaultValue(1L);
+
             // -------------------------
             // Base Entity<T> properties
             // -------------------------
@@ -75,7 +80,11 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
             // For "notes for day" queries in the calendar/day view.
             builder.HasIndex(n => new { n.UserId, n.Date });
 
+            // For user-level scans
             builder.HasIndex(n => n.UserId);
+
+            // For sync queries (GetChangedSinceAsync)
+            builder.HasIndex(n => new { n.UserId, n.UpdatedAtUtc });
         }
     }
 }

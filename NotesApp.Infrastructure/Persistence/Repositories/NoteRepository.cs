@@ -80,6 +80,25 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
                 .ToListAsync(cancellationToken);
         }
 
+        /// <inheritdoc />
+        public async Task<IReadOnlyList<Note>> GetChangedSinceAsync(Guid userId,
+                                                                    DateTime? since,
+                                                                    CancellationToken cancellationToken = default)
+        {
+            // Initial sync: all non-deleted notes for the user.
+            if (since is null)
+            {
+                return await _dbContext.Notes
+                    .Where(n => n.UserId == userId && !n.IsDeleted)
+                    .ToListAsync(cancellationToken);
+            }
 
+            // Incremental sync: include soft-deleted notes as well, so the caller
+            // can categorise them as "deleted" if IsDeleted == true.
+            return await _dbContext.Notes
+                .IgnoreQueryFilters()
+                .Where(n => n.UserId == userId && n.UpdatedAtUtc > since.Value)
+                .ToListAsync(cancellationToken);
+        }
     }
 }

@@ -32,6 +32,8 @@ namespace NotesApp.Domain.Entities
         public string? Summary { get; private set; }
         public string? Tags { get; private set; }
 
+        public long Version { get; private set; } = 1;
+
         // EF Core constructor
         private Note()
         {
@@ -53,6 +55,7 @@ namespace NotesApp.Domain.Entities
             Content = content;
             Summary = summary;
             Tags = tags;
+            Version = 1;
         }
 
         // FACTORY
@@ -151,6 +154,7 @@ namespace NotesApp.Domain.Entities
             Tags = normalizedTags;
             Date = date;
 
+            IncrementVersion();
             Touch(utcNow);
 
             return DomainResult.Success();
@@ -179,6 +183,7 @@ namespace NotesApp.Domain.Entities
             if (Date != newDate)
             {
                 Date = newDate;
+                IncrementVersion();
                 Touch(utcNow);
             }
 
@@ -195,6 +200,7 @@ namespace NotesApp.Domain.Entities
             }
 
             MarkDeleted(utcNow);
+            IncrementVersion();
             return DomainResult.Success();
         }
 
@@ -207,6 +213,7 @@ namespace NotesApp.Domain.Entities
             }
 
             Restore(utcNow);
+            IncrementVersion();
             return DomainResult.Success();
         }
 
@@ -242,10 +249,15 @@ namespace NotesApp.Domain.Entities
 
             Summary = summary;
             Tags = tags;
+            IncrementVersion();
             Touch(utcNow);
 
             return DomainResult.Success();
         }
 
+        private void IncrementVersion()
+        {
+            Version++;
+        }
     }
 }

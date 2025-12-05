@@ -83,6 +83,14 @@ namespace NotesApp.Application.Devices.Commands.RegisterDevice
                     {
                         return reassignResult.ToResult();
                     }
+                    if (!string.IsNullOrWhiteSpace(request.DeviceName))
+                    {
+                        var updateNameResult = existing.UpdateName(request.DeviceName, utcNow);
+                        if (updateNameResult.IsFailure)
+                        {
+                            return updateNameResult.ToResult();
+                        }
+                    }
                 }
                 else
                 {

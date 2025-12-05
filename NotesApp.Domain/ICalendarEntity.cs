@@ -9,5 +9,6 @@ namespace NotesApp.Domain
     {
         Guid UserId { get; }
         DateOnly Date { get; }
+        long Version { get; }
     }
 }

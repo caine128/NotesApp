@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using NotesApp.Application.Tasks;
+using NotesApp.Application.Tasks.Commands.AcknowledgeReminder;
 using NotesApp.Application.Tasks.Commands.CreateTask;
 using NotesApp.Application.Tasks.Commands.DeleteTask;
 using NotesApp.Application.Tasks.Commands.SetTaskCompletion;
@@ -205,7 +206,35 @@ namespace NotesApp.Api.Controllers
                 .ToActionResult();
         }
 
+        /// <summary>
+        /// Acknowledges a reminder for the specified task.
+        /// </summary>
+        [HttpPost("{taskId:guid}/reminder/acknowledge")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> AcknowledgeReminder(Guid taskId,
+                                                             [FromBody] AcknowledgeTaskReminderRequestDto request,
+                                                             CancellationToken cancellationToken)
+        {
+            var command = new AcknowledgeTaskReminderCommand
+            {
+                TaskId = taskId,
+                DeviceId = request.DeviceId,
+                AcknowledgedAtUtc = request.AcknowledgedAtUtc
+            };
 
+            var result = await _mediator.Send(command, cancellationToken);
+
+            if (result.IsFailed)
+            {
+                // Map domain/app errors to proper ProblemDetails like other endpoints
+                return result.ToActionResult();
+            }
+
+            // Successful acknowledgment => 204 NoContent (no body needed)
+            return NoContent();
+        }
 
         /// <summary>
         /// Request payload used to set the completion state of a task.

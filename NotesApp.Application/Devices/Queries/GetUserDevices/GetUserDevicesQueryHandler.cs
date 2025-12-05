@@ -29,15 +29,7 @@ namespace NotesApp.Application.Devices.Queries.GetUserDevices
 
             var devices = await _deviceRepository.GetActiveDevicesForUserAsync(userId, cancellationToken);
 
-            var dtos = devices.Select(d => new UserDeviceDto
-            {
-                Id = d.Id,
-                DeviceToken = d.DeviceToken,
-                Platform = d.Platform,
-                DeviceName = d.DeviceName,
-                LastSeenAtUtc = d.LastSeenAtUtc,
-                IsActive = d.IsActive
-            }).ToList();
+            var dtos = devices.ToDtoList();
 
             return Result.Ok<IReadOnlyList<UserDeviceDto>>(dtos);
         }

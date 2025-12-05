@@ -1,0 +1,354 @@
+﻿using FluentAssertions;
+using NotesApp.Api.IntegrationTests.Infrastructure.Hosting;
+using NotesApp.Application.Notes.Models;
+using NotesApp.Application.Sync.Models;
+using NotesApp.Application.Tasks.Models;
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Net.Http.Json;
+using System.Text;
+
+namespace NotesApp.Api.IntegrationTests.Sync
+{
+    /// <summary>
+    /// End-to-end tests for the sync pull endpoint:
+    /// - GET /api/sync/changes
+    /// </summary>
+    public sealed class SyncEndpointsTests : IClassFixture<NotesAppApiFactory>
+    {
+        private readonly NotesAppApiFactory _factory;
+
+        public SyncEndpointsTests(NotesAppApiFactory factory)
+        {
+            _factory = factory;
+        }
+
+        [Fact]
+        public async Task Get_changes_initial_returns_empty_when_no_data()
+        {
+            // Arrange
+            var client = _factory.CreateClientAsUser(Guid.NewGuid());
+
+            // Act
+            var response = await client.GetAsync("/api/sync/changes");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var dto = await response.Content.ReadFromJsonAsync<SyncChangesDto>();
+            dto.Should().NotBeNull();
+
+            dto!.Tasks.Created.Should().BeEmpty();
+            dto.Tasks.Updated.Should().BeEmpty();
+            dto.Tasks.Deleted.Should().BeEmpty();
+
+            dto.Notes.Created.Should().BeEmpty();
+            dto.Notes.Updated.Should().BeEmpty();
+            dto.Notes.Deleted.Should().BeEmpty();
+
+            dto.ServerTimestampUtc.Should().NotBe(default);
+        }
+
+        [Fact]
+        public async Task Get_changes_initial_returns_created_tasks_and_notes()
+        {
+            // Arrange
+            var client = _factory.CreateClientAsUser(Guid.NewGuid());
+            var date = new DateOnly(2025, 11, 10);
+
+            // Create a task
+            var createTaskPayload = new
+            {
+                Date = date,
+                Title = "Sync test task",
+                Description = "Created before initial sync",
+                StartTime = (TimeOnly?)null,
+                EndTime = (TimeOnly?)null,
+                Location = "Office",
+                TravelTime = (TimeSpan?)null,
+                ReminderAtUtc = (DateTime?)null
+            };
+
+            var createTaskResponse = await client.PostAsJsonAsync("/api/tasks", createTaskPayload);
+            createTaskResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+            var taskDto = await createTaskResponse.Content.ReadFromJsonAsync<TaskDetailDto>();
+            taskDto.Should().NotBeNull();
+
+            // Create a note
+            var createNotePayload = new
+            {
+                Date = date,
+                Title = "Sync test note",
+                Content = "Note created before initial sync",
+                Summary = "Summary",
+                Tags = "sync,test"
+            };
+
+            var createNoteResponse = await client.PostAsJsonAsync("/api/notes", createNotePayload);
+            createNoteResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+            var noteDto = await createNoteResponse.Content.ReadFromJsonAsync<NoteDetailDto>();
+            noteDto.Should().NotBeNull();
+
+            // Act: initial sync (since = null)
+            var syncResponse = await client.GetAsync("/api/sync/changes");
+
+            // Assert
+            syncResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var syncDto = await syncResponse.Content.ReadFromJsonAsync<SyncChangesDto>();
+            syncDto.Should().NotBeNull();
+
+            syncDto!.Tasks.Created.Should().ContainSingle(t => t.Id == taskDto!.TaskId);
+            syncDto.Tasks.Updated.Should().BeEmpty();
+            syncDto.Tasks.Deleted.Should().BeEmpty();
+
+            syncDto.Notes.Created.Should().ContainSingle(n => n.Id == noteDto!.NoteId);
+            syncDto.Notes.Updated.Should().BeEmpty();
+            syncDto.Notes.Deleted.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Get_changes_incremental_returns_only_changes_since_timestamp()
+        {
+            // Arrange
+            var client = _factory.CreateClientAsUser(Guid.NewGuid());
+            var date = new DateOnly(2025, 11, 10);
+
+            // Create an initial task and note, then perform an initial sync
+            var initialTaskPayload = new
+            {
+                Date = date,
+                Title = "Initial task",
+                Description = "Created before first sync",
+                StartTime = (TimeOnly?)null,
+                EndTime = (TimeOnly?)null,
+                Location = "Office",
+                TravelTime = (TimeSpan?)null,
+                ReminderAtUtc = (DateTime?)null
+            };
+
+            var initialTaskResponse = await client.PostAsJsonAsync("/api/tasks", initialTaskPayload);
+            initialTaskResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+            var initialNotePayload = new
+            {
+                Date = date,
+                Title = "Initial note",
+                Content = "Created before first sync",
+                Summary = "Summary",
+                Tags = "sync,test"
+            };
+
+            var initialNoteResponse = await client.PostAsJsonAsync("/api/notes", initialNotePayload);
+            initialNoteResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+            var initialSyncResponse = await client.GetAsync("/api/sync/changes");
+            initialSyncResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var initialSyncDto = await initialSyncResponse.Content.ReadFromJsonAsync<SyncChangesDto>();
+            initialSyncDto.Should().NotBeNull();
+
+            var since = initialSyncDto!.ServerTimestampUtc;
+
+            // Create a new task and a new note after the initial sync
+            var newTaskPayload = new
+            {
+                Date = date,
+                Title = "New task after sync",
+                Description = "Should appear as created in incremental sync",
+                StartTime = (TimeOnly?)null,
+                EndTime = (TimeOnly?)null,
+                Location = "Office",
+                TravelTime = (TimeSpan?)null,
+                ReminderAtUtc = (DateTime?)null
+            };
+
+            var newTaskResponse = await client.PostAsJsonAsync("/api/tasks", newTaskPayload);
+            newTaskResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            var newTaskDto = await newTaskResponse.Content.ReadFromJsonAsync<TaskDetailDto>();
+            newTaskDto.Should().NotBeNull();
+
+            var newNotePayload = new
+            {
+                Date = date,
+                Title = "New note after sync",
+                Content = "Should appear as created in incremental sync",
+                Summary = "Summary",
+                Tags = "sync,test"
+            };
+
+            var newNoteResponse = await client.PostAsJsonAsync("/api/notes", newNotePayload);
+            newNoteResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            var newNoteDto = await newNoteResponse.Content.ReadFromJsonAsync<NoteDetailDto>();
+            newNoteDto.Should().NotBeNull();
+
+            // Act: incremental sync with since = previous server timestamp (ISO 8601)
+            var sinceParam = Uri.EscapeDataString(since.ToString("O"));
+            var incrementalResponse = await client.GetAsync($"/api/sync/changes?sinceUtc={sinceParam}");
+            incrementalResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var incrementalDto = await incrementalResponse.Content.ReadFromJsonAsync<SyncChangesDto>();
+            incrementalDto.Should().NotBeNull();
+
+            // Assert: only the new task and note are in the "created" buckets
+            incrementalDto!.Tasks.Created.Should().ContainSingle(t => t.Id == newTaskDto!.TaskId);
+            incrementalDto.Tasks.Updated.Should().BeEmpty();
+            incrementalDto.Tasks.Deleted.Should().BeEmpty();
+
+            incrementalDto.Notes.Created.Should().ContainSingle(n => n.Id == newNoteDto!.NoteId);
+            incrementalDto.Notes.Updated.Should().BeEmpty();
+            incrementalDto.Notes.Deleted.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Push_with_created_task_and_note_persists_and_returns_mapping()
+        {
+            // Arrange
+            var client = _factory.CreateClientAsUser(Guid.NewGuid());
+            var deviceId = Guid.NewGuid();
+            var now = DateTime.UtcNow;
+
+            var payload = new SyncPushCommandPayloadDto
+            {
+                DeviceId = deviceId,
+                ClientSyncTimestampUtc = now,
+                Tasks = new SyncPushTasksDto
+                {
+                    Created = new[]
+                    {
+                        new TaskCreatedPushItemDto
+                        {
+                            ClientId = Guid.NewGuid(),
+                            Date = new DateOnly(2025, 11, 10),
+                            Title = "Pushed task",
+                            Description = "Created via sync push"
+                        }
+                    }
+                },
+                Notes = new SyncPushNotesDto
+                {
+                    Created = new[]
+                    {
+                        new NoteCreatedPushItemDto
+                        {
+                            ClientId = Guid.NewGuid(),
+                            Date = new DateOnly(2025, 11, 10),
+                            Title = "Pushed note",
+                            Content = "Created via sync push"
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var response = await client.PostAsJsonAsync("/api/sync/push", payload);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var result = await response.Content.ReadFromJsonAsync<SyncPushResultDto>();
+            result.Should().NotBeNull();
+
+            result!.Tasks.Created.Should().HaveCount(1);
+            result.Tasks.Created[0].Status.Should().Be("created");
+            result.Tasks.Created[0].ServerId.Should().NotBeEmpty();
+            result.Tasks.Created[0].Version.Should().BeGreaterThanOrEqualTo(1);
+
+            result.Notes.Created.Should().HaveCount(1);
+            result.Notes.Created[0].Status.Should().Be("created");
+            result.Notes.Created[0].ServerId.Should().NotBeEmpty();
+            result.Notes.Created[0].Version.Should().BeGreaterThanOrEqualTo(1);
+
+            result.Conflicts.Should().BeEmpty();
+
+            // Optional: verify that the created entities are visible via existing endpoints.
+
+            var dateParam = Uri.EscapeDataString("2025-11-10");
+
+            var tasksDayResponse = await client.GetAsync($"/api/tasks/day?date={dateParam}");
+            tasksDayResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var tasksForDay = await tasksDayResponse.Content.ReadFromJsonAsync<TaskSummaryDto[]>();
+            tasksForDay.Should().NotBeNull();
+            tasksForDay!.Should().Contain(t => t.Title == "Pushed task");
+
+            var notesDayResponse = await client.GetAsync($"/api/notes/day?date={dateParam}");
+            notesDayResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var notesForDay = await notesDayResponse.Content.ReadFromJsonAsync<NoteSummaryDto[]>();
+            notesForDay.Should().NotBeNull();
+            notesForDay!.Should().Contain(n => n.Title == "Pushed note");
+        }
+
+        [Fact]
+        public async Task Push_task_update_with_mismatched_version_returns_conflict()
+        {
+            // Arrange
+            var client = _factory.CreateClientAsUser(Guid.NewGuid());
+            var deviceId = Guid.NewGuid();
+            var now = DateTime.UtcNow;
+            var date = new DateOnly(2025, 11, 10);
+
+            // First create a task via the normal endpoint
+            var createTaskPayload = new
+            {
+                Date = date,
+                Title = "Original task",
+                Description = "Initial",
+                StartTime = (TimeOnly?)null,
+                EndTime = (TimeOnly?)null,
+                Location = (string?)null,
+                TravelTime = (TimeSpan?)null,
+                ReminderAtUtc = (DateTime?)null
+            };
+
+            var createResponse = await client.PostAsJsonAsync("/api/tasks", createTaskPayload);
+            createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+            var createdTask = await createResponse.Content.ReadFromJsonAsync<TaskDetailDto>();
+            createdTask.Should().NotBeNull();
+
+            // Build a push payload with wrong ExpectedVersion
+            var pushPayload = new SyncPushCommandPayloadDto
+            {
+                DeviceId = deviceId,
+                ClientSyncTimestampUtc = now,
+                Tasks = new SyncPushTasksDto
+                {
+                    Updated = new[]
+                    {
+                        new TaskUpdatedPushItemDto
+                        {
+                            Id = createdTask!.TaskId,
+                            ExpectedVersion = 999, // deliberately wrong
+                            Date = createdTask.Date,
+                            Title = "Updated title from client",
+                            Description = createdTask.Description,
+                            StartTime = createdTask.StartTime,
+                            EndTime = createdTask.EndTime,
+                            Location = createdTask.Location,
+                            TravelTime = createdTask.TravelTime,
+                            ReminderAtUtc = createdTask.ReminderAtUtc
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var response = await client.PostAsJsonAsync("/api/sync/push", pushPayload);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var result = await response.Content.ReadFromJsonAsync<SyncPushResultDto>();
+            result.Should().NotBeNull();
+
+            result!.Tasks.Updated.Should().ContainSingle(u => u.Id == createdTask!.TaskId && u.Status == "conflict");
+            result.Conflicts.Should().Contain(c =>
+                c.EntityType == "task" &&
+                c.EntityId == createdTask.TaskId &&
+                c.ConflictType == "version_mismatch");
+        }
+    }
+}
