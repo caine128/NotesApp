@@ -17,7 +17,7 @@ namespace NotesApp.Domain.Common
         /// <summary>
         /// Used by EF Core for optimistic concurrency control.
         /// </summary>
-        public byte[] RowVersion { get; protected set; } = Array.Empty<byte>();
+        public byte[] RowVersion { get; protected set; } = [];
 
         protected Entity()
         {

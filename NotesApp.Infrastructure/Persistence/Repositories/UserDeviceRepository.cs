@@ -7,14 +7,9 @@ using System.Text;
 
 namespace NotesApp.Infrastructure.Persistence.Repositories
 {
-    public sealed class UserDeviceRepository : IUserDeviceRepository
+    public sealed class UserDeviceRepository(AppDbContext context) : IUserDeviceRepository
     {
-        private readonly AppDbContext _context;
-
-        public UserDeviceRepository(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly AppDbContext _context = context;
 
         public async Task<UserDevice?> GetByIdAsync(Guid id,
                                                     CancellationToken cancellationToken = default)
