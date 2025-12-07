@@ -30,35 +30,46 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         private readonly ICurrentUserService _currentUserService;
         private readonly ITaskRepository _taskRepository;
         private readonly INoteRepository _noteRepository;
+        private readonly IUserDeviceRepository _deviceRepository;
         private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISystemClock _clock;
         private readonly ILogger<SyncPushCommandHandler> _logger;
 
-        public SyncPushCommandHandler(
-            ICurrentUserService currentUserService,
-            ITaskRepository taskRepository,
-            INoteRepository noteRepository,
-            IOutboxRepository outboxRepository,
-            IUnitOfWork unitOfWork,
-            ISystemClock clock,
-            ILogger<SyncPushCommandHandler> logger)
+        public SyncPushCommandHandler(ICurrentUserService currentUserService,
+                                      ITaskRepository taskRepository,
+                                      INoteRepository noteRepository,
+                                      IUserDeviceRepository deviceRepository,
+                                      IOutboxRepository outboxRepository,
+                                      IUnitOfWork unitOfWork,
+                                      ISystemClock clock,
+                                      ILogger<SyncPushCommandHandler> logger)
         {
             _currentUserService = currentUserService;
             _taskRepository = taskRepository;
             _noteRepository = noteRepository;
+            _deviceRepository = deviceRepository;
             _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _clock = clock;
             _logger = logger;
         }
 
-        public async Task<Result<SyncPushResultDto>> Handle(
-            SyncPushCommand request,
-            CancellationToken cancellationToken)
+        public async Task<Result<SyncPushResultDto>> Handle(SyncPushCommand request,
+                                                            CancellationToken cancellationToken)
         {
             var userId = await _currentUserService.GetUserIdAsync(cancellationToken);
             var utcNow = _clock.UtcNow;
+
+            // NEW: device ownership / status check
+            var device = await _deviceRepository.GetByIdAsync(request.DeviceId, cancellationToken);
+            if (device is null ||
+                device.UserId != userId ||
+                !device.IsActive ||
+                device.IsDeleted)
+            {
+                return Result.Fail(new Error("Device.NotFound"));
+            }
 
             _logger.LogInformation(
                 "Sync push received from device {DeviceId} for user {UserId} at {UtcNow}",

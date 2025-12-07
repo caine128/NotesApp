@@ -24,6 +24,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
     /// </summary>
     public sealed class SyncPushCommandValidator : AbstractValidator<SyncPushCommand>
     {
+
         public SyncPushCommandValidator()
         {
             RuleFor(x => x.DeviceId)
@@ -33,6 +34,45 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             RuleFor(x => x.ClientSyncTimestampUtc)
                 .Must(t => t != default)
                 .WithMessage("ClientSyncTimestampUtc must be a valid UTC timestamp.");
+
+            RuleFor(x => x.Tasks.Created)
+                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
+                .WithMessage($"Tasks.Created cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+
+            RuleFor(x => x.Tasks.Updated)
+                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
+                .WithMessage($"Tasks.Updated cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+
+            RuleFor(x => x.Tasks.Deleted)
+                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
+                .WithMessage($"Tasks.Deleted cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+
+            RuleFor(x => x.Notes.Created)
+                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
+                .WithMessage($"Notes.Created cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+
+            RuleFor(x => x.Notes.Updated)
+                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
+                .WithMessage($"Notes.Updated cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+
+            RuleFor(x => x.Notes.Deleted)
+                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
+                .WithMessage($"Notes.Deleted cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+
+            RuleFor(x => x)
+                .Must(cmd =>
+                {
+                    var total =
+                        cmd.Tasks.Created.Count +
+                        cmd.Tasks.Updated.Count +
+                        cmd.Tasks.Deleted.Count +
+                        cmd.Notes.Created.Count +
+                        cmd.Notes.Updated.Count +
+                        cmd.Notes.Deleted.Count;
+
+                    return total <= SyncLimits.PushMaxTotalItems;
+                })
+                .WithMessage($"Total number of pushed items must not exceed {SyncLimits.PushMaxTotalItems}.");
 
             RuleForEach(x => x.Tasks.Created)
                 .SetValidator(new TaskCreatedPushItemValidator());

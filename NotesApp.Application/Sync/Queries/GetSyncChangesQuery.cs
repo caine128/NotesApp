@@ -10,6 +10,8 @@ namespace NotesApp.Application.Sync.Queries
     /// <summary>
     /// Query for pulling changes since a given timestamp for the current user.
     /// </summary>
-    public sealed record GetSyncChangesQuery(DateTime? SinceUtc, Guid? DeviceId)
+    public sealed record GetSyncChangesQuery(DateTime? SinceUtc,
+                                             Guid? DeviceId,
+                                             int? MaxItemsPerEntity)
         : IRequest<Result<SyncChangesDto>>;
 }

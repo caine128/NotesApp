@@ -25,16 +25,19 @@ namespace NotesApp.Application.Sync.Queries
     {
         private readonly ITaskRepository _taskRepository;
         private readonly INoteRepository _noteRepository;
+        private readonly IUserDeviceRepository _deviceRepository;
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<GetSyncChangesQueryHandler> _logger;
 
         public GetSyncChangesQueryHandler(ITaskRepository taskRepository,
                                           INoteRepository noteRepository,
+                                          IUserDeviceRepository deviceRepository,
                                           ICurrentUserService currentUserService,
                                           ILogger<GetSyncChangesQueryHandler> logger)
         {
             _taskRepository = taskRepository;
             _noteRepository = noteRepository;
+            _deviceRepository = deviceRepository;
             _currentUserService = currentUserService;
             _logger = logger;
         }
@@ -43,6 +46,20 @@ namespace NotesApp.Application.Sync.Queries
                                                          CancellationToken cancellationToken)
         {
             var userId = await _currentUserService.GetUserIdAsync(cancellationToken);
+
+            // NEW: optional device ownership / status check
+            if (request.DeviceId is Guid deviceId)
+            {
+                var device = await _deviceRepository.GetByIdAsync(deviceId, cancellationToken);
+
+                if (device is null ||
+                    device.UserId != userId ||
+                    !device.IsActive ||    // avoid using inactive devices
+                    device.IsDeleted)      // if global filters ever let it through
+                {
+                    return Result.Fail(new Error("Device.NotFound"));
+                }
+            }
 
             _logger.LogInformation(
                 "Sync pull requested for user {UserId} since {SinceUtc} with device {DeviceId}",
@@ -65,19 +82,81 @@ namespace NotesApp.Application.Sync.Queries
             var tasksBuckets = CategoriseTasks(tasks, request.SinceUtc);
             var notesBuckets = CategoriseNotes(notes, request.SinceUtc);
 
+            // Determine effective max items per entity (tasks/notes)
+            var effectiveMax = request.MaxItemsPerEntity ?? SyncLimits.DefaultPullMaxItemsPerEntity; ;
+
+            // Materialise lists so we can safely truncate them
+            var taskCreated = tasksBuckets.Created.ToList();
+            var taskUpdated = tasksBuckets.Updated.ToList();
+            var taskDeleted = tasksBuckets.Deleted.ToList();
+
+            var noteCreated = notesBuckets.Created.ToList();
+            var noteUpdated = notesBuckets.Updated.ToList();
+            var noteDeleted = notesBuckets.Deleted.ToList();
+
+            var totalTaskChanges = taskCreated.Count + taskUpdated.Count + taskDeleted.Count;
+            var totalNoteChanges = noteCreated.Count + noteUpdated.Count + noteDeleted.Count;
+
+            var hasMoreTasks = totalTaskChanges > effectiveMax;
+            var hasMoreNotes = totalNoteChanges > effectiveMax;
+
+            static List<T> LimitList<T>(List<T> source, ref int remaining)
+            {
+                if (remaining <= 0)
+                {
+                    return new List<T>();
+                }
+
+                if (source.Count <= remaining)
+                {
+                    remaining -= source.Count;
+                    return source;
+                }
+
+                var result = source.Take(remaining).ToList();
+                remaining = 0;
+                return result;
+            }
+
+            // Apply limit per entity type independently
+            var taskRemaining = effectiveMax;
+            var limitedTaskCreated = LimitList(taskCreated, ref taskRemaining);
+            var limitedTaskUpdated = LimitList(taskUpdated, ref taskRemaining);
+            var limitedTaskDeleted = LimitList(taskDeleted, ref taskRemaining);
+
+            var noteRemaining = effectiveMax;
+            var limitedNoteCreated = LimitList(noteCreated, ref noteRemaining);
+            var limitedNoteUpdated = LimitList(noteUpdated, ref noteRemaining);
+            var limitedNoteDeleted = LimitList(noteDeleted, ref noteRemaining);
+
+            var limitedTasksBuckets = new SyncTasksChangesDto
+            {
+                Created = limitedTaskCreated,
+                Updated = limitedTaskUpdated,
+                Deleted = limitedTaskDeleted
+            };
+
+            var limitedNotesBuckets = new SyncNotesChangesDto
+            {
+                Created = limitedNoteCreated,
+                Updated = limitedNoteUpdated,
+                Deleted = limitedNoteDeleted
+            };
+
             var dto = new SyncChangesDto
             {
                 ServerTimestampUtc = serverTimestampUtc,
-                Tasks = tasksBuckets,
-                Notes = notesBuckets
+                Tasks = limitedTasksBuckets,
+                Notes = limitedNotesBuckets,
+                HasMoreTasks = hasMoreTasks,
+                HasMoreNotes = hasMoreNotes
             };
 
             return Result.Ok(dto);
         }
 
-        private static SyncTasksChangesDto CategoriseTasks(
-            IReadOnlyList<TaskItem> tasks,
-            DateTime? sinceUtc)
+        private static SyncTasksChangesDto CategoriseTasks(IReadOnlyList<TaskItem> tasks,
+                                                           DateTime? sinceUtc)
         {
             // Initial sync (since == null): everything is "created" (non-deleted only,
             // because the repository already filters out deleted items in that branch).

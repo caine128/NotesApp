@@ -7,6 +7,7 @@ using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Sync.Models;
 using NotesApp.Application.Sync.Queries;
 using NotesApp.Domain.Entities;
+using NotesApp.Domain.Users;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -17,6 +18,7 @@ namespace NotesApp.Application.Tests.Sync
     {
         private readonly Mock<ITaskRepository> _taskRepositoryMock = new();
         private readonly Mock<INoteRepository> _noteRepositoryMock = new();
+        private readonly Mock<IUserDeviceRepository> _deviceRepositoryMock = new();
         private readonly Mock<ICurrentUserService> _currentUserServiceMock = new();
         private readonly Mock<ILogger<GetSyncChangesQueryHandler>> _loggerMock = new();
 
@@ -31,8 +33,39 @@ namespace NotesApp.Application.Tests.Sync
             return new GetSyncChangesQueryHandler(
                 _taskRepositoryMock.Object,
                 _noteRepositoryMock.Object,
+                _deviceRepositoryMock.Object,
                 _currentUserServiceMock.Object,
                 _loggerMock.Object);
+        }
+
+        [Fact]
+        public async Task Handle_with_non_owned_device_returns_DeviceNotFound_error()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var otherUserId = Guid.NewGuid();
+            var deviceId = Guid.NewGuid();
+
+            // Device belongs to someone else
+            var foreignDevice = UserDevice.Create(
+                otherUserId,
+                "token-123",
+                DevicePlatform.Android,
+                "Other device",
+                DateTime.UtcNow).Value!;
+
+            _deviceRepositoryMock
+                .Setup(r => r.GetByIdAsync(deviceId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(foreignDevice);
+
+            var query = new GetSyncChangesQuery(SinceUtc: null, DeviceId: deviceId, MaxItemsPerEntity: null);
+
+            // Act
+            var result = await handler.Handle(query, CancellationToken.None);
+
+            // Assert
+            result.IsFailed.Should().BeTrue();
+            result.Errors.Should().Contain(e => e.Message == "Device.NotFound");
         }
 
         [Fact]
@@ -54,7 +87,7 @@ namespace NotesApp.Application.Tests.Sync
                 .ReturnsAsync(new List<Note> { note });
 
             var handler = CreateHandler();
-            var query = new GetSyncChangesQuery(SinceUtc: null, DeviceId: null);
+            var query = new GetSyncChangesQuery(SinceUtc: null, DeviceId: null,MaxItemsPerEntity:null);
 
             // Act
             Result<SyncChangesDto> result = await handler.Handle(query, CancellationToken.None);
@@ -123,7 +156,7 @@ namespace NotesApp.Application.Tests.Sync
                 .ReturnsAsync(new List<Note> { createdNote, updatedNote, deletedNote });
 
             var handler = CreateHandler();
-            var query = new GetSyncChangesQuery(SinceUtc: since, DeviceId: null);
+            var query = new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity:null);
 
             // Act
             var result = await handler.Handle(query, CancellationToken.None);

@@ -39,10 +39,11 @@ namespace NotesApp.Api.Controllers
         [HttpGet("changes")]
         [ProducesResponseType(typeof(SyncChangesDto), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetChanges([FromQuery] DateTime? sinceUtc,
-                                                    [FromQuery] Guid? deviceId,
+                                                    [FromQuery] Guid? deviceId,                                          
+                                                    [FromQuery] int? maxItemsPerEntity,
                                                     CancellationToken cancellationToken)
         {
-            var query = new GetSyncChangesQuery(sinceUtc, deviceId);
+            var query = new GetSyncChangesQuery(sinceUtc, deviceId, maxItemsPerEntity);
 
             var result = await _mediator.Send(query, cancellationToken);
 

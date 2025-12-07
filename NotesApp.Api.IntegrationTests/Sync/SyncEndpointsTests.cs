@@ -246,6 +246,10 @@ namespace NotesApp.Api.IntegrationTests.Sync
             // Act
             var response = await client.PostAsJsonAsync("/api/sync/push", payload);
 
+            // TEMP: debug output
+            var errorContent = await response.Content.ReadAsStringAsync();
+            Console.WriteLine(errorContent);
+
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -349,6 +353,68 @@ namespace NotesApp.Api.IntegrationTests.Sync
                 c.EntityType == "task" &&
                 c.EntityId == createdTask.TaskId &&
                 c.ConflictType == "version_mismatch");
+        }
+
+        [Fact]
+        public async Task Get_changes_respects_maxItemsPerEntity_and_truncates_results()
+        {
+            // Arrange
+            var client = _factory.CreateClientAsUser(Guid.NewGuid());
+            var date = new DateOnly(2025, 11, 10);
+
+            // Create 3 tasks
+            for (int i = 0; i < 3; i++)
+            {
+                var createTaskPayload = new
+                {
+                    Date = date,
+                    Title = $"Task {i}",
+                    Description = "For pagination test",
+                    StartTime = (TimeOnly?)null,
+                    EndTime = (TimeOnly?)null,
+                    Location = "Office",
+                    TravelTime = (TimeSpan?)null,
+                    ReminderAtUtc = (DateTime?)null
+                };
+
+                var response = await client.PostAsJsonAsync("/api/tasks", createTaskPayload);
+                response.StatusCode.Should().Be(HttpStatusCode.Created);
+            }
+
+            // Create 3 notes
+            for (int i = 0; i < 3; i++)
+            {
+                var createNotePayload = new
+                {
+                    Date = date,
+                    Title = $"Note {i}",
+                    Content = "For pagination test",
+                    Summary = "Summary",
+                    Tags = "sync,test"
+                };
+
+                var response = await client.PostAsJsonAsync("/api/notes", createNotePayload);
+                response.StatusCode.Should().Be(HttpStatusCode.Created);
+            }
+
+            // Act: initial sync but ask for maxItemsPerEntity = 2
+            var responseSync = await client.GetAsync("/api/sync/changes?maxItemsPerEntity=2");
+            responseSync.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var dto = await responseSync.Content.ReadFromJsonAsync<SyncChangesDto>();
+            dto.Should().NotBeNull();
+
+            // Assert: at most 2 task changes and 2 note changes per entity type
+            dto!.Tasks.Created.Should().HaveCount(2);
+            dto.Tasks.Updated.Should().BeEmpty();
+            dto.Tasks.Deleted.Should().BeEmpty();
+
+            dto.Notes.Created.Should().HaveCount(2);
+            dto.Notes.Updated.Should().BeEmpty();
+            dto.Notes.Deleted.Should().BeEmpty();
+
+            dto.HasMoreTasks.Should().BeTrue();
+            dto.HasMoreNotes.Should().BeTrue();
         }
     }
 }

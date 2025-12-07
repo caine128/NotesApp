@@ -16,11 +16,19 @@ namespace NotesApp.Application.Sync.Queries
     /// </summary>
     public sealed class GetSyncChangesQueryValidator : AbstractValidator<GetSyncChangesQuery>
     {
+
         public GetSyncChangesQueryValidator()
         {
             RuleFor(x => x.DeviceId)
                 .Must(id => !id.HasValue || id.Value != Guid.Empty)
                 .WithMessage("DeviceId, if provided, must not be empty.");
+
+            RuleFor(x => x.MaxItemsPerEntity)
+                .Must(m => m == null || m > 0)
+                .WithMessage("MaxItemsPerEntity, if provided, must be greater than zero.")
+                .Must(m => m == null || m <= SyncLimits.HardPullMaxItemsPerEntity)
+                .WithMessage($"MaxItemsPerEntity, if provided, must not exceed {SyncLimits.HardPullMaxItemsPerEntity}.");
+
         }
     }
 }

@@ -14,6 +14,17 @@ namespace NotesApp.Application.Sync.Models
 
         public SyncTasksChangesDto Tasks { get; init; } = new();
         public SyncNotesChangesDto Notes { get; init; } = new();
+
+        /// <summary>
+        /// True when the server had more task changes than were included
+        /// in this response (based on MaxItemsPerEntity).
+        /// </summary>
+        public bool HasMoreTasks { get; init; }
+        /// <summary>
+        /// True when the server had more note changes than were included
+        /// in this response (based on MaxItemsPerEntity).
+        /// </summary>
+        public bool HasMoreNotes { get; init; }
     }
 
     public sealed record SyncTasksChangesDto

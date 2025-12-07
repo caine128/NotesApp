@@ -8,6 +8,7 @@ using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Sync.Commands.SyncPush;
 using NotesApp.Application.Sync.Models;
 using NotesApp.Domain.Entities;
+using NotesApp.Domain.Users;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -19,6 +20,7 @@ namespace NotesApp.Application.Tests.Sync
         private readonly Mock<ICurrentUserService> _currentUserServiceMock = new();
         private readonly Mock<ITaskRepository> _taskRepositoryMock = new();
         private readonly Mock<INoteRepository> _noteRepositoryMock = new();
+        private readonly Mock<IUserDeviceRepository> _deviceRepositoryMock = new();
         private readonly Mock<IOutboxRepository> _outboxRepositoryMock = new();
         private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
         private readonly Mock<ISystemClock> _clockMock = new();
@@ -42,10 +44,23 @@ namespace NotesApp.Application.Tests.Sync
                 .Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
                 .Returns(Task.CompletedTask);
 
+            // NEW: by default, device exists, belongs to user, and is active
+            var device = UserDevice.Create(
+                _userId,
+                "test-token",
+                DevicePlatform.Android,
+                "Test device",
+                _now).Value!;
+
+            _deviceRepositoryMock
+                .Setup(r => r.GetByIdAsync(_deviceId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(device);
+
             return new SyncPushCommandHandler(
                 _currentUserServiceMock.Object,
                 _taskRepositoryMock.Object,
                 _noteRepositoryMock.Object,
+                _deviceRepositoryMock.Object,
                 _outboxRepositoryMock.Object,
                 _unitOfWorkMock.Object,
                 _clockMock.Object,
@@ -218,6 +233,98 @@ namespace NotesApp.Application.Tests.Sync
             dto.Conflicts.Should().BeEmpty();
         }
 
+        [Fact]
+        public async Task Handle_with_nonexistent_device_returns_DeviceNotFound()
+        {
+            // Arrange
+            var handler = CreateHandler();
+
+            _deviceRepositoryMock
+                .Setup(r => r.GetByIdAsync(_deviceId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((UserDevice?)null);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Tasks = new SyncPushTasksDto(),
+                Notes = new SyncPushNotesDto()
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsFailed.Should().BeTrue();
+            result.Errors.Should().Contain(e => e.Message == "Device.NotFound");
+        }
+
+        [Fact]
+        public async Task Handle_with_foreign_device_returns_DeviceNotFound()
+        {
+            // Arrange
+            var handler = CreateHandler();
+
+            var otherUserId = Guid.NewGuid();
+            var foreignDevice = UserDevice.Create(
+                otherUserId,
+                "foreign-token",
+                DevicePlatform.IOS,
+                "Foreign",
+                _now).Value!;
+
+            _deviceRepositoryMock
+                .Setup(r => r.GetByIdAsync(_deviceId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(foreignDevice);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsFailed.Should().BeTrue();
+            result.Errors.Should().Contain(e => e.Message == "Device.NotFound");
+        }
+
+        [Fact]
+        public async Task Handle_with_inactive_device_returns_DeviceNotFound()
+        {
+            // Arrange
+            var handler = CreateHandler();
+
+            var device = UserDevice.Create(
+                _userId,
+                "token-inactive",
+                DevicePlatform.Android,
+                "Inactive device",
+                _now).Value!;
+
+            device.Deactivate(_now); // sets IsActive=false
+
+            _deviceRepositoryMock
+                .Setup(r => r.GetByIdAsync(_deviceId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(device);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsFailed.Should().BeTrue();
+            result.Errors.Should().Contain(e => e.Message == "Device.NotFound");
+        }
+
+
         private static TaskItem CreateTaskItem(Guid userId, DateTime utcNow)
         {
             var createResult = TaskItem.Create(
@@ -249,5 +356,7 @@ namespace NotesApp.Application.Tests.Sync
             createResult.IsSuccess.Should().BeTrue();
             return createResult.Value;
         }
+
+
     }
 }
