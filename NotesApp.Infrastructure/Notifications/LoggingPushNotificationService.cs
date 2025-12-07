@@ -61,5 +61,43 @@ namespace NotesApp.Infrastructure.Notifications
             // Later: this is where we'll call real NotificationSender / FCM / APNs.
             return Result.Ok();
         }
+
+
+        public async Task<Result> SendTaskReminderAsync(Guid userId,
+                                                        Guid taskId,
+                                                        string title,
+                                                        string? body,
+                                                        CancellationToken cancellationToken = default)
+        {
+            var devices = await _deviceRepository
+                .GetActiveDevicesForUserAsync(userId, cancellationToken);
+
+            if (devices.Count == 0)
+            {
+                _logger.LogInformation(
+                    "TaskReminder: no target devices for user {UserId}, task {TaskId}.",
+                    userId,
+                    taskId);
+
+                return Result.Ok();
+            }
+
+            var tokens = devices
+                .Select(d => d.DeviceToken)
+                .Where(t => !string.IsNullOrWhiteSpace(t))
+                .ToArray();
+
+            _logger.LogInformation(
+                "TaskReminder: would send reminder for task {TaskId} to {DeviceCount} device(s) " +
+                "for user {UserId}. Title='{Title}', Body='{Body}', Tokens={Tokens}",
+                taskId,
+                tokens.Length,
+                userId,
+                title,
+                body ?? string.Empty,
+                tokens);
+
+            return Result.Ok();
+        }
     }
 }

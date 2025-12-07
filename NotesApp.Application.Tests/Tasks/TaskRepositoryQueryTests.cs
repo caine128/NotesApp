@@ -121,5 +121,80 @@ namespace NotesApp.Application.Tests.Tasks
 
             result.Select(t => t.Title).Should().BeEquivalentTo("In range 1", "In range 2", "In range 3");
         }
+
+        [Fact]
+        public async Task GetOverdueRemindersAsync_returns_only_overdue_not_sent_not_acknowledged_tasks()
+        {
+            await using var context = SqlServerAppDbContextFactory.CreateContext();
+
+            var repository = new TaskRepository(context);
+
+            var userId = Guid.NewGuid();
+            var utcNow = DateTime.UtcNow;
+
+            // Helper to create tasks with different reminder states.
+            TaskItem CreateTask(string title, DateTime? reminderAtUtc,
+                DateTime? reminderSentAtUtc = null,
+                DateTime? reminderAcknowledgedAtUtc = null,
+                bool isDeleted = false)
+            {
+                var task = TaskItem.Create(
+                    userId,
+                    new DateOnly(utcNow.Year, utcNow.Month, utcNow.Day),
+                    title,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    utcNow).Value!;
+
+                if (reminderAtUtc.HasValue)
+                {
+                    task.SetReminder(reminderAtUtc.Value, utcNow);
+                }
+
+                if (reminderSentAtUtc.HasValue)
+                {
+                    // Simulate already sent reminder.
+                    task.SetReminder(reminderAtUtc ?? utcNow, utcNow);
+                    task.MarkReminderSent(reminderSentAtUtc.Value);
+                }
+
+                if (reminderAcknowledgedAtUtc.HasValue)
+                {
+                    // Simulate acknowledged reminder.
+                    task.SetReminder(reminderAtUtc ?? utcNow, utcNow);
+                    task.AcknowledgeReminder(reminderAcknowledgedAtUtc.Value, utcNow);
+                }
+
+                if (isDeleted)
+                {
+                    task.SoftDelete(utcNow);
+                }
+
+                return task;
+            }
+
+            var overdue = CreateTask("Overdue", utcNow.AddMinutes(-10));
+            var future = CreateTask("Future", utcNow.AddMinutes(10));
+            var alreadySent = CreateTask("AlreadySent", utcNow.AddMinutes(-20), reminderSentAtUtc: utcNow.AddMinutes(-5));
+            var acknowledged = CreateTask("Acknowledged", utcNow.AddMinutes(-30), reminderAcknowledgedAtUtc: utcNow.AddMinutes(-1));
+            var deleted = CreateTask("Deleted", utcNow.AddMinutes(-40));
+            deleted.SoftDelete(utcNow);
+
+            await context.Tasks.AddRangeAsync(overdue, future, alreadySent, acknowledged, deleted);
+            await context.SaveChangesAsync();
+
+            // Act
+            var result = await repository.GetOverdueRemindersAsync(
+                utcNow,
+                maxResults: 10,
+                cancellationToken: CancellationToken.None);
+
+            // Assert
+            result.Should().HaveCount(1);
+            result[0].Id.Should().Be(overdue.Id);
+        }
     }
 }

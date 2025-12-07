@@ -88,5 +88,33 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
                 .Where(t => t.UserId == userId && t.UpdatedAtUtc > since.Value)
                 .ToListAsync(cancellationToken);
         }
+
+        public async Task<List<TaskItem>> GetOverdueRemindersAsync(DateTime utcNow,
+                                                                   int maxResults,
+                                                                   CancellationToken cancellationToken = default)
+        {
+            if (maxResults <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxResults), maxResults,
+                    "maxResults must be greater than zero.");
+            }
+
+            // A reminder is "overdue" when:
+            // - The task is not soft-deleted
+            // - ReminderAtUtc is set and <= utcNow
+            // - ReminderSentAtUtc is null (we haven't sent it yet)
+            // - ReminderAcknowledgedAtUtc is null (user hasn't acknowledged)
+            return await _context.Tasks
+                .Where(t =>
+                    !t.IsDeleted &&
+                    t.ReminderAtUtc != null &&
+                    t.ReminderAtUtc <= utcNow &&
+                    t.ReminderSentAtUtc == null &&
+                    t.ReminderAcknowledgedAtUtc == null)
+                .OrderBy(t => t.ReminderAtUtc)
+                .Take(maxResults)
+                .ToListAsync(cancellationToken);
+        }
+
     }
 }

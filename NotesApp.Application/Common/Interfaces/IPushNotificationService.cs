@@ -26,5 +26,17 @@ namespace NotesApp.Application.Common.Interfaces
         Task<Result> SendSyncNeededAsync(Guid userId,
                                          Guid? originDeviceId,
                                          CancellationToken cancellationToken = default);
+
+
+        /// <summary>
+        /// Sends a task reminder notification for a specific task.
+        /// Implementations decide which devices to target.
+        /// </summary>
+        Task<Result> SendTaskReminderAsync(
+            Guid userId,
+            Guid taskId,
+            string title,
+            string? body,
+            CancellationToken cancellationToken = default);
     }
 }

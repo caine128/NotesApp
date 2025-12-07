@@ -18,6 +18,13 @@ builder.Services.AddOptions<OutboxWorkerOptions>()
         "OutboxWorker options must all be positive numbers.")
     .ValidateOnStart();
 
+builder.Services.AddOptions<ReminderWorkerOptions>()
+    .Bind(builder.Configuration.GetSection(ReminderWorkerOptions.SectionName))
+    .ValidateDataAnnotations()
+    .Validate(options => options.PollingIntervalSeconds > 0 && options.MaxRemindersPerBatch > 0,
+        "PollingIntervalSeconds and MaxRemindersPerBatch must be greater than zero.")
+    .ValidateOnStart();
+
 // Register your Application + Infrastructure layers just like in NotesApp.Api.
 // If your actual extension methods have different names, swap these lines accordingly.
 builder.Services.AddApplicationServices(builder.Configuration);
@@ -45,7 +52,8 @@ builder.Services.AddScoped<IOutboxMessageDispatcher, LoggingOutboxMessageDispatc
 
 // Register the OutboxProcessingWorker as a hosted service
 builder.Services.AddHostedService<OutboxProcessingWorker>();
-
+// New hosted service:
+builder.Services.AddHostedService<ReminderMonitorWorker>();
 
 var host = builder.Build();
 host.Run();
