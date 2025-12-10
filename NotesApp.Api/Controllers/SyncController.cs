@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using NotesApp.Api.DeviceProvisioning;
 using NotesApp.Application.Sync.Commands.ResolveConflicts;
 using NotesApp.Application.Sync.Commands.SyncPush;
 using NotesApp.Application.Sync.Models;
@@ -17,10 +18,12 @@ namespace NotesApp.Api.Controllers
     public class SyncController : ControllerBase
     {
         private readonly ISender _mediator;
+        private readonly IDeviceDebugProvisioningService _debugDeviceProvisioningService;
 
-        public SyncController(ISender mediator)
+        public SyncController(ISender mediator, IDeviceDebugProvisioningService debugDeviceProvisioningService)
         {
             _mediator = mediator;
+            _debugDeviceProvisioningService = debugDeviceProvisioningService;
         }
 
         /// <summary>
@@ -43,6 +46,10 @@ namespace NotesApp.Api.Controllers
                                                     [FromQuery] int? maxItemsPerEntity,
                                                     CancellationToken cancellationToken)
         {
+            // In Dev + X-Debug-User, this may auto-provision a device.
+            var effectiveDeviceId = await _debugDeviceProvisioningService
+                .EnsureDeviceIdAsync(deviceId, cancellationToken);
+
             var query = new GetSyncChangesQuery(sinceUtc, deviceId, maxItemsPerEntity);
 
             var result = await _mediator.Send(query, cancellationToken);
@@ -58,10 +65,13 @@ namespace NotesApp.Api.Controllers
         /// </summary>
         [HttpPost("push")]
         [ProducesResponseType(typeof(SyncPushResultDto), StatusCodes.Status200OK)]
-        public async Task<IActionResult> Push(
-            [FromBody] SyncPushCommandPayloadDto payload,
-            CancellationToken cancellationToken)
+        public async Task<IActionResult> Push([FromBody] SyncPushCommandPayloadDto payload,
+                                              CancellationToken cancellationToken)
         {
+            // In Dev + X-Debug-User, this may auto-provision a device.
+            var effectiveDeviceId = await _debugDeviceProvisioningService
+                .EnsureDeviceIdAsync(payload.DeviceId, cancellationToken);
+
             var command = new SyncPushCommand
             {
                 DeviceId = payload.DeviceId,
@@ -80,9 +90,8 @@ namespace NotesApp.Api.Controllers
         /// </summary>
         [HttpPost("resolve-conflicts")]
         [ProducesResponseType(typeof(ResolveSyncConflictsResultDto), StatusCodes.Status200OK)]
-        public async Task<IActionResult> ResolveConflicts(
-            [FromBody] ResolveSyncConflictsRequestDto request,
-            CancellationToken cancellationToken)
+        public async Task<IActionResult> ResolveConflicts([FromBody] ResolveSyncConflictsRequestDto request,
+                                                          CancellationToken cancellationToken)
         {
             var command = new ResolveSyncConflictsCommand
             {

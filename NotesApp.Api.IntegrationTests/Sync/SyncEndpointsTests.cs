@@ -1,8 +1,13 @@
 ﻿using FluentAssertions;
+using Microsoft.AspNetCore.Mvc;
+using NotesApp.Api.DeviceProvisioning;
 using NotesApp.Api.IntegrationTests.Infrastructure.Hosting;
+using NotesApp.Application.Devices.Commands.RegisterDevice;
+using NotesApp.Application.Devices.Models;
 using NotesApp.Application.Notes.Models;
 using NotesApp.Application.Sync.Models;
 using NotesApp.Application.Tasks.Models;
+using NotesApp.Domain.Users;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -208,47 +213,44 @@ namespace NotesApp.Api.IntegrationTests.Sync
         {
             // Arrange
             var client = _factory.CreateClientAsUser(Guid.NewGuid());
-            var deviceId = Guid.NewGuid();
+            // NEW: register a real device for this user
+            var deviceId = await RegisterTestDeviceAsync(client);
             var now = DateTime.UtcNow;
 
             var payload = new SyncPushCommandPayloadDto
             {
-                DeviceId = deviceId,
+                DeviceId = deviceId,                    // use the registered device
                 ClientSyncTimestampUtc = now,
                 Tasks = new SyncPushTasksDto
                 {
                     Created = new[]
-                    {
-                        new TaskCreatedPushItemDto
-                        {
-                            ClientId = Guid.NewGuid(),
-                            Date = new DateOnly(2025, 11, 10),
-                            Title = "Pushed task",
-                            Description = "Created via sync push"
-                        }
-                    }
+            {
+                new TaskCreatedPushItemDto
+                {
+                    ClientId = Guid.NewGuid(),
+                    Date = new DateOnly(2025, 11, 10),
+                    Title = "Pushed task",
+                    Description = "Created via sync push"
+                }
+            }
                 },
                 Notes = new SyncPushNotesDto
                 {
                     Created = new[]
-                    {
-                        new NoteCreatedPushItemDto
-                        {
-                            ClientId = Guid.NewGuid(),
-                            Date = new DateOnly(2025, 11, 10),
-                            Title = "Pushed note",
-                            Content = "Created via sync push"
-                        }
-                    }
+            {
+                new NoteCreatedPushItemDto
+                {
+                    ClientId = Guid.NewGuid(),
+                    Date = new DateOnly(2025, 11, 10),
+                    Title = "Pushed note",
+                    Content = "Created via sync push"
+                }
+            }
                 }
             };
 
             // Act
             var response = await client.PostAsJsonAsync("/api/sync/push", payload);
-
-            // TEMP: debug output
-            var errorContent = await response.Content.ReadAsStringAsync();
-            Console.WriteLine(errorContent);
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -290,11 +292,13 @@ namespace NotesApp.Api.IntegrationTests.Sync
         {
             // Arrange
             var client = _factory.CreateClientAsUser(Guid.NewGuid());
-            var deviceId = Guid.NewGuid();
+            // NEW: register a real device for this user
+            var deviceId = await RegisterTestDeviceAsync(client);
+
             var now = DateTime.UtcNow;
             var date = new DateOnly(2025, 11, 10);
 
-            // First create a task via the normal endpoint
+            // 1. Create a task via /api/tasks
             var createTaskPayload = new
             {
                 Date = date,
@@ -313,7 +317,7 @@ namespace NotesApp.Api.IntegrationTests.Sync
             var createdTask = await createResponse.Content.ReadFromJsonAsync<TaskDetailDto>();
             createdTask.Should().NotBeNull();
 
-            // Build a push payload with wrong ExpectedVersion
+            // 2. Prepare sync payload with mismatched version
             var pushPayload = new SyncPushCommandPayloadDto
             {
                 DeviceId = deviceId,
@@ -415,6 +419,134 @@ namespace NotesApp.Api.IntegrationTests.Sync
 
             dto.HasMoreTasks.Should().BeTrue();
             dto.HasMoreNotes.Should().BeTrue();
+        }
+
+
+        [Fact]
+        public async Task Dev_push_with_empty_DeviceId_auto_creates_device_and_succeeds()
+        {
+            // Arrange
+            var userId = Guid.NewGuid();
+            var client = _factory.CreateClientAsUser(userId);
+
+            var now = DateTime.UtcNow;
+
+            // NOTE: DeviceId = Guid.Empty -> "frontend didn't register device"
+            var payload = new SyncPushCommandPayloadDto
+            {
+                DeviceId = Guid.Empty,
+                ClientSyncTimestampUtc = now,
+                Tasks = new SyncPushTasksDto
+                {
+                    Created = new[]
+                    {
+                new TaskCreatedPushItemDto
+                {
+                    ClientId = Guid.NewGuid(),
+                    Date = new DateOnly(2025, 11, 10),
+                    Title = "Pushed task via dev auto-device",
+                    Description = "Created via sync push (dev auto-device)"
+                }
+            }
+                },
+                Notes = new SyncPushNotesDto
+                {
+                    Created = new[]
+                    {
+                new NoteCreatedPushItemDto
+                {
+                    ClientId = Guid.NewGuid(),
+                    Date = new DateOnly(2025, 11, 10),
+                    Title = "Pushed note via dev auto-device",
+                    Content = "Created via sync push (dev auto-device)"
+                }
+            }
+                }
+            };
+
+            // Act: call /api/sync/push without a real device id
+            var response = await client.PostAsJsonAsync("/api/sync/push", payload);
+
+            // Assert: HTTP 200 and normal sync push semantics
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var result = await response.Content.ReadFromJsonAsync<SyncPushResultDto>();
+            result.Should().NotBeNull();
+
+            result!.Tasks.Created.Should().HaveCount(1);
+            result.Tasks.Created[0].Status.Should().Be("created");
+            result.Tasks.Created[0].ServerId.Should().NotBeEmpty();
+            result.Tasks.Created[0].Version.Should().BeGreaterThanOrEqualTo(1);
+
+            result.Notes.Created.Should().HaveCount(1);
+            result.Notes.Created[0].Status.Should().Be("created");
+            result.Notes.Created[0].ServerId.Should().NotBeEmpty();
+            result.Notes.Created[0].Version.Should().BeGreaterThanOrEqualTo(1);
+
+            result.Conflicts.Should().BeEmpty();
+
+            // And: backend should have auto-created a device for this user
+            var devicesResponse = await client.GetAsync("/api/devices");
+            devicesResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var devices = await devicesResponse.Content.ReadFromJsonAsync<UserDeviceDto[]>();
+            devices.Should().NotBeNull();
+            devices!.Should().HaveCount(1);
+            devices[0].Id.Should().NotBe(Guid.Empty);
+        }
+
+        [Fact]
+        public async Task Push_with_empty_DeviceId_in_production_returns_bad_request()
+        {
+            // Arrange: run the API in "Production" environment
+            using var prodFactory = new ProductionNotesAppApiFactory();
+            var client = prodFactory.CreateClient();
+
+            // Authenticate via debug auth, but note:
+            // In Production env, the device auto-provisioning service is NO-OP.
+            var userId = Guid.NewGuid().ToString();
+            client.DefaultRequestHeaders.Add(DebugAuthConstants.DebugUserHeaderName, userId);
+
+            var payload = new SyncPushCommandPayloadDto
+            {
+                // This is the key: DeviceId is empty -> invalid in "normal" behavior
+                DeviceId = Guid.Empty,
+                ClientSyncTimestampUtc = DateTime.UtcNow,
+                Tasks = new SyncPushTasksDto(), // all lists empty
+                Notes = new SyncPushNotesDto()
+            };
+
+            // Act
+            var response = await client.PostAsJsonAsync("/api/sync/push", payload);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+            // Optionally, check the ProblemDetails payload includes the validation error
+            var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+            problem.Should().NotBeNull();
+            problem!.Errors.Should().ContainKey("DeviceId");
+            problem.Errors["DeviceId"].Should().ContainSingle()
+                .Which.Should().Be("DeviceId is required.");
+        }
+
+
+        private async Task<Guid> RegisterTestDeviceAsync(HttpClient client)
+        {
+            var command = new RegisterDeviceCommand
+            {
+                DeviceToken = "sync-test-token-" + Guid.NewGuid(),
+                Platform = DevicePlatform.Android,
+                DeviceName = "Sync integration test device"
+            };
+
+            var response = await client.PostAsJsonAsync("/api/devices", command);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var dto = await response.Content.ReadFromJsonAsync<UserDeviceDto>();
+            dto.Should().NotBeNull();
+
+            return dto!.Id;
         }
     }
 }

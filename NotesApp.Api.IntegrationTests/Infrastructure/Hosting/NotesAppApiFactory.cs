@@ -17,7 +17,7 @@ namespace NotesApp.Api.IntegrationTests.Infrastructure.Hosting
     /// - Replaces real authentication with TestAuthHandler for tests.
     /// - Exposes helpers to create HttpClient instances as specific fake users.
     /// </summary>
-    public sealed class NotesAppApiFactory : WebApplicationFactory<Program>
+    public  class NotesAppApiFactory : WebApplicationFactory<Program>
     {
 
         private const string RequiredScope =

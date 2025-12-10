@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using NotesApp.Api.Configuration;
+using NotesApp.Api.DeviceProvisioning;
 using NotesApp.Api.FluentResults;
 using NotesApp.Api.Infrastructure.Errors;
 using NotesApp.Api.Infrastructure.OpenApi;
@@ -36,6 +37,8 @@ builder.Services
 // 4a) Dev environment: support both Debug header and real JWT
 if (builder.Environment.IsDevelopment())
 {
+    builder.Services.AddScoped<IDeviceDebugProvisioningService, DevDeviceDebugProvisioningService>();
+
     builder.Services
         .AddAuthentication(options =>
         {
@@ -50,7 +53,7 @@ if (builder.Environment.IsDevelopment())
             options.ForwardDefaultSelector = context =>
             {
                 // If the request has the debug header, use Debug auth
-                if (context.Request.Headers.ContainsKey("X-Debug-User"))
+                if (context.Request.Headers.ContainsKey(DebugAuthConstants.DebugUserHeaderName))
                 {
                     return DebugAuthenticationHandler.SchemeName;
                 }
@@ -62,6 +65,8 @@ if (builder.Environment.IsDevelopment())
 }
 else
 {
+    builder.Services.AddScoped<IDeviceDebugProvisioningService, NoOpDeviceDebugProvisioningService>();
+
     // Production / non-dev: JWT only, no debug bypass
     builder.Services
     .AddAuthentication(options =>
