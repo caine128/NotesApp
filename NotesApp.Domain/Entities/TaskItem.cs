@@ -156,8 +156,8 @@ namespace NotesApp.Domain.Entities
             return DomainResult<TaskItem>.Success(task);
         }
 
-        // BEHAVIOURS
 
+        // BEHAVIOURS
         public DomainResult Update(string? title,
                                     DateOnly date,
                                     string? description,

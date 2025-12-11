@@ -50,7 +50,7 @@ namespace NotesApp.Api.Controllers
             var effectiveDeviceId = await _debugDeviceProvisioningService
                 .EnsureDeviceIdAsync(deviceId, cancellationToken);
 
-            var query = new GetSyncChangesQuery(sinceUtc, deviceId, maxItemsPerEntity);
+            var query = new GetSyncChangesQuery(sinceUtc, effectiveDeviceId, maxItemsPerEntity);
 
             var result = await _mediator.Send(query, cancellationToken);
 
@@ -74,7 +74,7 @@ namespace NotesApp.Api.Controllers
 
             var command = new SyncPushCommand
             {
-                DeviceId = payload.DeviceId,
+                DeviceId = effectiveDeviceId ?? payload.DeviceId,
                 ClientSyncTimestampUtc = payload.ClientSyncTimestampUtc,
                 Tasks = payload.Tasks,
                 Notes = payload.Notes

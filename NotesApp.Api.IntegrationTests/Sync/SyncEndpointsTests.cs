@@ -429,6 +429,10 @@ namespace NotesApp.Api.IntegrationTests.Sync
             var userId = Guid.NewGuid();
             var client = _factory.CreateClientAsUser(userId);
 
+            // IMPORTANT: use the dev-bypass path (X-Debug-User)
+            client.DefaultRequestHeaders.Add(DebugAuthConstants.DebugUserHeaderName, userId.ToString());
+
+
             var now = DateTime.UtcNow;
 
             // NOTE: DeviceId = Guid.Empty -> "frontend didn't register device"
@@ -496,23 +500,16 @@ namespace NotesApp.Api.IntegrationTests.Sync
         }
 
         [Fact]
-        public async Task Push_with_empty_DeviceId_in_production_returns_bad_request()
+        public async Task Push_with_empty_DeviceId_without_debug_header_returns_bad_request()
         {
-            // Arrange: run the API in "Production" environment
-            using var prodFactory = new ProductionNotesAppApiFactory();
-            var client = prodFactory.CreateClient();
-
-            // Authenticate via debug auth, but note:
-            // In Production env, the device auto-provisioning service is NO-OP.
-            var userId = Guid.NewGuid().ToString();
-            client.DefaultRequestHeaders.Add(DebugAuthConstants.DebugUserHeaderName, userId);
+            // Arrange: normal authenticated user, NO X-Debug-User header
+            var client = _factory.CreateClientAsUser(Guid.NewGuid());
 
             var payload = new SyncPushCommandPayloadDto
             {
-                // This is the key: DeviceId is empty -> invalid in "normal" behavior
-                DeviceId = Guid.Empty,
+                DeviceId = Guid.Empty, // invalid in normal flow
                 ClientSyncTimestampUtc = DateTime.UtcNow,
-                Tasks = new SyncPushTasksDto(), // all lists empty
+                Tasks = new SyncPushTasksDto(),
                 Notes = new SyncPushNotesDto()
             };
 
@@ -522,7 +519,6 @@ namespace NotesApp.Api.IntegrationTests.Sync
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-            // Optionally, check the ProblemDetails payload includes the validation error
             var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
             problem.Should().NotBeNull();
             problem!.Errors.Should().ContainKey("DeviceId");
