@@ -23,9 +23,8 @@ namespace NotesApp.Application.Tasks.Queries
             _currentUserService = currentUserService;
         }
 
-        public async Task<Result<IReadOnlyList<TaskSummaryDto>>> Handle(
-            GetTaskSummariesForRangeQuery request,
-            CancellationToken cancellationToken)
+        public async Task<Result<IReadOnlyList<TaskSummaryDto>>> Handle(GetTaskSummariesForRangeQuery request,
+                                                                        CancellationToken cancellationToken)
         {
             // Throws if user is not authenticated; handled by global middleware
             var userId = await _currentUserService.GetUserIdAsync(cancellationToken);

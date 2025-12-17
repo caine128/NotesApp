@@ -1,24 +1,28 @@
 ﻿using System.Net.Http.Headers;
 using Microsoft.Identity.Client;
 
-const string tenantId = "193d982e-0c16-4579-8efa-a931f731df7c";                   // Directory (tenant) ID
+const string tenantId = "193d982e-0c16-4579-8efa-a931f731df7c";               // Directory (tenant) ID
 const string mobileClientId = "8104b02d-db95-455a-881c-647500eb7245";
 const string apiClientId = "d1047ffd-a054-4a9f-aeb0-198996f0c0c6";            // Application (client) ID of NotesApp-Api
-const string apiScopeName = "notes.readwrite";       // The scope name you created
-const string apiBaseUrl = "https://localhost:7011";      // Change to your actual API URL/port 
+const string apiScopeName = "notes.readwrite";                                // The scope name you created
+const string apiBaseUrl = "https://localhost:7011";                           // TODO : Change to your actual API URL/port 
+var policy = "NotesApp_SignUpSignIn";
 
 // Full scope string: api://<API_CLIENT_ID>/<scopeName>
 var scopes = new[] { $"api://{apiClientId}/{apiScopeName}" };
 
+var authority = $"https://notesappciam.ciamlogin.com/{tenantId}/{policy}";
+
 // Build the public client app using your tenant authority
 var pca = PublicClientApplicationBuilder
     .Create(mobileClientId)
-    .WithAuthority($"https://login.microsoftonline.com/{tenantId}")
+    .WithAuthority(authority)
+    .WithRedirectUri("http://localhost")
     .Build();
 
 Console.WriteLine("Acquiring token via Device Code flow...");
 
-// Device code flow (perfect for console / CLI) – uses https://microsoft.com/devicelogin
+/*// Device code flow (perfect for console / CLI) – uses https://microsoft.com/devicelogin
 var result = await pca.AcquireTokenWithDeviceCode(
         scopes,
         deviceCodeResult =>
@@ -26,6 +30,11 @@ var result = await pca.AcquireTokenWithDeviceCode(
             Console.WriteLine(deviceCodeResult.Message);
             return Task.CompletedTask;
         })
+    .ExecuteAsync();
+*/
+var result = await pca
+    .AcquireTokenInteractive(scopes)
+    .WithPrompt(Prompt.SelectAccount)
     .ExecuteAsync();
 
 Console.WriteLine("Access token acquired.");
