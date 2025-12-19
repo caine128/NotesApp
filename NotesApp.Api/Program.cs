@@ -116,6 +116,31 @@ builder.Services
 
             // For dev you *can* disable HTTPS metadata; for production this should be true.
             options.RequireHttpsMetadata = !env.IsDevelopment();
+
+            // Add event handlers for detailed authentication diagnostics
+            options.Events = new JwtBearerEvents
+            {
+                OnAuthenticationFailed = context =>
+                {
+                    Console.WriteLine($"❌ JWT Authentication Failed: {context.Exception.Message}");
+                    return Task.CompletedTask;
+                },
+                OnTokenValidated = context =>
+                {
+                    Console.WriteLine($"✅ JWT Token Validated for user: {context.Principal?.Identity?.Name ?? "Unknown"}");
+                    return Task.CompletedTask;
+                },
+                OnChallenge = context =>
+                {
+                    Console.WriteLine($"⚠️  JWT Challenge: {context.Error} - {context.ErrorDescription}");
+                    return Task.CompletedTask;
+                },
+                OnMessageReceived = context =>
+                {
+                    Console.WriteLine($"📩 JWT Message Received");
+                    return Task.CompletedTask;
+                }
+            };
         });
 
 
@@ -139,9 +164,11 @@ builder.Services.AddAuthorization(options =>
                 return false; // <-- no scope => policy fails => 403, not 500
 
             // TODO: if you want, move this string to configuration
-            // e.g. "api://d1047ffd-a054-4a9f-aeb0-198996f0c0c6/notes.readwrite"
-            return scopeClaim.Split(' ')
-                             .Contains("api://d1047ffd-a054-4a9f-aeb0-198996f0c0c6/notes.readwrite");
+            //// Entra External ID sends scope as just "notes.readwrite"
+            // (without the api:// prefix)
+            var scopes = scopeClaim.Split(' ');
+            return scopes.Contains("notes.readwrite") ||
+                   scopes.Contains("api://d1047ffd-a054-4a9f-aeb0-198996f0c0c6/notes.readwrite");
         });
     });
 });
