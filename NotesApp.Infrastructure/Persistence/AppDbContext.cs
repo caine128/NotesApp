@@ -15,6 +15,8 @@ namespace NotesApp.Infrastructure.Persistence
         public DbSet<UserLogin> UserLogins => Set<UserLogin>();
         public DbSet<TaskItem> Tasks => Set<TaskItem>();
         public DbSet<Note> Notes => Set<Note>();
+        public DbSet<Block> Blocks => Set<Block>();
+        public DbSet<Asset> Assets => Set<Asset>();
         public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
         public DbSet<UserDevice> UserDevices { get; set; } = null!;
         protected override void OnModelCreating(ModelBuilder modelBuilder)

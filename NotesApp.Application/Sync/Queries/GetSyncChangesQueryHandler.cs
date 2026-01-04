@@ -2,6 +2,7 @@
 using MediatR;
 using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
+using NotesApp.Application.Abstractions.Storage;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Sync.Models;
 using NotesApp.Domain.Entities;
@@ -11,13 +12,14 @@ using System.Text;
 
 namespace NotesApp.Application.Sync.Queries
 {
-    /// <summary>
-    /// Handles sync pull requests for tasks and notes.
+    //// <summary>
+    /// Handles sync pull requests for tasks, notes, blocks, and assets.
     /// 
     /// Responsibilities:
     /// - Determine current user from ICurrentUserService.
-    /// - Load changed tasks and notes via repositories.
+    /// - Load changed entities via repositories.
     /// - Categorise them into created / updated / deleted buckets.
+    /// - Generate pre-signed download URLs for assets.
     /// - Stamp the response with a server-side timestamp in UTC.
     /// </summary>
     public sealed class GetSyncChangesQueryHandler
@@ -25,65 +27,95 @@ namespace NotesApp.Application.Sync.Queries
     {
         private readonly ITaskRepository _taskRepository;
         private readonly INoteRepository _noteRepository;
+        private readonly IBlockRepository _blockRepository;
+        private readonly IAssetRepository _assetRepository;
         private readonly IUserDeviceRepository _deviceRepository;
         private readonly ICurrentUserService _currentUserService;
+        private readonly IBlobStorageService? _blobStorageService;
         private readonly ILogger<GetSyncChangesQueryHandler> _logger;
+
+        //TODO: the name should go to the contral config.
+        /// <summary>
+        /// Container name for user assets in blob storage.
+        /// </summary>
+        private const string AssetContainerName = "user-assets";
+
+        //TODO: the name should go to the contral config.
+        /// <summary>
+        /// Validity period for asset download URLs.
+        /// </summary>
+        private static readonly TimeSpan AssetDownloadUrlValidity = TimeSpan.FromHours(1);
 
         public GetSyncChangesQueryHandler(ITaskRepository taskRepository,
                                           INoteRepository noteRepository,
+                                          IBlockRepository blockRepository,
+                                          IAssetRepository assetRepository,
                                           IUserDeviceRepository deviceRepository,
                                           ICurrentUserService currentUserService,
-                                          ILogger<GetSyncChangesQueryHandler> logger)
+                                          ILogger<GetSyncChangesQueryHandler> logger,
+                                          IBlobStorageService? blobStorageService = null)
         {
             _taskRepository = taskRepository;
             _noteRepository = noteRepository;
+            _blockRepository = blockRepository;
+            _assetRepository = assetRepository;
             _deviceRepository = deviceRepository;
             _currentUserService = currentUserService;
+            _blobStorageService = blobStorageService;
             _logger = logger;
         }
 
         public async Task<Result<SyncChangesDto>> Handle(GetSyncChangesQuery request,
-                                                         CancellationToken cancellationToken)
+                                                        CancellationToken cancellationToken)
         {
             var userId = await _currentUserService.GetUserIdAsync(cancellationToken);
 
-            // NEW: optional device ownership / status check
+            // Optional device ownership / status check
             if (request.DeviceId is Guid deviceId)
             {
                 var device = await _deviceRepository.GetByIdAsync(deviceId, cancellationToken);
 
                 if (device is null ||
                     device.UserId != userId ||
-                    !device.IsActive ||    // avoid using inactive devices
-                    device.IsDeleted)      // if global filters ever let it through
+                    !device.IsActive ||
+                    device.IsDeleted)
                 {
                     return Result.Fail(new Error("Device.NotFound"));
                 }
             }
 
-            _logger.LogInformation(
-                "Sync pull requested for user {UserId} since {SinceUtc} with device {DeviceId}",
-                userId,
-                request.SinceUtc,
-                request.DeviceId);
+            _logger.LogInformation("Sync pull requested for user {UserId} since {SinceUtc} with device {DeviceId}",
+                                   userId,
+                                   request.SinceUtc,
+                                   request.DeviceId);
 
-            var tasks = await _taskRepository.GetChangedSinceAsync(
-                userId,
-                request.SinceUtc,
-                cancellationToken);
+            // Fetch all changed entities
+            var tasks = await _taskRepository.GetChangedSinceAsync(userId,
+                                                                   request.SinceUtc,
+                                                                   cancellationToken);
 
-            var notes = await _noteRepository.GetChangedSinceAsync(
-                userId,
-                request.SinceUtc,
-                cancellationToken);
+            var notes = await _noteRepository.GetChangedSinceAsync(userId,
+                                                                   request.SinceUtc,
+                                                                   cancellationToken);
+
+            var blocks = await _blockRepository.GetChangedSinceAsync(userId,
+                                                                     request.SinceUtc,
+                                                                     cancellationToken);
+
+            var assets = await _assetRepository.GetChangedSinceAsync(userId,
+                                                                     request.SinceUtc,
+                                                                     cancellationToken);
 
             var serverTimestampUtc = DateTime.UtcNow;
 
+            // Categorise entities into buckets
             var tasksBuckets = CategoriseTasks(tasks, request.SinceUtc);
             var notesBuckets = CategoriseNotes(notes, request.SinceUtc);
+            var blocksBuckets = CategoriseBlocks(blocks, request.SinceUtc);
+            var assetsBuckets = await CategoriseAssetsAsync(assets, request.SinceUtc, cancellationToken);
 
-            // Determine effective max items per entity (tasks/notes)
-            var effectiveMax = request.MaxItemsPerEntity ?? SyncLimits.DefaultPullMaxItemsPerEntity; ;
+            // Determine effective max items per entity
+            var effectiveMax = request.MaxItemsPerEntity ?? SyncLimits.DefaultPullMaxItemsPerEntity;
 
             // Materialise lists so we can safely truncate them
             var taskCreated = tasksBuckets.Created.ToList();
@@ -94,11 +126,21 @@ namespace NotesApp.Application.Sync.Queries
             var noteUpdated = notesBuckets.Updated.ToList();
             var noteDeleted = notesBuckets.Deleted.ToList();
 
+            var blockCreated = blocksBuckets.Created.ToList();
+            var blockUpdated = blocksBuckets.Updated.ToList();
+            var blockDeleted = blocksBuckets.Deleted.ToList();
+
+            var assetCreated = assetsBuckets.Created.ToList();
+            var assetDeleted = assetsBuckets.Deleted.ToList();
+
+            // Calculate totals for pagination indicators
             var totalTaskChanges = taskCreated.Count + taskUpdated.Count + taskDeleted.Count;
             var totalNoteChanges = noteCreated.Count + noteUpdated.Count + noteDeleted.Count;
+            var totalBlockChanges = blockCreated.Count + blockUpdated.Count + blockDeleted.Count;
 
             var hasMoreTasks = totalTaskChanges > effectiveMax;
             var hasMoreNotes = totalNoteChanges > effectiveMax;
+            var hasMoreBlocks = totalBlockChanges > effectiveMax;
 
             static List<T> LimitList<T>(List<T> source, ref int remaining)
             {
@@ -129,6 +171,15 @@ namespace NotesApp.Application.Sync.Queries
             var limitedNoteUpdated = LimitList(noteUpdated, ref noteRemaining);
             var limitedNoteDeleted = LimitList(noteDeleted, ref noteRemaining);
 
+            var blockRemaining = effectiveMax;
+            var limitedBlockCreated = LimitList(blockCreated, ref blockRemaining);
+            var limitedBlockUpdated = LimitList(blockUpdated, ref blockRemaining);
+            var limitedBlockDeleted = LimitList(blockDeleted, ref blockRemaining);
+
+            // Assets don't have a limit currently (they're typically fewer and essential)
+            var limitedAssetCreated = assetCreated;
+            var limitedAssetDeleted = assetDeleted;
+
             var limitedTasksBuckets = new SyncTasksChangesDto
             {
                 Created = limitedTaskCreated,
@@ -143,13 +194,29 @@ namespace NotesApp.Application.Sync.Queries
                 Deleted = limitedNoteDeleted
             };
 
+            var limitedBlocksBuckets = new SyncBlocksChangesDto
+            {
+                Created = limitedBlockCreated,
+                Updated = limitedBlockUpdated,
+                Deleted = limitedBlockDeleted
+            };
+
+            var limitedAssetsBuckets = new SyncAssetsChangesDto
+            {
+                Created = limitedAssetCreated,
+                Deleted = limitedAssetDeleted
+            };
+
             var dto = new SyncChangesDto
             {
                 ServerTimestampUtc = serverTimestampUtc,
                 Tasks = limitedTasksBuckets,
                 Notes = limitedNotesBuckets,
+                Blocks = limitedBlocksBuckets,
+                Assets = limitedAssetsBuckets,
                 HasMoreTasks = hasMoreTasks,
-                HasMoreNotes = hasMoreNotes
+                HasMoreNotes = hasMoreNotes,
+                HasMoreBlocks = hasMoreBlocks
             };
 
             return Result.Ok(dto);
@@ -213,9 +280,8 @@ namespace NotesApp.Application.Sync.Queries
             };
         }
 
-        private static SyncNotesChangesDto CategoriseNotes(
-            IReadOnlyList<Note> notes,
-            DateTime? sinceUtc)
+        private static SyncNotesChangesDto CategoriseNotes(IReadOnlyList<Note> notes,
+                                                           DateTime? sinceUtc)
         {
             if (sinceUtc is null)
             {
@@ -264,6 +330,119 @@ namespace NotesApp.Application.Sync.Queries
             {
                 Created = createdList,
                 Updated = updatedList,
+                Deleted = deletedList
+            };
+        }
+
+
+        private static SyncBlocksChangesDto CategoriseBlocks(IReadOnlyList<Block> blocks,
+                                                             DateTime? sinceUtc)
+        {
+            if (sinceUtc is null)
+            {
+                var created = blocks
+                    .Where(b => !b.IsDeleted)
+                    .OrderBy(b => b.UpdatedAtUtc)
+                    .Select(b => b.ToSyncDto())
+                    .ToList();
+
+                return new SyncBlocksChangesDto
+                {
+                    Created = created,
+                    Updated = Array.Empty<BlockSyncItemDto>(),
+                    Deleted = Array.Empty<DeletedSyncItemDto>()
+                };
+            }
+
+            var createdList = new List<BlockSyncItemDto>();
+            var updatedList = new List<BlockSyncItemDto>();
+            var deletedList = new List<DeletedSyncItemDto>();
+
+            foreach (var block in blocks.OrderBy(b => b.UpdatedAtUtc))
+            {
+                if (block.IsDeleted)
+                {
+                    deletedList.Add(new DeletedSyncItemDto
+                    {
+                        Id = block.Id,
+                        DeletedAtUtc = block.UpdatedAtUtc
+                    });
+
+                    continue;
+                }
+
+                if (block.CreatedAtUtc > sinceUtc.Value)
+                {
+                    createdList.Add(block.ToSyncDto());
+                }
+                else
+                {
+                    updatedList.Add(block.ToSyncDto());
+                }
+            }
+
+            return new SyncBlocksChangesDto
+            {
+                Created = createdList,
+                Updated = updatedList,
+                Deleted = deletedList
+            };
+        }
+
+
+
+        /// <summary>
+        /// Categorises assets into created/deleted buckets.
+        /// Assets are immutable, so there's no "updated" bucket.
+        /// Generates pre-signed download URLs for created assets.
+        /// </summary>
+        private async Task<SyncAssetsChangesDto> CategoriseAssetsAsync(IReadOnlyList<Asset> assets,
+                                                                       DateTime? sinceUtc,
+                                                                       CancellationToken cancellationToken)
+        {
+            var createdList = new List<AssetSyncItemDto>();
+            var deletedList = new List<DeletedSyncItemDto>();
+
+            foreach (var asset in assets.OrderBy(a => a.UpdatedAtUtc))
+            {
+                if (asset.IsDeleted)
+                {
+                    deletedList.Add(new DeletedSyncItemDto
+                    {
+                        Id = asset.Id,
+                        DeletedAtUtc = asset.UpdatedAtUtc
+                    });
+
+                    continue;
+                }
+
+                // For initial sync or newly created assets
+                string? downloadUrl = null;
+                if (_blobStorageService is not null)
+                {
+                    try
+                    {
+                        downloadUrl = await _blobStorageService.GenerateDownloadUrlAsync(
+                            AssetContainerName,
+                            asset.BlobPath,
+                            AssetDownloadUrlValidity,
+                            cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex,
+                            "Failed to generate download URL for asset {AssetId}",
+                            asset.Id);
+                        // Continue without download URL - client can request it separately
+                    }
+                }
+
+                createdList.Add(asset.ToSyncDto(downloadUrl));
+            }
+
+            return new SyncAssetsChangesDto
+            {
+                Created = createdList,
                 Deleted = deletedList
             };
         }

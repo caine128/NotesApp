@@ -19,4 +19,23 @@ namespace NotesApp.Domain.Common
         Deleted,
         CompletionChanged
     }
+
+    /// <summary>
+    /// Event types for Block entity (used in outbox messages).
+    /// </summary>
+    public enum BlockEventType
+    {
+        Created,
+        Updated,
+        Deleted
+    }
+
+    /// <summary>
+    /// Event types for Asset entity (used in outbox messages).
+    /// </summary>
+    public enum AssetEventType
+    {
+        Created,
+        Deleted
+    }
 }

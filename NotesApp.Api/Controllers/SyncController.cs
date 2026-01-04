@@ -59,7 +59,7 @@ namespace NotesApp.Api.Controllers
         }
 
         /// <summary>
-        /// Applies client-side changes (tasks and notes) to the server for the current user.
+        /// Applies client-side changes (tasks, notes, and blocks) to the server for the current user.
         /// Conflicts (version mismatch, not found, etc.) are returned in the payload and do not
         /// cause the request to fail at HTTP level.
         /// </summary>
@@ -74,10 +74,11 @@ namespace NotesApp.Api.Controllers
 
             var command = new SyncPushCommand
             {
-                DeviceId = effectiveDeviceId ?? payload.DeviceId,
+                DeviceId = payload.DeviceId,
                 ClientSyncTimestampUtc = payload.ClientSyncTimestampUtc,
                 Tasks = payload.Tasks,
-                Notes = payload.Notes
+                Notes = payload.Notes,
+                Blocks = payload.Blocks
             };
 
             var result = await _mediator.Send(command, cancellationToken);

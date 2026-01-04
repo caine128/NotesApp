@@ -18,5 +18,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
         public SyncPushTasksDto Tasks { get; init; } = new();
         public SyncPushNotesDto Notes { get; init; } = new();
+        public SyncPushBlocksDto Blocks { get; init; } = new();
     }
 }

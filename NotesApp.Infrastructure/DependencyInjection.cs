@@ -1,13 +1,17 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Azure.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NotesApp.Application.Abstractions.Persistence;
+using NotesApp.Application.Abstractions.Storage;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Infrastructure.Identity;
 using NotesApp.Infrastructure.Notifications;
 using NotesApp.Infrastructure.Persistence;
 using NotesApp.Infrastructure.Persistence.Repositories;
+using NotesApp.Infrastructure.Storage;
 using NotesApp.Infrastructure.Time;
 using System;
 using System.Collections.Generic;
@@ -42,6 +46,8 @@ namespace NotesApp.Infrastructure
             // 2) Repositories + UnitOfWork
             services.AddScoped<ITaskRepository, TaskRepository>();
             services.AddScoped<INoteRepository, NoteRepository>();
+            services.AddScoped<IBlockRepository, BlockRepository>();
+            services.AddScoped<IAssetRepository, AssetRepository>();
             services.AddScoped<IOutboxRepository, OutboxRepository>();
             services.AddScoped<IUnitOfWork, UnitOfWork>();
             services.AddScoped<IUserDeviceRepository, UserDeviceRepository>();
@@ -53,7 +59,26 @@ namespace NotesApp.Infrastructure
 
             services.AddScoped<ICurrentUserService, CurrentUserService>();
 
-            // TODO: add blob storage, caching, background workers, etc. here later.
+
+            // 4) Azure Blob Storage
+            // Uses Microsoft.Extensions.Azure for proper DI integration
+            // BlobServiceClient is registered as a singleton (thread-safe, reusable)
+            // Configuration expects: Azure:Storage:Blob:ServiceUri in appsettings.json
+            var blobServiceUri = configuration["Azure:Storage:Blob:ServiceUri"];
+            if (!string.IsNullOrEmpty(blobServiceUri))
+            {
+                services.AddAzureClients(azure =>
+                {
+                    // Use DefaultAzureCredential for managed identity in production
+                    // Falls back to development credentials (Azure CLI, Visual Studio, etc.)
+                    azure.AddBlobServiceClient(new Uri(blobServiceUri));
+                    azure.UseCredential(new DefaultAzureCredential());
+                });
+
+                services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
+            }
+
+            // TODO: add  caching, background workers, etc. here later.
 
             return services;
         }

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NotesApp.Domain.Common;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -20,6 +21,7 @@ namespace NotesApp.Application.Sync.Models
 
         public SyncPushTasksDto Tasks { get; init; } = new();
         public SyncPushNotesDto Notes { get; init; } = new();
+        public SyncPushBlocksDto Blocks { get; init; } = new();
     }
 
     // ----------------------------
@@ -124,6 +126,107 @@ namespace NotesApp.Application.Sync.Models
         public long? ExpectedVersion { get; init; }
     }
 
+
+
+    // ----------------------------
+    // Blocks: request DTOs
+    // ----------------------------
+
+    public sealed record SyncPushBlocksDto
+    {
+        public IReadOnlyList<BlockCreatedPushItemDto> Created { get; init; } = Array.Empty<BlockCreatedPushItemDto>();
+        public IReadOnlyList<BlockUpdatedPushItemDto> Updated { get; init; } = Array.Empty<BlockUpdatedPushItemDto>();
+        public IReadOnlyList<BlockDeletedPushItemDto> Deleted { get; init; } = Array.Empty<BlockDeletedPushItemDto>();
+    }
+
+    public sealed record BlockCreatedPushItemDto
+    {
+        /// <summary>
+        /// Client-generated id for correlation. The server will map this to a server-side id.
+        /// </summary>
+        public Guid ClientId { get; init; }
+
+        /// <summary>
+        /// Server ID of the parent (Note or Task).
+        /// If the parent was also created in this push, use ParentClientId instead.
+        /// </summary>
+        public Guid? ParentId { get; init; }
+
+        /// <summary>
+        /// Client ID of the parent if it was created in this same push.
+        /// Server will resolve to server ID after parent is created.
+        /// </summary>
+        public Guid? ParentClientId { get; init; }
+
+        public BlockParentType ParentType { get; init; }
+        public BlockType Type { get; init; }
+        public string Position { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Text content for text blocks (Paragraph, Heading, etc.).
+        /// </summary>
+        public string? TextContent { get; init; }
+
+        /// <summary>
+        /// Client-generated identifier for tracking asset upload (for Image/File blocks).
+        /// </summary>
+        public string? AssetClientId { get; init; }
+
+        /// <summary>
+        /// Original filename for asset blocks.
+        /// </summary>
+        public string? AssetFileName { get; init; }
+
+        /// <summary>
+        /// MIME type for asset blocks.
+        /// </summary>
+        public string? AssetContentType { get; init; }
+
+        /// <summary>
+        /// File size in bytes for asset blocks.
+        /// </summary>
+        public long? AssetSizeBytes { get; init; }
+    }
+
+    public sealed record BlockUpdatedPushItemDto
+    {
+        /// <summary>
+        /// Server id of the block.
+        /// </summary>
+        public Guid Id { get; init; }
+
+        /// <summary>
+        /// Version the client believes the entity is at.
+        /// Used for optimistic concurrency.
+        /// </summary>
+        public long ExpectedVersion { get; init; }
+
+        /// <summary>
+        /// New position (fractional index). Null means no change.
+        /// </summary>
+        public string? Position { get; init; }
+
+        /// <summary>
+        /// New text content. Null means no change (for text blocks).
+        /// </summary>
+        public string? TextContent { get; init; }
+    }
+
+    public sealed record BlockDeletedPushItemDto
+    {
+        public Guid Id { get; init; }
+
+        /// <summary>
+        /// Optional version for stronger delete semantics.
+        /// Currently not enforced; we use "delete wins" semantics.
+        /// </summary>
+        public long? ExpectedVersion { get; init; }
+    }
+
+
+
+
+
     // ----------------------------
     // Result DTOs
     // ----------------------------
@@ -152,6 +255,13 @@ namespace NotesApp.Application.Sync.Models
         public IReadOnlyList<NoteCreatedPushResultDto> Created { get; init; } = Array.Empty<NoteCreatedPushResultDto>();
         public IReadOnlyList<NoteUpdatedPushResultDto> Updated { get; init; } = Array.Empty<NoteUpdatedPushResultDto>();
         public IReadOnlyList<NoteDeletedPushResultDto> Deleted { get; init; } = Array.Empty<NoteDeletedPushResultDto>();
+    }
+
+    public sealed record SyncPushBlocksResultDto
+    {
+        public IReadOnlyList<BlockCreatedPushResultDto> Created { get; init; } = Array.Empty<BlockCreatedPushResultDto>();
+        public IReadOnlyList<BlockUpdatedPushResultDto> Updated { get; init; } = Array.Empty<BlockUpdatedPushResultDto>();
+        public IReadOnlyList<BlockDeletedPushResultDto> Deleted { get; init; } = Array.Empty<BlockDeletedPushResultDto>();
     }
 
     public sealed record TaskCreatedPushResultDto
@@ -196,6 +306,28 @@ namespace NotesApp.Application.Sync.Models
         public string Status { get; init; } = string.Empty;
     }
 
+
+    public sealed record BlockCreatedPushResultDto
+    {
+        public Guid ClientId { get; init; }
+        public Guid ServerId { get; init; }
+        public long Version { get; init; }
+        public string Status { get; init; } = string.Empty; // e.g. "created", "failed"
+    }
+
+    public sealed record BlockUpdatedPushResultDto
+    {
+        public Guid Id { get; init; }
+        public long? NewVersion { get; init; }
+        public string Status { get; init; } = string.Empty; // e.g. "updated", "conflict", "not_found"
+    }
+
+    public sealed record BlockDeletedPushResultDto
+    {
+        public Guid Id { get; init; }
+        public string Status { get; init; } = string.Empty; // "deleted", "already_deleted", "not_found"
+    }
+
     /// <summary>
     /// Describes a conflict or problem encountered while processing a push item.
     /// </summary>
@@ -218,7 +350,7 @@ namespace NotesApp.Application.Sync.Models
         /// </summary>
         public TaskSyncItemDto? ServerTask { get; init; }
         public NoteSyncItemDto? ServerNote { get; init; }
-
+        public BlockSyncItemDto? ServerBlock { get; init; }
         public IReadOnlyList<string> Errors { get; init; } = Array.Empty<string>();
     }
 }

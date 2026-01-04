@@ -51,5 +51,47 @@ namespace NotesApp.Application.Common
 
             return JsonSerializer.Serialize(payload);
         }
+
+
+        /// <summary>
+        /// Builds the standardized JSON payload for block-related outbox messages.
+        /// </summary>
+        public static string BuildBlockPayload(Block block, Guid originDeviceId)
+        {
+            var payload = new
+            {
+                BlockId = block.Id,
+                block.UserId,
+                block.ParentId,
+                ParentType = block.ParentType.ToString(),
+                Type = block.Type.ToString(),
+                block.Position,
+                block.Version,
+                OriginDeviceId = originDeviceId
+            };
+
+            return JsonSerializer.Serialize(payload);
+        }
+
+
+        /// <summary>
+        /// Builds the standardized JSON payload for asset-related outbox messages.
+        /// </summary>
+        public static string BuildAssetPayload(Asset asset, Guid originDeviceId)
+        {
+            var payload = new
+            {
+                AssetId = asset.Id,
+                asset.UserId,
+                asset.BlockId,
+                asset.FileName,
+                asset.ContentType,
+                asset.SizeBytes,
+                asset.BlobPath,
+                OriginDeviceId = originDeviceId
+            };
+
+            return JsonSerializer.Serialize(payload);
+        }
     }
 }
