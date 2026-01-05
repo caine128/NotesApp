@@ -11,7 +11,10 @@ namespace NotesApp.Domain.Users
     /// </summary>
     public sealed class UserDevice : Entity<Guid>
     {
-        private const int MaxDeviceNameLength = 256;
+        // ENTITY CONSTANTS 
+        public const int MaxDeviceTokenLength = 512;
+        public const int MaxPlatformLength = 20;
+        public const int MaxDeviceNameLength = 256;
 
         /// <summary>
         /// Owner of this device. All sync / push for this device is scoped to this user.

@@ -11,6 +11,10 @@ namespace NotesApp.Domain.Users
     /// </summary>
     public sealed class User : Entity<Guid>
     {
+        // ENTITY CONSTANTS 
+        public const int MaxEmailLength = 256;
+        public const int MaxDisplayNameLentgh = 256;
+
         /// <summary>
         /// Normalized email (lowercase, trimmed).
         /// Used for display / contact and optional login flows.

@@ -21,10 +21,11 @@ namespace NotesApp.Domain.Entities
     /// </summary>
     public sealed class Block : Entity<Guid>
     {
-        private const int MaxPositionLength = 100;
-        private const int MaxAssetClientIdLength = 100;
-        private const int MaxAssetFileNameLength = 256;
-        private const int MaxAssetContentTypeLength = 100;
+        // ENTITY CONSTANTS 
+        public const int MaxPositionLength = 100;
+        public const int MaxAssetClientIdLength = 100;
+        public const int MaxAssetFileNameLength = 256;
+        public const int MaxAssetContentTypeLength = 100;
 
         /// <summary>
         /// Owner of this block (tenant boundary, must match parent's UserId).

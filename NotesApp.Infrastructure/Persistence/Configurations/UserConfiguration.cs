@@ -26,10 +26,10 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
             // Properties
             builder.Property(u => u.Email)
                    .IsRequired()
-                   .HasMaxLength(256);
+                   .HasMaxLength(User.MaxEmailLength);
 
             builder.Property(u => u.DisplayName)
-                   .HasMaxLength(256);
+                   .HasMaxLength(User.MaxDisplayNameLentgh);
 
             // Audit fields from base Entity
             builder.Property(u => u.CreatedAtUtc)

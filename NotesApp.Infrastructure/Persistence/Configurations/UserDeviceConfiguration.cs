@@ -23,15 +23,15 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
 
             builder.Property(d => d.DeviceToken)
                    .IsRequired()
-                   .HasMaxLength(512);
+                   .HasMaxLength(UserDevice.MaxDeviceTokenLength);
 
             builder.Property(d => d.Platform)
                    .IsRequired()
                    .HasConversion<string>()   // or .HasConversion<int>() if you prefer
-                   .HasMaxLength(20);
+                   .HasMaxLength(UserDevice.MaxPlatformLength);
 
             builder.Property(d => d.DeviceName)
-                   .HasMaxLength(256);
+                   .HasMaxLength(UserDevice.MaxDeviceNameLength);
 
             builder.Property(d => d.LastSeenAtUtc)
                    .IsRequired();

@@ -13,6 +13,9 @@ namespace NotesApp.Domain.Entities
     /// </summary>
     public sealed class Note : Entity<Guid>, ICalendarEntity
     {
+        // ENTITY CONSTANTS 
+        public const int MaxTitleLength = 200;
+
         /// <summary>
         /// Owner of this note (also our tenant boundary).
         /// </summary>

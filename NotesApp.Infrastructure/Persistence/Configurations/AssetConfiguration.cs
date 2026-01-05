@@ -34,18 +34,18 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
 
             builder.Property(a => a.FileName)
                    .IsRequired()
-                   .HasMaxLength(256);
+                   .HasMaxLength(Asset.MaxFileNameLength);
 
             builder.Property(a => a.ContentType)
                    .IsRequired()
-                   .HasMaxLength(100);
+                   .HasMaxLength(Asset.MaxContentTypeLength);
 
             builder.Property(a => a.SizeBytes)
                    .IsRequired();
 
             builder.Property(a => a.BlobPath)
                    .IsRequired()
-                   .HasMaxLength(500);
+                   .HasMaxLength(Asset.MaxBlobPathLength);
 
             // -------------------------
             // Base Entity properties

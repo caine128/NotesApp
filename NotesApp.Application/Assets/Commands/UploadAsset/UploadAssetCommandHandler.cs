@@ -37,11 +37,13 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
         private readonly ISystemClock _clock;
         private readonly ILogger<UploadAssetCommandHandler> _logger;
 
+        //TODO: Make this configurable and move to settings
         /// <summary>
         /// Container name for user assets in blob storage.
         /// </summary>
         private const string AssetContainerName = "user-assets";
 
+        //TODO: Make this configurable and move to settings
         /// <summary>
         /// Maximum allowed file size (50 MB).
         /// </summary>
@@ -160,7 +162,7 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
             var blobPath = GenerateBlobPath(userId, block.ParentId, block.Id, request.FileName);
 
             // Upload to blob storage
-            BlobUploadResult uploadResult;
+            StorageUploadResult uploadResult;
             try
             {
                 uploadResult = await _blobStorageService.UploadAsync(AssetContainerName,

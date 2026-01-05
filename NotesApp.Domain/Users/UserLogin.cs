@@ -11,6 +11,11 @@ namespace NotesApp.Domain.Users
     /// </summary>
     public sealed class UserLogin : Entity<Guid>
     {
+        // ENTITY CONSTANTS 
+        public const int MaxProviderLength = 100;   
+        public const int MaxExternalIdLength = 200;
+        public const int MaxProviderDisplayNameLength = 200;
+
         /// <summary>
         /// FK to Users table. All logins belong to exactly one User.
         /// </summary>

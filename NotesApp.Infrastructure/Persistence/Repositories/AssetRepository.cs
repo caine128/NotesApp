@@ -40,11 +40,12 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
             await _dbContext.Assets.AddAsync(entity, cancellationToken);
         }
 
+        [Obsolete("Asset is immutable and cannot be updated.", error: true)]
         public void Update(Asset entity)
         {
             // Assets are immutable - this should not be called in normal operations
             // but we implement it for interface compliance
-            _dbContext.Assets.Update(entity);
+            throw new NotSupportedException("Asset is immutable and cannot be updated.");
         }
 
         public void Remove(Asset entity)

@@ -41,7 +41,7 @@ namespace NotesApp.Infrastructure.Storage
 
 
         /// <inheritdoc />
-        public async Task<BlobUploadResult> UploadAsync(string containerName,
+        public async Task<StorageUploadResult> UploadAsync(string containerName,
                                                         string blobPath,
                                                         Stream content,
                                                         string contentType,
@@ -78,15 +78,15 @@ namespace NotesApp.Infrastructure.Storage
             // Get the blob properties to return size
             var properties = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken);
 
-            return new BlobUploadResult(blobPath: blobPath,
-                                        contentType: contentType ?? "application/octet-stream",
-                                        sizeBytes: properties.Value.ContentLength,
-                                        eTag: response.Value.ETag.ToString());
+            return new StorageUploadResult(BlobPath: blobPath,
+                                           ContentType: contentType ?? "application/octet-stream",
+                                           SizeBytes: properties.Value.ContentLength,
+                                           ETag: response.Value.ETag.ToString());
         }
 
 
         /// <inheritdoc />
-        public async Task<BlobDownloadResult?> DownloadAsync(string containerName,
+        public async Task<StorageDownloadResult?> DownloadAsync(string containerName,
                                                              string blobPath,
                                                              CancellationToken cancellationToken = default)
         {
@@ -100,9 +100,9 @@ namespace NotesApp.Infrastructure.Storage
             {
                 var response = await blobClient.DownloadAsync(cancellationToken);
 
-                return new BlobDownloadResult(content: response.Value.Content,
-                                              contentType: response.Value.ContentType,
-                                              sizeBytes: response.Value.ContentLength);
+                return new StorageDownloadResult(content: response.Value.Content,
+                                                 contentType: response.Value.ContentType,
+                                                 sizeBytes: response.Value.ContentLength);
             }
             catch (RequestFailedException ex) when (ex.Status == 404)
             {

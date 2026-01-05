@@ -20,9 +20,10 @@ namespace NotesApp.Domain.Entities
     /// </summary>
     public sealed class Asset : Entity<Guid>
     {
-        private const int MaxFileNameLength = 256;
-        private const int MaxContentTypeLength = 100;
-        private const int MaxBlobPathLength = 500;
+        // ENTITY CONSTANTS 
+        public const int MaxFileNameLength = 256;
+        public const int MaxContentTypeLength = 100;
+        public const int MaxBlobPathLength = 500;
 
         /// <summary>
         /// Owner of this asset (tenant boundary, must match block's UserId).

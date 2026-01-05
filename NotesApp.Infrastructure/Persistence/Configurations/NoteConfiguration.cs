@@ -32,7 +32,7 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
 
             builder.Property(n => n.Title)
                    .IsRequired(false)
-                   .HasMaxLength(200);
+                   .HasMaxLength(Note.MaxTitleLength);
 
             builder.Property(n => n.Content)
                    .IsRequired(false);

@@ -13,6 +13,9 @@ namespace NotesApp.Domain.Entities
     /// </summary>
     public sealed class TaskItem : Entity<Guid>, ICalendarEntity
     {
+        // ENTITY CONSTANTS 
+        public const int MaxTitleLength = 200;
+
         public Guid UserId { get; private set; }
 
         public DateOnly Date { get; private set; }

@@ -32,14 +32,14 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
             // Properties
             builder.Property(ul => ul.Provider)
                    .IsRequired()
-                   .HasMaxLength(100);
+                   .HasMaxLength(UserLogin.MaxProviderLength);
 
             builder.Property(ul => ul.ExternalId)
                    .IsRequired()
-                   .HasMaxLength(200);
+                   .HasMaxLength(UserLogin.MaxExternalIdLength);
 
             builder.Property(ul => ul.ProviderDisplayName)
-                   .HasMaxLength(200);
+                   .HasMaxLength(UserLogin.MaxProviderDisplayNameLength);
 
             builder.Property(ul => ul.CreatedAtUtc)
                    .IsRequired();

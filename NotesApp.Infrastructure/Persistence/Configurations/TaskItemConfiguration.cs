@@ -34,7 +34,7 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
 
             builder.Property(t => t.Title)
                    .IsRequired()
-                   .HasMaxLength(200); // sensible default, adjust as you like
+                   .HasMaxLength(TaskItem.MaxTitleLength); // sensible default, adjust as you like
 
             builder.Property(t => t.IsCompleted)
                    .IsRequired();

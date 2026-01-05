@@ -44,7 +44,7 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
 
             builder.Property(b => b.Position)
                    .IsRequired()
-                   .HasMaxLength(100);
+                   .HasMaxLength(Block.MaxPositionLength);
 
             builder.Property(b => b.TextContent)
                    .IsRequired(false);
@@ -59,15 +59,15 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
 
             builder.Property(b => b.AssetClientId)
                    .IsRequired(false)
-                   .HasMaxLength(100);
+                   .HasMaxLength(Block.MaxAssetClientIdLength);
 
             builder.Property(b => b.AssetFileName)
                    .IsRequired(false)
-                   .HasMaxLength(256);
+                   .HasMaxLength(Block.MaxAssetFileNameLength);
 
             builder.Property(b => b.AssetContentType)
                    .IsRequired(false)
-                   .HasMaxLength(100);
+                   .HasMaxLength(Block.MaxAssetContentTypeLength);
 
             builder.Property(b => b.AssetSizeBytes)
                    .IsRequired(false);
