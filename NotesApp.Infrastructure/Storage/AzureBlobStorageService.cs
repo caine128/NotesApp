@@ -3,6 +3,7 @@ using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Sas;
+using FluentResults;
 using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Storage;
 using System;
@@ -20,12 +21,11 @@ namespace NotesApp.Infrastructure.Storage
     /// - Async/await throughout
     /// - Proper cancellation token propagation
     /// - User delegation SAS for download URLs (more secure than account key SAS)
+    /// - Result pattern for explicit error handling
     /// 
     /// Configuration is handled via Microsoft.Extensions.Azure DI integration.
-    /// 
-    /// References:
-    /// - https://learn.microsoft.com/en-us/azure/storage/blobs/storage-quickstart-blobs-dotnet
-    /// - https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blob-user-delegation-sas-create-dotnet
+    //TODO:
+    /// Retry policies should be configured via BlobClientOptions in DI registration.
     /// </summary>
     public sealed class AzureBlobStorageService : IBlobStorageService
     {
@@ -41,176 +41,256 @@ namespace NotesApp.Infrastructure.Storage
 
 
         /// <inheritdoc />
-        public async Task<StorageUploadResult> UploadAsync(string containerName,
-                                                        string blobPath,
-                                                        Stream content,
-                                                        string contentType,
-                                                        CancellationToken cancellationToken = default)
+        public async Task<Result<StorageUploadResult>> UploadAsync(string containerName,
+                                                                   string blobPath,
+                                                                   Stream content,
+                                                                   string contentType,
+                                                                   CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(containerName);
             ArgumentException.ThrowIfNullOrWhiteSpace(blobPath);
             ArgumentNullException.ThrowIfNull(content);
 
-            var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
-
-            // Ensure container exists (creates if not)
-            await containerClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
-
-            var blobClient = containerClient.GetBlobClient(blobPath);
-
-            var uploadOptions = new BlobUploadOptions
+            try
             {
-                HttpHeaders = new BlobHttpHeaders
+                var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
+                await containerClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
+
+                var blobClient = containerClient.GetBlobClient(blobPath);
+                var effectiveContentType = contentType ?? StorageConstants.DefaultContentType;
+
+                var uploadOptions = new BlobUploadOptions
                 {
-                    ContentType = contentType ?? "application/octet-stream"
-                }
-            };
+                    HttpHeaders = new BlobHttpHeaders
+                    {
+                        ContentType = effectiveContentType
+                    }
+                };
 
-            _logger.LogInformation("Uploading blob to container '{Container}' path '{Path}'",
-                                   containerName,
-                                   blobPath);
+                _logger.LogInformation(
+                    "Uploading blob to container '{Container}' path '{Path}'",
+                    containerName,
+                    blobPath);
 
-            var response = await blobClient.UploadAsync(content, uploadOptions, cancellationToken);
+                var response = await blobClient.UploadAsync(content, uploadOptions, cancellationToken);
 
-            _logger.LogInformation("Blob uploaded successfully. ETag: {ETag}",
-                                   response.Value.ETag);
+                _logger.LogInformation(
+                    "Blob uploaded successfully. ETag: {ETag}",
+                    response.Value.ETag);
 
-            // Get the blob properties to return size
-            var properties = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken);
+                var properties = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken);
 
-            return new StorageUploadResult(BlobPath: blobPath,
-                                           ContentType: contentType ?? "application/octet-stream",
-                                           SizeBytes: properties.Value.ContentLength,
-                                           ETag: response.Value.ETag.ToString());
+                return Result.Ok(new StorageUploadResult(
+                    BlobPath: blobPath,
+                    ContentType: effectiveContentType,
+                    SizeBytes: properties.Value.ContentLength,
+                    ETag: response.Value.ETag.ToString()));
+            }
+            catch (RequestFailedException ex)
+            {
+                _logger.LogError(ex,
+                    "Azure storage error uploading blob to container '{Container}' path '{Path}'. Status: {Status}",
+                    containerName,
+                    blobPath,
+                    ex.Status);
+
+                return Result.Fail(new Error("Blob.Upload.Failed")
+                    .WithMetadata("Status", ex.Status)
+                    .WithMetadata("ErrorCode", ex.ErrorCode ?? "Unknown"));
+            }
         }
 
 
         /// <inheritdoc />
-        public async Task<StorageDownloadResult?> DownloadAsync(string containerName,
-                                                             string blobPath,
-                                                             CancellationToken cancellationToken = default)
+        public async Task<Result<StorageDownloadResult>> DownloadAsync(string containerName,
+                                                                       string blobPath,
+                                                                       CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(containerName);
             ArgumentException.ThrowIfNullOrWhiteSpace(blobPath);
-
-            var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
-            var blobClient = containerClient.GetBlobClient(blobPath);
 
             try
             {
+                var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
+                var blobClient = containerClient.GetBlobClient(blobPath);
+
                 var response = await blobClient.DownloadAsync(cancellationToken);
 
-                return new StorageDownloadResult(content: response.Value.Content,
-                                                 contentType: response.Value.ContentType,
-                                                 sizeBytes: response.Value.ContentLength);
+                return Result.Ok(new StorageDownloadResult(
+                    content: response.Value.Content,
+                    contentType: response.Value.ContentType,
+                    sizeBytes: response.Value.ContentLength));
             }
             catch (RequestFailedException ex) when (ex.Status == 404)
             {
-                _logger.LogWarning("Blob not found: container '{Container}' path '{Path}'",
-                                   containerName,
-                                   blobPath);
-                return null;
-            }
-        }
-
-
-        /// <inheritdoc />
-        public async Task<bool> DeleteAsync(string containerName,
-                                            string blobPath,
-                                            CancellationToken cancellationToken = default)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(containerName);
-            ArgumentException.ThrowIfNullOrWhiteSpace(blobPath);
-
-            var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
-            var blobClient = containerClient.GetBlobClient(blobPath);
-
-            var response = await blobClient.DeleteIfExistsAsync(cancellationToken: cancellationToken);
-
-            if (response.Value)
-            {
-                _logger.LogInformation(
-                    "Blob deleted: container '{Container}' path '{Path}'",
-                    containerName, blobPath);
-            }
-            else
-            {
                 _logger.LogWarning(
-                    "Blob not found for deletion: container '{Container}' path '{Path}'",
-                    containerName, blobPath);
-            }
+                    "Blob not found: container '{Container}' path '{Path}'",
+                    containerName,
+                    blobPath);
 
-            return response.Value;
+                return Result.Fail(new Error("Blob.NotFound")
+                    .WithMetadata("Container", containerName)
+                    .WithMetadata("Path", blobPath));
+            }
+            catch (RequestFailedException ex)
+            {
+                _logger.LogError(ex,
+                    "Azure storage error downloading blob from container '{Container}' path '{Path}'. Status: {Status}",
+                    containerName,
+                    blobPath,
+                    ex.Status);
+
+                return Result.Fail(new Error("Blob.Download.Failed")
+                    .WithMetadata("Status", ex.Status)
+                    .WithMetadata("ErrorCode", ex.ErrorCode ?? "Unknown"));
+            }
         }
 
-        /// <inheritdoc />
-        public async Task<bool> ExistsAsync(string containerName,
-                                            string blobPath,
-                                            CancellationToken cancellationToken = default)
+
+       /// <inheritdoc />
+        public async Task<Result> DeleteAsync(string containerName,
+                                              string blobPath,
+                                              CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(containerName);
             ArgumentException.ThrowIfNullOrWhiteSpace(blobPath);
 
-            var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
-            var blobClient = containerClient.GetBlobClient(blobPath);
+            try
+            {
+                var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
+                var blobClient = containerClient.GetBlobClient(blobPath);
 
-            var response = await blobClient.ExistsAsync(cancellationToken);
-            return response.Value;
+                var response = await blobClient.DeleteIfExistsAsync(cancellationToken: cancellationToken);
+
+                if (response.Value)
+                {
+                    _logger.LogInformation(
+                        "Blob deleted: container '{Container}' path '{Path}'",
+                        containerName,
+                        blobPath);
+                }
+                else
+                {
+                    _logger.LogDebug(
+                        "Blob did not exist for deletion: container '{Container}' path '{Path}'",
+                        containerName,
+                        blobPath);
+                }
+
+                return Result.Ok();
+            }
+            catch (RequestFailedException ex)
+            {
+                _logger.LogError(ex,
+                    "Azure storage error deleting blob from container '{Container}' path '{Path}'. Status: {Status}",
+                    containerName,
+                    blobPath,
+                    ex.Status);
+
+                return Result.Fail(new Error("Blob.Delete.Failed")
+                    .WithMetadata("Status", ex.Status)
+                    .WithMetadata("ErrorCode", ex.ErrorCode ?? "Unknown"));
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task<Result<bool>> ExistsAsync(string containerName,
+                                                    string blobPath,
+                                                    CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(containerName);
+            ArgumentException.ThrowIfNullOrWhiteSpace(blobPath);
+
+            try
+            {
+                var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
+                var blobClient = containerClient.GetBlobClient(blobPath);
+
+                var response = await blobClient.ExistsAsync(cancellationToken);
+
+                return Result.Ok(response.Value);
+            }
+            catch (RequestFailedException ex)
+            {
+                _logger.LogError(ex,
+                    "Azure storage error checking existence of blob in container '{Container}' path '{Path}'. Status: {Status}",
+                    containerName,
+                    blobPath,
+                    ex.Status);
+
+                return Result.Fail(new Error("Blob.Exists.Failed")
+                    .WithMetadata("Status", ex.Status)
+                    .WithMetadata("ErrorCode", ex.ErrorCode ?? "Unknown"));
+            }
         }
 
 
         /// <inheritdoc />
-        public async Task<string> GenerateDownloadUrlAsync(string containerName,
-                                                           string blobPath,
-                                                           TimeSpan validity,
-                                                           CancellationToken cancellationToken = default)
+        public async Task<Result<string>> GenerateDownloadUrlAsync(string containerName,
+                                                                   string blobPath,
+                                                                   TimeSpan validity,
+                                                                   CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(containerName);
             ArgumentException.ThrowIfNullOrWhiteSpace(blobPath);
 
             if (validity <= TimeSpan.Zero)
-                throw new ArgumentException("Validity must be positive.", nameof(validity));
-
-            var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
-            var blobClient = containerClient.GetBlobClient(blobPath);
-
-            // Use User Delegation SAS for better security (no account key required)
-            // Get a user delegation key that's valid for the requested period
-            var startsOn = DateTimeOffset.UtcNow;
-            var expiresOn = startsOn.Add(validity);
-
-            var userDelegationKey = await _blobServiceClient.GetUserDelegationKeyAsync(
-                startsOn,
-                expiresOn,
-                cancellationToken);
-
-            // Create a SAS token for read access
-            var sasBuilder = new BlobSasBuilder
             {
-                BlobContainerName = containerClient.Name,
-                BlobName = blobClient.Name,
-                Resource = "b", // b = blob
-                StartsOn = startsOn,
-                ExpiresOn = expiresOn
-            };
+                return Result.Fail(new Error("Blob.Url.InvalidValidity")
+                    .WithMetadata("Message", "Validity must be positive."));
+            }
 
-            sasBuilder.SetPermissions(BlobSasPermissions.Read);
-
-            // Build the SAS URI using the user delegation key
-            var blobUriBuilder = new BlobUriBuilder(blobClient.Uri)
+            try
             {
-                Sas = sasBuilder.ToSasQueryParameters(
-                    userDelegationKey.Value,
-                    _blobServiceClient.AccountName)
-            };
+                var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
+                var blobClient = containerClient.GetBlobClient(blobPath);
 
-            var sasUri = blobUriBuilder.ToUri().ToString();
+                var startsOn = DateTimeOffset.UtcNow;
+                var expiresOn = startsOn.Add(validity);
 
-            _logger.LogDebug(
-                "Generated download URL for blob '{Path}' valid until {ExpiresOn}",
-                blobPath, expiresOn);
+                var userDelegationKey = await _blobServiceClient.GetUserDelegationKeyAsync(startsOn,
+                                                                                           expiresOn,
+                                                                                           cancellationToken);
 
-            return sasUri;
+                var sasBuilder = new BlobSasBuilder
+                {
+                    BlobContainerName = containerClient.Name,
+                    BlobName = blobClient.Name,
+                    Resource = "b",
+                    StartsOn = startsOn,
+                    ExpiresOn = expiresOn
+                };
+
+                sasBuilder.SetPermissions(BlobSasPermissions.Read);
+
+                var blobUriBuilder = new BlobUriBuilder(blobClient.Uri)
+                {
+                    Sas = sasBuilder.ToSasQueryParameters(
+                        userDelegationKey.Value,
+                        _blobServiceClient.AccountName)
+                };
+
+                var sasUri = blobUriBuilder.ToUri().ToString();
+
+                _logger.LogDebug(
+                    "Generated download URL for blob '{Path}' valid until {ExpiresOn}",
+                    blobPath,
+                    expiresOn);
+
+                return Result.Ok(sasUri);
+            }
+            catch (RequestFailedException ex)
+            {
+                _logger.LogError(ex,
+                    "Azure storage error generating download URL for blob in container '{Container}' path '{Path}'. Status: {Status}",
+                    containerName,
+                    blobPath,
+                    ex.Status);
+
+                return Result.Fail(new Error("Blob.Url.GenerationFailed")
+                    .WithMetadata("Status", ex.Status)
+                    .WithMetadata("ErrorCode", ex.ErrorCode ?? "Unknown"));
+            }
         }
     }
 }

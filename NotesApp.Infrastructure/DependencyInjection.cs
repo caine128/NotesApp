@@ -1,4 +1,5 @@
-﻿using Azure.Identity;
+﻿using Azure.Core;
+using Azure.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
@@ -61,24 +62,37 @@ namespace NotesApp.Infrastructure
 
 
             // 4) Azure Blob Storage
-            // Uses Microsoft.Extensions.Azure for proper DI integration
-            // BlobServiceClient is registered as a singleton (thread-safe, reusable)
-            // Configuration expects: Azure:Storage:Blob:ServiceUri in appsettings.json
+            // Uses DefaultAzureCredential for authentication:
+            // - In Azure: Managed Identity (no secrets required)
+            // - Locally: Azure CLI, Visual Studio, or other developer credentials
             var blobServiceUri = configuration["Azure:Storage:Blob:ServiceUri"];
             if (!string.IsNullOrEmpty(blobServiceUri))
             {
                 services.AddAzureClients(azure =>
                 {
-                    // Use DefaultAzureCredential for managed identity in production
-                    // Falls back to development credentials (Azure CLI, Visual Studio, etc.)
                     azure.AddBlobServiceClient(new Uri(blobServiceUri));
+
+                    // Configure retry policy for transient failures
+                    azure.ConfigureDefaults(options =>
+                    {
+                        options.Retry.MaxRetries = 3;
+                        options.Retry.Mode = RetryMode.Exponential;
+                        options.Retry.Delay = TimeSpan.FromSeconds(1);
+                        options.Retry.MaxDelay = TimeSpan.FromSeconds(30);
+                        options.Retry.NetworkTimeout = TimeSpan.FromSeconds(100);
+                    });
+
+                    // DefaultAzureCredential automatically uses:
+                    // 1. Environment variables (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET)
+                    // 2. Managed Identity (when running in Azure)
+                    // 3. Visual Studio credentials
+                    // 4. Azure CLI credentials (az login)
+                    // 5. Azure PowerShell credentials
                     azure.UseCredential(new DefaultAzureCredential());
                 });
 
                 services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
             }
-
-            // TODO: add  caching, background workers, etc. here later.
 
             return services;
         }

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FluentResults;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -14,7 +15,7 @@ namespace NotesApp.Application.Abstractions.Storage
     /// Implementation should use the provider's SDK with proper:
     /// - Async/await patterns
     /// - CancellationToken support
-    /// - Error handling for transient failures
+    /// - Retry policies configured at the SDK level
     /// </summary>
     public interface IBlobStorageService
     {
@@ -26,34 +27,35 @@ namespace NotesApp.Application.Abstractions.Storage
         /// <param name="content">Stream containing the content to upload.</param>
         /// <param name="contentType">MIME type of the content (e.g., "image/jpeg").</param>
         /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>Result containing blob metadata on success.</returns>
-        Task<StorageUploadResult> UploadAsync(string containerName,
-                                           string blobPath,
-                                           Stream content,
-                                           string contentType,
-                                           CancellationToken cancellationToken = default);
+        /// <returns>Result containing blob metadata on success, or failure with error details.</returns>
+        Task<Result<StorageUploadResult>> UploadAsync(string containerName,
+                                                      string blobPath,
+                                                      Stream content,
+                                                      string contentType,
+                                                      CancellationToken cancellationToken = default);
 
-        /// <summary>
+        //// <summary>
         /// Downloads a blob as a stream.
         /// </summary>
         /// <param name="containerName">Name of the container/bucket.</param>
         /// <param name="blobPath">Path within the container.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>Stream containing the blob content, or null if blob doesn't exist.</returns>
-        Task<StorageDownloadResult?> DownloadAsync(string containerName,
-                                                string blobPath,
-                                                CancellationToken cancellationToken = default);
+        /// <returns>Result containing the download result on success, or failure with error (e.g., Blob.NotFound).</returns>
+        Task<Result<StorageDownloadResult>> DownloadAsync(string containerName,
+                                                          string blobPath,
+                                                          CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Deletes a blob from storage.
+        /// Idempotent: succeeds even if blob doesn't exist.
         /// </summary>
         /// <param name="containerName">Name of the container/bucket.</param>
         /// <param name="blobPath">Path within the container.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>True if deleted, false if blob didn't exist.</returns>
-        Task<bool> DeleteAsync(string containerName,
-                               string blobPath,
-                               CancellationToken cancellationToken = default);
+        /// <returns>Result indicating success or failure. Success is returned even if blob didn't exist.</returns>
+        Task<Result> DeleteAsync(string containerName,
+                                 string blobPath,
+                                 CancellationToken cancellationToken = default);
 
 
 
@@ -63,10 +65,10 @@ namespace NotesApp.Application.Abstractions.Storage
         /// <param name="containerName">Name of the container/bucket.</param>
         /// <param name="blobPath">Path within the container.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>True if blob exists, false otherwise.</returns>
-        Task<bool> ExistsAsync(string containerName,
-                               string blobPath,
-                               CancellationToken cancellationToken = default);
+        /// <returns>Result containing true if blob exists, false otherwise.</returns>
+        Task<Result<bool>> ExistsAsync(string containerName,
+                                       string blobPath,
+                                       CancellationToken cancellationToken = default);
 
 
 
@@ -78,15 +80,15 @@ namespace NotesApp.Application.Abstractions.Storage
         /// <param name="blobPath">Path within the container.</param>
         /// <param name="validity">How long the URL should be valid.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>Time-limited URL for downloading the blob.</returns>
-        Task<string> GenerateDownloadUrlAsync(string containerName,
-                                              string blobPath,
-                                              TimeSpan validity,
-                                              CancellationToken cancellationToken = default);
+        /// <returns>Result containing time-limited URL on success, or failure with error.</returns>
+        Task<Result<string>> GenerateDownloadUrlAsync(string containerName,
+                                                      string blobPath,
+                                                      TimeSpan validity,
+                                                      CancellationToken cancellationToken = default);
 
 
-       
 
-        
+
+
     }
 }

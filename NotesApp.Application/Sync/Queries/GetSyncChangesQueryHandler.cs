@@ -12,7 +12,7 @@ using System.Text;
 
 namespace NotesApp.Application.Sync.Queries
 {
-    //// <summary>
+    /// <summary>
     /// Handles sync pull requests for tasks, notes, blocks, and assets.
     /// 
     /// Responsibilities:
@@ -66,7 +66,7 @@ namespace NotesApp.Application.Sync.Queries
         }
 
         public async Task<Result<SyncChangesDto>> Handle(GetSyncChangesQuery request,
-                                                        CancellationToken cancellationToken)
+                                                         CancellationToken cancellationToken)
         {
             var userId = await _currentUserService.GetUserIdAsync(cancellationToken);
 
@@ -334,7 +334,6 @@ namespace NotesApp.Application.Sync.Queries
             };
         }
 
-
         private static SyncBlocksChangesDto CategoriseBlocks(IReadOnlyList<Block> blocks,
                                                              DateTime? sinceUtc)
         {
@@ -389,8 +388,6 @@ namespace NotesApp.Application.Sync.Queries
             };
         }
 
-
-
         /// <summary>
         /// Categorises assets into created/deleted buckets.
         /// Assets are immutable, so there's no "updated" bucket.
@@ -416,23 +413,25 @@ namespace NotesApp.Application.Sync.Queries
                     continue;
                 }
 
-                // For initial sync or newly created assets
+                // Generate pre-signed download URL for the asset
                 string? downloadUrl = null;
                 if (_blobStorageService is not null)
                 {
-                    try
+                    var urlResult = await _blobStorageService.GenerateDownloadUrlAsync(AssetContainerName,
+                                                                                       asset.BlobPath,
+                                                                                       AssetDownloadUrlValidity,
+                                                                                       cancellationToken);
+
+                    if (urlResult.IsSuccess)
                     {
-                        downloadUrl = await _blobStorageService.GenerateDownloadUrlAsync(
-                            AssetContainerName,
-                            asset.BlobPath,
-                            AssetDownloadUrlValidity,
-                            cancellationToken);
+                        downloadUrl = urlResult.Value;
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        _logger.LogWarning(ex,
-                            "Failed to generate download URL for asset {AssetId}",
-                            asset.Id);
+                        _logger.LogWarning(
+                            "Failed to generate download URL for asset {AssetId}: {Errors}",
+                            asset.Id,
+                            string.Join(", ", urlResult.Errors.Select(e => e.Message)));
                         // Continue without download URL - client can request it separately
                     }
                 }
