@@ -52,9 +52,9 @@ namespace NotesApp.Api.IntegrationTests.Sync
                 {
                     new SyncConflictResolutionDto
                     {
-                        EntityType = "task",
+                        EntityType = SyncEntityType.Task,
                         EntityId = taskDetail!.TaskId,
-                        Choice = "keep_server",
+                        Choice = SyncResolutionChoice.KeepServer,
                         ExpectedVersion = 1,
                         TaskData = null
                     }
@@ -71,9 +71,9 @@ namespace NotesApp.Api.IntegrationTests.Sync
             result.Should().NotBeNull();
 
             var item = result!.Results.Should().ContainSingle(r =>
-                    r.EntityType == "task" &&
+                    r.EntityType == SyncEntityType.Task &&
                     r.EntityId == taskDetail.TaskId &&
-                    r.Status == "kept_server")
+                    r.Status == SyncConflictResolutionStatus.KeptServer)
                 .Subject;
 
             item.NewVersion.Should().NotBeNull();
@@ -111,9 +111,9 @@ namespace NotesApp.Api.IntegrationTests.Sync
                 {
                     new SyncConflictResolutionDto
                     {
-                        EntityType = "task",
+                        EntityType = SyncEntityType.Task,
                         EntityId = taskDetail!.TaskId,
-                        Choice = "keep_client",
+                        Choice = SyncResolutionChoice.KeepClient,
                         ExpectedVersion = 1, // initial version
                         TaskData = new TaskConflictResolutionDataDto
                         {
@@ -140,9 +140,9 @@ namespace NotesApp.Api.IntegrationTests.Sync
             result.Should().NotBeNull();
 
             var item = result!.Results.Should().ContainSingle(r =>
-                    r.EntityType == "task" &&
+                    r.EntityType == SyncEntityType.Task &&
                     r.EntityId == taskDetail.TaskId &&
-                    r.Status == "updated")
+                    r.Status == SyncConflictResolutionStatus.Updated)
                 .Subject;
 
             item.NewVersion.Should().NotBeNull();

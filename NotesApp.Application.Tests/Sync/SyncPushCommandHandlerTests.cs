@@ -56,15 +56,14 @@ namespace NotesApp.Application.Tests.Sync
                 .Setup(r => r.GetByIdAsync(_deviceId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(device);
 
-            return new SyncPushCommandHandler(
-                _currentUserServiceMock.Object,
-                _taskRepositoryMock.Object,
-                _noteRepositoryMock.Object,
-                _deviceRepositoryMock.Object,
-                _outboxRepositoryMock.Object,
-                _unitOfWorkMock.Object,
-                _clockMock.Object,
-                _loggerMock.Object);
+            return new SyncPushCommandHandler(_currentUserServiceMock.Object,
+                                              _taskRepositoryMock.Object,
+                                              _noteRepositoryMock.Object,
+                                              _deviceRepositoryMock.Object,
+                                              _outboxRepositoryMock.Object,
+                                              _unitOfWorkMock.Object,
+                                              _clockMock.Object,
+                                              _loggerMock.Object);
         }
 
         [Fact]
@@ -114,16 +113,16 @@ namespace NotesApp.Application.Tests.Sync
             var dto = result.Value;
 
             dto.Tasks.Created.Should().HaveCount(1);
-            dto.Tasks.Created[0].Status.Should().Be("created");
+            dto.Tasks.Created[0].Status.Should().Be(SyncPushCreatedStatus.Created);
             dto.Tasks.Created[0].ServerId.Should().NotBeEmpty();
             dto.Tasks.Created[0].Version.Should().BeGreaterThanOrEqualTo(1);
+            dto.Tasks.Created[0].Conflict.Should().BeNull();
 
             dto.Notes.Created.Should().HaveCount(1);
-            dto.Notes.Created[0].Status.Should().Be("created");
+            dto.Notes.Created[0].Status.Should().Be(SyncPushCreatedStatus.Created);
             dto.Notes.Created[0].ServerId.Should().NotBeEmpty();
             dto.Notes.Created[0].Version.Should().BeGreaterThanOrEqualTo(1);
-
-            dto.Conflicts.Should().BeEmpty();
+            dto.Notes.Created[0].Conflict.Should().BeNull();
 
             _taskRepositoryMock.Verify(r => r.AddAsync(It.IsAny<TaskItem>(), It.IsAny<CancellationToken>()), Times.Once);
             _noteRepositoryMock.Verify(r => r.AddAsync(It.IsAny<Note>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -182,13 +181,15 @@ namespace NotesApp.Application.Tests.Sync
 
             var dto = result.Value;
 
-            dto.Tasks.Updated.Should().ContainSingle(u => u.Id == taskId && u.Status == "conflict");
-            dto.Conflicts.Should().ContainSingle(c =>
-                c.EntityType == "task" &&
-                c.EntityId == taskId &&
-                c.ConflictType == "version_mismatch" &&
-                c.ClientVersion == 1 &&
-                c.ServerVersion == 2);
+            var updateResult = dto.Tasks.Updated.Should().ContainSingle(u =>
+                u.Id == taskId &&
+                u.Status == SyncPushUpdatedStatus.Conflict).Subject;
+
+            updateResult.Conflict.Should().NotBeNull();
+            updateResult.Conflict!.ConflictType.Should().Be(SyncConflictType.VersionMismatch);
+            updateResult.Conflict.ClientVersion.Should().Be(1);
+            updateResult.Conflict.ServerVersion.Should().Be(2);
+            updateResult.Conflict.ServerTask.Should().NotBeNull();
 
             // No outbox message and no update applied in this case
             _outboxRepositoryMock.Verify(r => r.AddAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -229,8 +230,12 @@ namespace NotesApp.Application.Tests.Sync
 
             var dto = result.Value;
 
-            dto.Tasks.Deleted.Should().ContainSingle(d => d.Id == taskId && d.Status == "not_found");
-            dto.Conflicts.Should().BeEmpty();
+            // Delete not found is idempotent - no conflict, just status
+            var deleteResult = dto.Tasks.Deleted.Should().ContainSingle(d =>
+                d.Id == taskId &&
+                d.Status == SyncPushDeletedStatus.NotFound).Subject;
+
+            deleteResult.Conflict.Should().BeNull();
         }
 
         [Fact]

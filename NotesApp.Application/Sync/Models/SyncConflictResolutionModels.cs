@@ -24,10 +24,10 @@ namespace NotesApp.Application.Sync.Models
     /// </summary>
     public sealed record SyncConflictResolutionDto
     {
-        public string EntityType { get; init; } = string.Empty;
+        public SyncEntityType EntityType { get; init; }
         public Guid EntityId { get; init; }
 
-        public string Choice { get; init; } = string.Empty;
+        public SyncResolutionChoice Choice { get; init; }
 
         /// <summary>
         /// Version the client believes the entity is at when deciding the resolution.
@@ -72,13 +72,13 @@ namespace NotesApp.Application.Sync.Models
     /// </summary>
     public sealed record SyncConflictResolutionResultItemDto
     {
-        public string EntityType { get; init; } = string.Empty; // "task" or "note"
+        public SyncEntityType EntityType { get; init; }
         public Guid EntityId { get; init; }
 
         /// <summary>
         /// e.g. "kept_server", "updated", "not_found", "deleted_on_server", "validation_failed", "conflict"
         /// </summary>
-        public string Status { get; init; } = string.Empty;
+        public SyncConflictResolutionStatus Status { get; init; }
 
         public long? NewVersion { get; init; }
 

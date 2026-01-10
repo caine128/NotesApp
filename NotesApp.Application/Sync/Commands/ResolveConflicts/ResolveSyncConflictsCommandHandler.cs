@@ -54,29 +54,27 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
             _logger = logger;
         }
 
-        public async Task<Result<ResolveSyncConflictsResultDto>> Handle(
-            ResolveSyncConflictsCommand request,
-            CancellationToken cancellationToken)
+        public async Task<Result<ResolveSyncConflictsResultDto>> Handle(ResolveSyncConflictsCommand request,
+                                                                        CancellationToken cancellationToken)
         {
             var userId = await _currentUserService.GetUserIdAsync(cancellationToken);
             var utcNow = _clock.UtcNow;
 
-            _logger.LogInformation(
-                "Resolving {Count} sync conflicts for user {UserId} at {UtcNow}",
-                request.Request.Resolutions.Count,
-                userId,
-                utcNow);
+            _logger.LogInformation("Resolving {Count} sync conflicts for user {UserId} at {UtcNow}",
+                                   request.Request.Resolutions.Count,
+                                   userId,
+                                   utcNow);
 
             var results = new List<SyncConflictResolutionResultItemDto>();
 
             foreach (var resolution in request.Request.Resolutions)
             {
-                if (string.Equals(resolution.EntityType, "task", StringComparison.OrdinalIgnoreCase))
+                if (resolution.EntityType == SyncEntityType.Task)
                 {
                     var result = await ResolveTaskConflictAsync(userId, resolution, utcNow, cancellationToken);
                     results.Add(result);
                 }
-                else if (string.Equals(resolution.EntityType, "note", StringComparison.OrdinalIgnoreCase))
+                else if (resolution.EntityType == SyncEntityType.Note)
                 {
                     var result = await ResolveNoteConflictAsync(userId, resolution, utcNow, cancellationToken);
                     results.Add(result);
@@ -87,7 +85,7 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
                     {
                         EntityType = resolution.EntityType,
                         EntityId = resolution.EntityId,
-                        Status = "invalid_entity_type",
+                        Status = SyncConflictResolutionStatus.InvalidEntityType,
                         NewVersion = null,
                         Errors = new[] { "Unsupported EntityType." }
                     });
@@ -108,11 +106,10 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
         // Task resolution
         // --------------------------------------------------------------------
 
-        private async Task<SyncConflictResolutionResultItemDto> ResolveTaskConflictAsync(
-            Guid userId,
-            SyncConflictResolutionDto resolution,
-            DateTime utcNow,
-            CancellationToken cancellationToken)
+        private async Task<SyncConflictResolutionResultItemDto> ResolveTaskConflictAsync(Guid userId,
+                                                                                         SyncConflictResolutionDto resolution,
+                                                                                         DateTime utcNow,
+                                                                                         CancellationToken cancellationToken)
         {
             var task = await _taskRepository.GetByIdAsync(resolution.EntityId, cancellationToken);
 
@@ -120,9 +117,9 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
             {
                 return new SyncConflictResolutionResultItemDto
                 {
-                    EntityType = "task",
+                    EntityType = SyncEntityType.Task,
                     EntityId = resolution.EntityId,
-                    Status = "not_found",
+                    Status = SyncConflictResolutionStatus.NotFound,
                     NewVersion = null,
                     Errors = Array.Empty<string>()
                 };
@@ -132,22 +129,22 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
             {
                 return new SyncConflictResolutionResultItemDto
                 {
-                    EntityType = "task",
+                    EntityType = SyncEntityType.Task,
                     EntityId = resolution.EntityId,
-                    Status = "deleted_on_server",
+                    Status = SyncConflictResolutionStatus.DeletedOnServer,
                     NewVersion = task.Version,
                     Errors = Array.Empty<string>()
                 };
             }
 
             // keep_server: just acknowledge, no change
-            if (string.Equals(resolution.Choice, "keep_server", StringComparison.OrdinalIgnoreCase))
+            if (resolution.Choice == SyncResolutionChoice.KeepServer)
             {
                 return new SyncConflictResolutionResultItemDto
                 {
-                    EntityType = "task",
+                    EntityType = SyncEntityType.Task,
                     EntityId = resolution.EntityId,
-                    Status = "kept_server",
+                    Status = SyncConflictResolutionStatus.KeptServer,
                     NewVersion = task.Version,
                     Errors = Array.Empty<string>()
                 };
@@ -158,9 +155,9 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
             {
                 return new SyncConflictResolutionResultItemDto
                 {
-                    EntityType = "task",
+                    EntityType = SyncEntityType.Task,
                     EntityId = resolution.EntityId,
-                    Status = "conflict",
+                    Status = SyncConflictResolutionStatus.Conflict,
                     NewVersion = task.Version,
                     Errors = new[]
                     {
@@ -173,9 +170,9 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
             {
                 return new SyncConflictResolutionResultItemDto
                 {
-                    EntityType = "task",
+                    EntityType = SyncEntityType.Task,
                     EntityId = resolution.EntityId,
-                    Status = "validation_failed",
+                    Status = SyncConflictResolutionStatus.ValidationFailed,
                     NewVersion = task.Version,
                     Errors = new[] { "TaskData must be provided for keep_client/merge resolutions." }
                 };
@@ -183,23 +180,22 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
 
             var data = resolution.TaskData;
 
-            var updateResult = task.Update(
-                data.Title,
-                data.Date,
-                data.Description,
-                data.StartTime,
-                data.EndTime,
-                data.Location,
-                data.TravelTime,
-                utcNow);
+            var updateResult = task.Update(data.Title,
+                                           data.Date,
+                                           data.Description,
+                                           data.StartTime,
+                                           data.EndTime,
+                                           data.Location,
+                                           data.TravelTime,
+                                           utcNow);
 
             if (updateResult.IsFailure)
             {
                 return new SyncConflictResolutionResultItemDto
                 {
-                    EntityType = "task",
+                    EntityType = SyncEntityType.Task,
                     EntityId = resolution.EntityId,
-                    Status = "validation_failed",
+                    Status = SyncConflictResolutionStatus.ValidationFailed,
                     NewVersion = task.Version,
                     Errors = updateResult.Errors.Select(e => e.Message).ToArray()
                 };
@@ -216,11 +212,10 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
 
             var payload = OutboxPayloadBuilder.BuildTaskPayload(task, Guid.Empty);
 
-            var outboxResult = OutboxMessage.Create<TaskItem, TaskEventType>(
-                task,
-                TaskEventType.Updated,
-                payload,
-                utcNow);
+            var outboxResult = OutboxMessage.Create<TaskItem, TaskEventType>(task,
+                                                                             TaskEventType.Updated,
+                                                                             payload,
+                                                                             utcNow);
 
             if (outboxResult.IsSuccess)
             {
@@ -229,9 +224,9 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
 
             return new SyncConflictResolutionResultItemDto
             {
-                EntityType = "task",
+                EntityType = SyncEntityType.Task,
                 EntityId = resolution.EntityId,
-                Status = "updated",
+                Status = SyncConflictResolutionStatus.Updated,
                 NewVersion = task.Version,
                 Errors = Array.Empty<string>()
             };
@@ -241,11 +236,10 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
         // Note resolution
         // --------------------------------------------------------------------
 
-        private async Task<SyncConflictResolutionResultItemDto> ResolveNoteConflictAsync(
-            Guid userId,
-            SyncConflictResolutionDto resolution,
-            DateTime utcNow,
-            CancellationToken cancellationToken)
+        private async Task<SyncConflictResolutionResultItemDto> ResolveNoteConflictAsync(Guid userId,
+                                                                                         SyncConflictResolutionDto resolution,
+                                                                                         DateTime utcNow,
+                                                                                         CancellationToken cancellationToken)
         {
             var note = await _noteRepository.GetByIdAsync(resolution.EntityId, cancellationToken);
 
@@ -253,9 +247,9 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
             {
                 return new SyncConflictResolutionResultItemDto
                 {
-                    EntityType = "note",
+                    EntityType = SyncEntityType.Note,
                     EntityId = resolution.EntityId,
-                    Status = "not_found",
+                    Status = SyncConflictResolutionStatus.NotFound,
                     NewVersion = null,
                     Errors = Array.Empty<string>()
                 };
@@ -265,21 +259,21 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
             {
                 return new SyncConflictResolutionResultItemDto
                 {
-                    EntityType = "note",
+                    EntityType = SyncEntityType.Note,
                     EntityId = resolution.EntityId,
-                    Status = "deleted_on_server",
+                    Status = SyncConflictResolutionStatus.DeletedOnServer,
                     NewVersion = note.Version,
                     Errors = Array.Empty<string>()
                 };
             }
 
-            if (string.Equals(resolution.Choice, "keep_server", StringComparison.OrdinalIgnoreCase))
+            if (resolution.Choice == SyncResolutionChoice.KeepServer)
             {
                 return new SyncConflictResolutionResultItemDto
                 {
-                    EntityType = "note",
+                    EntityType = SyncEntityType.Note,
                     EntityId = resolution.EntityId,
-                    Status = "kept_server",
+                    Status = SyncConflictResolutionStatus.KeptServer,
                     NewVersion = note.Version,
                     Errors = Array.Empty<string>()
                 };
@@ -289,9 +283,9 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
             {
                 return new SyncConflictResolutionResultItemDto
                 {
-                    EntityType = "note",
+                    EntityType = SyncEntityType.Note,
                     EntityId = resolution.EntityId,
-                    Status = "conflict",
+                    Status = SyncConflictResolutionStatus.Conflict,
                     NewVersion = note.Version,
                     Errors = new[]
                     {
@@ -304,9 +298,9 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
             {
                 return new SyncConflictResolutionResultItemDto
                 {
-                    EntityType = "note",
+                    EntityType = SyncEntityType.Note,
                     EntityId = resolution.EntityId,
-                    Status = "validation_failed",
+                    Status = SyncConflictResolutionStatus.ValidationFailed,
                     NewVersion = note.Version,
                     Errors = new[] { "NoteData must be provided for keep_client/merge resolutions." }
                 };
@@ -314,21 +308,20 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
 
             var data = resolution.NoteData;
 
-            var updateResult = note.Update(
-                data.Title,
-                data.Content,
-                data.Summary,
-                data.Tags,
-                data.Date,
-                utcNow);
+            var updateResult = note.Update(data.Title,
+                                           data.Content,
+                                           data.Summary,
+                                           data.Tags,
+                                           data.Date,
+                                           utcNow);
 
             if (updateResult.IsFailure)
             {
                 return new SyncConflictResolutionResultItemDto
                 {
-                    EntityType = "note",
+                    EntityType = SyncEntityType.Note,
                     EntityId = resolution.EntityId,
-                    Status = "validation_failed",
+                    Status = SyncConflictResolutionStatus.ValidationFailed,
                     NewVersion = note.Version,
                     Errors = updateResult.Errors.Select(e => e.Message).ToArray()
                 };
@@ -336,11 +329,10 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
 
             var payload = OutboxPayloadBuilder.BuildNotePayload(note, Guid.Empty);
 
-            var outboxResult = OutboxMessage.Create<Note, NoteEventType>(
-                note,
-                NoteEventType.Updated,
-                payload,
-                utcNow);
+            var outboxResult = OutboxMessage.Create<Note, NoteEventType>(note,
+                                                                         NoteEventType.Updated,
+                                                                         payload,
+                                                                         utcNow);
 
             if (outboxResult.IsSuccess)
             {
@@ -349,9 +341,9 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
 
             return new SyncConflictResolutionResultItemDto
             {
-                EntityType = "note",
+                EntityType = SyncEntityType.Note,
                 EntityId = resolution.EntityId,
-                Status = "updated",
+                Status = SyncConflictResolutionStatus.Updated,
                 NewVersion = note.Version,
                 Errors = Array.Empty<string>()
             };

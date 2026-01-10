@@ -21,8 +21,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
     /// - Always uses "delete wins" semantics for deletes.
     /// - Emits outbox messages for Created / Updated / Deleted events.
     /// 
-    /// Per-item conflicts (version mismatch, not found, etc.) are collected and
-    /// returned in the result rather than causing the whole command to fail.
+    /// Per-item conflicts (version mismatch, not found, etc.) are embedded
+    /// directly in each result DTO's Conflict property rather than in a separate list.
     /// </summary>
     public sealed class SyncPushCommandHandler
         : IRequestHandler<SyncPushCommand, Result<SyncPushResultDto>>
@@ -92,8 +92,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             var blockUpdateResults = new List<BlockUpdatedPushResultDto>();
             var blockDeleteResults = new List<BlockDeletedPushResultDto>();
 
-            var conflicts = new List<SyncConflictDto>();
-
             // Maps client IDs to server IDs for entities created in this push.
             // Used to resolve parent references for blocks.
             var taskClientToServerIds = new Dictionary<Guid, Guid>();
@@ -105,21 +103,18 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                           utcNow,
                                           taskCreateResults,
                                           taskClientToServerIds,
-                                          conflicts,
                                           cancellationToken);
 
             await ProcessTaskUpdatesAsync(userId,
                                           request,
                                           utcNow,
                                           taskUpdateResults,
-                                          conflicts,
                                           cancellationToken);
 
             await ProcessTaskDeletesAsync(userId,
                                           request,
                                           utcNow,
                                           taskDeleteResults,
-                                          conflicts,
                                           cancellationToken);
 
             // Process notes (collect client->server ID mappings)
@@ -128,21 +123,18 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                           utcNow,
                                           noteCreateResults,
                                           noteClientToServerIds,
-                                          conflicts,
                                           cancellationToken);
 
             await ProcessNoteUpdatesAsync(userId,
                                           request,
                                           utcNow,
                                           noteUpdateResults,
-                                          conflicts,
                                           cancellationToken);
 
             await ProcessNoteDeletesAsync(userId,
                                           request,
                                           utcNow,
                                           noteDeleteResults,
-                                          conflicts,
                                           cancellationToken);
 
             // Process blocks (after tasks/notes so parent ID mappings are available)
@@ -152,21 +144,18 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                            blockCreateResults,
                                            taskClientToServerIds,
                                            noteClientToServerIds,
-                                           conflicts,
                                            cancellationToken);
 
             await ProcessBlockUpdatesAsync(userId,
                                            request,
                                            utcNow,
                                            blockUpdateResults,
-                                           conflicts,
                                            cancellationToken);
 
             await ProcessBlockDeletesAsync(userId,
                                            request,
                                            utcNow,
                                            blockDeleteResults,
-                                           conflicts,
                                            cancellationToken);
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -191,7 +180,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     Updated = blockUpdateResults,
                     Deleted = blockDeleteResults
                 },
-                Conflicts = conflicts
             };
 
             return Result.Ok(resultDto);
@@ -209,7 +197,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                    DateTime utcNow,
                                                    List<TaskCreatedPushResultDto> results,
                                                    Dictionary<Guid, Guid> clientToServerIds,
-                                                   List<SyncConflictDto> conflicts,
                                                    CancellationToken cancellationToken)
         {
             foreach (var item in request.Tasks.Created)
@@ -226,20 +213,18 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 if (createResult.IsFailure)
                 {
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "task",
-                        EntityId = null,
-                        ConflictType = "validation_failed",
-                        Errors = createResult.Errors.Select(e => e.Message).ToArray()
-                    });
 
                     results.Add(new TaskCreatedPushResultDto
                     {
                         ClientId = item.ClientId,
                         ServerId = Guid.Empty,
                         Version = 0,
-                        Status = "failed"
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = createResult.Errors.Select(e => e.Message).ToArray()
+                        }
                     });
 
                     continue;
@@ -268,13 +253,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 }
                 else
                 {
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "task",
-                        EntityId = task.Id,
-                        ConflictType = "outbox_failed",
-                        Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
-                    });
+                    // Log but don't fail - entity was created successfully
+                    _logger.LogWarning(
+                        "Failed to create outbox message for task {TaskId}: {Errors}",
+                        task.Id,
+                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
                 }
 
                 // Store client-to-server ID mapping for block parent resolution
@@ -285,7 +268,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     ClientId = item.ClientId,
                     ServerId = task.Id,
                     Version = task.Version,
-                    Status = "created"
+                    Status = SyncPushCreatedStatus.Created
                 });
             }
         }
@@ -294,7 +277,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                    SyncPushCommand request,
                                                    DateTime utcNow,
                                                    List<TaskUpdatedPushResultDto> results,
-                                                   List<SyncConflictDto> conflicts,
                                                    CancellationToken cancellationToken)
         {
             foreach (var item in request.Tasks.Updated)
@@ -307,14 +289,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = null,
-                        Status = "not_found"
-                    });
-
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "task",
-                        EntityId = item.Id,
-                        ConflictType = "not_found"
+                        Status = SyncPushUpdatedStatus.NotFound,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.NotFound
+                        }
                     });
 
                     continue;
@@ -326,14 +305,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = null,
-                        Status = "deleted_on_server"
-                    });
-
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "task",
-                        EntityId = item.Id,
-                        ConflictType = "deleted_on_server"
+                        Status = SyncPushUpdatedStatus.DeletedOnServer,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.DeletedOnServer
+                        }
                     });
 
                     continue;
@@ -345,31 +321,27 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = task.Version,
-                        Status = "conflict"
-                    });
-
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "task",
-                        EntityId = item.Id,
-                        ConflictType = "version_mismatch",
-                        ClientVersion = item.ExpectedVersion,
-                        ServerVersion = task.Version,
-                        ServerTask = task.ToSyncDto()
+                        Status = SyncPushUpdatedStatus.Conflict,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.VersionMismatch,
+                            ClientVersion = item.ExpectedVersion,
+                            ServerVersion = task.Version,
+                            ServerTask = task.ToSyncDto()
+                        }
                     });
 
                     continue;
                 }
 
-                var updateResult = task.Update(
-                    item.Title,
-                    item.Date,
-                    item.Description,
-                    item.StartTime,
-                    item.EndTime,
-                    item.Location,
-                    item.TravelTime,
-                    utcNow);
+                var updateResult = task.Update(item.Title,
+                                               item.Date,
+                                               item.Description,
+                                               item.StartTime,
+                                               item.EndTime,
+                                               item.Location,
+                                               item.TravelTime,
+                                               utcNow);
 
                 if (updateResult.IsFailure)
                 {
@@ -377,17 +349,14 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = task.Version,
-                        Status = "validation_failed"
-                    });
-
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "task",
-                        EntityId = item.Id,
-                        ConflictType = "validation_failed",
-                        ClientVersion = item.ExpectedVersion,
-                        ServerVersion = task.Version,
-                        Errors = updateResult.Errors.Select(e => e.Message).ToArray()
+                        Status = SyncPushUpdatedStatus.ValidationFailed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            ClientVersion = item.ExpectedVersion,
+                            ServerVersion = task.Version,
+                            Errors = updateResult.Errors.Select(e => e.Message).ToArray()
+                        }
                     });
 
                     continue;
@@ -416,20 +385,17 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 }
                 else
                 {
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "task",
-                        EntityId = task.Id,
-                        ConflictType = "outbox_failed",
-                        Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
-                    });
+                    _logger.LogWarning(
+                        "Failed to create outbox message for task update {TaskId}: {Errors}",
+                        task.Id,
+                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
                 }
 
                 results.Add(new TaskUpdatedPushResultDto
                 {
                     Id = item.Id,
                     NewVersion = task.Version,
-                    Status = "updated"
+                    Status = SyncPushUpdatedStatus.Updated
                 });
             }
         }
@@ -438,7 +404,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                    SyncPushCommand request,
                                                    DateTime utcNow,
                                                    List<TaskDeletedPushResultDto> results,
-                                                   List<SyncConflictDto> conflicts,
                                                    CancellationToken cancellationToken)
         {
             foreach (var item in request.Tasks.Deleted)
@@ -450,7 +415,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     results.Add(new TaskDeletedPushResultDto
                     {
                         Id = item.Id,
-                        Status = "not_found"
+                        Status = SyncPushDeletedStatus.NotFound
                     });
 
                     continue;
@@ -461,7 +426,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     results.Add(new TaskDeletedPushResultDto
                     {
                         Id = item.Id,
-                        Status = "already_deleted"
+                        Status = SyncPushDeletedStatus.AlreadyDeleted
                     });
 
                     continue;
@@ -483,19 +448,16 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 }
                 else
                 {
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "task",
-                        EntityId = task.Id,
-                        ConflictType = "outbox_failed",
-                        Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
-                    });
+                    _logger.LogWarning(
+                        "Failed to create outbox message for task delete {TaskId}: {Errors}",
+                        task.Id,
+                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
                 }
 
                 results.Add(new TaskDeletedPushResultDto
                 {
                     Id = item.Id,
-                    Status = "deleted"
+                    Status = SyncPushDeletedStatus.Deleted
                 });
             }
         }
@@ -512,7 +474,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                    DateTime utcNow,
                                                    List<NoteCreatedPushResultDto> results,
                                                    Dictionary<Guid, Guid> clientToServerIds,
-                                                   List<SyncConflictDto> conflicts,
                                                    CancellationToken cancellationToken)
         {
             foreach (var item in request.Notes.Created)
@@ -527,20 +488,17 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 if (createResult.IsFailure)
                 {
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "note",
-                        EntityId = null,
-                        ConflictType = "validation_failed",
-                        Errors = createResult.Errors.Select(e => e.Message).ToArray()
-                    });
-
                     results.Add(new NoteCreatedPushResultDto
                     {
                         ClientId = item.ClientId,
                         ServerId = Guid.Empty,
                         Version = 0,
-                        Status = "failed"
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = createResult.Errors.Select(e => e.Message).ToArray()
+                        }
                     });
 
                     continue;
@@ -563,13 +521,10 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 }
                 else
                 {
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "note",
-                        EntityId = note.Id,
-                        ConflictType = "outbox_failed",
-                        Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
-                    });
+                    _logger.LogWarning(
+                        "Failed to create outbox message for note {NoteId}: {Errors}",
+                        note.Id,
+                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
                 }
 
                 // Store client-to-server ID mapping for block parent resolution
@@ -580,7 +535,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     ClientId = item.ClientId,
                     ServerId = note.Id,
                     Version = note.Version,
-                    Status = "created"
+                    Status = SyncPushCreatedStatus.Created
                 });
             }
         }
@@ -589,7 +544,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                    SyncPushCommand request,
                                                    DateTime utcNow,
                                                    List<NoteUpdatedPushResultDto> results,
-                                                   List<SyncConflictDto> conflicts,
                                                    CancellationToken cancellationToken)
         {
             foreach (var item in request.Notes.Updated)
@@ -602,14 +556,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = null,
-                        Status = "not_found"
-                    });
-
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "note",
-                        EntityId = item.Id,
-                        ConflictType = "not_found"
+                        Status = SyncPushUpdatedStatus.NotFound,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.NotFound
+                        }
                     });
 
                     continue;
@@ -621,14 +572,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = null,
-                        Status = "deleted_on_server"
-                    });
-
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "note",
-                        EntityId = item.Id,
-                        ConflictType = "deleted_on_server"
+                        Status = SyncPushUpdatedStatus.DeletedOnServer,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.DeletedOnServer
+                        }
                     });
 
                     continue;
@@ -640,17 +588,14 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = note.Version,
-                        Status = "conflict"
-                    });
-
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "note",
-                        EntityId = item.Id,
-                        ConflictType = "version_mismatch",
-                        ClientVersion = item.ExpectedVersion,
-                        ServerVersion = note.Version,
-                        ServerNote = note.ToSyncDto()
+                        Status = SyncPushUpdatedStatus.Conflict,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.VersionMismatch,
+                            ClientVersion = item.ExpectedVersion,
+                            ServerVersion = note.Version,
+                            ServerNote = note.ToSyncDto()
+                        }
                     });
 
                     continue;
@@ -669,17 +614,14 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = note.Version,
-                        Status = "validation_failed"
-                    });
-
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "note",
-                        EntityId = item.Id,
-                        ConflictType = "validation_failed",
-                        ClientVersion = item.ExpectedVersion,
-                        ServerVersion = note.Version,
-                        Errors = updateResult.Errors.Select(e => e.Message).ToArray()
+                        Status = SyncPushUpdatedStatus.ValidationFailed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            ClientVersion = item.ExpectedVersion,
+                            ServerVersion = note.Version,
+                            Errors = updateResult.Errors.Select(e => e.Message).ToArray()
+                        }
                     });
 
                     continue;
@@ -699,20 +641,17 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 }
                 else
                 {
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "note",
-                        EntityId = note.Id,
-                        ConflictType = "outbox_failed",
-                        Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
-                    });
+                    _logger.LogWarning(
+                        "Failed to create outbox message for note update {NoteId}: {Errors}",
+                        note.Id,
+                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
                 }
 
                 results.Add(new NoteUpdatedPushResultDto
                 {
                     Id = item.Id,
                     NewVersion = note.Version,
-                    Status = "updated"
+                    Status = SyncPushUpdatedStatus.Updated
                 });
             }
         }
@@ -721,7 +660,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                    SyncPushCommand request,
                                                    DateTime utcNow,
                                                    List<NoteDeletedPushResultDto> results,
-                                                   List<SyncConflictDto> conflicts,
                                                    CancellationToken cancellationToken)
         {
             foreach (var item in request.Notes.Deleted)
@@ -733,7 +671,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     results.Add(new NoteDeletedPushResultDto
                     {
                         Id = item.Id,
-                        Status = "not_found"
+                        Status = SyncPushDeletedStatus.NotFound
                     });
 
                     continue;
@@ -744,7 +682,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     results.Add(new NoteDeletedPushResultDto
                     {
                         Id = item.Id,
-                        Status = "already_deleted"
+                        Status = SyncPushDeletedStatus.AlreadyDeleted
                     });
 
                     continue;
@@ -766,19 +704,16 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 }
                 else
                 {
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "note",
-                        EntityId = note.Id,
-                        ConflictType = "outbox_failed",
-                        Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
-                    });
+                    _logger.LogWarning(
+                        "Failed to create outbox message for note delete {NoteId}: {Errors}",
+                        note.Id,
+                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
                 }
 
                 results.Add(new NoteDeletedPushResultDto
                 {
                     Id = item.Id,
-                    Status = "deleted"
+                    Status = SyncPushDeletedStatus.Deleted
                 });
             }
         }
@@ -794,7 +729,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                     List<BlockCreatedPushResultDto> results,
                                                     Dictionary<Guid, Guid> taskClientToServerIds,
                                                     Dictionary<Guid, Guid> noteClientToServerIds,
-                                                    List<SyncConflictDto> conflicts,
                                                     CancellationToken cancellationToken)
         {
             foreach (var item in request.Blocks.Created)
@@ -808,20 +742,17 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 if (!resolvedParentId.HasValue)
                 {
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "block",
-                        EntityId = null,
-                        ConflictType = "parent_not_found",
-                        Errors = new[] { $"Could not resolve parent ID for block. ParentId: {item.ParentId}, ParentClientId: {item.ParentClientId}" }
-                    });
-
                     results.Add(new BlockCreatedPushResultDto
                     {
                         ClientId = item.ClientId,
                         ServerId = Guid.Empty,
                         Version = 0,
-                        Status = "failed"
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ParentNotFound,
+                            Errors = new[] { $"Could not resolve parent ID for block. ParentId: {item.ParentId}, ParentClientId: {item.ParentClientId}" }
+                        }
                     });
 
                     continue;
@@ -832,14 +763,13 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 // Determine if this is a text block or an asset block
                 if (Block.IsTextBlockType(item.Type))
                 {
-                    createResult = Block.CreateTextBlock(
-                        userId,
-                        resolvedParentId.Value,
-                        item.ParentType,
-                        item.Type,
-                        item.Position,
-                        item.TextContent,
-                        utcNow);
+                    createResult = Block.CreateTextBlock(userId,
+                                                         resolvedParentId.Value,
+                                                         item.ParentType,
+                                                         item.Type,
+                                                         item.Position,
+                                                         item.TextContent,
+                                                         utcNow);
                 }
                 else if (Block.IsAssetBlockType(item.Type))
                 {
@@ -849,20 +779,17 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                         !item.AssetSizeBytes.HasValue ||
                         item.AssetSizeBytes.Value <= 0)
                     {
-                        conflicts.Add(new SyncConflictDto
-                        {
-                            EntityType = "block",
-                            EntityId = null,
-                            ConflictType = "validation_failed",
-                            Errors = new[] { "Asset blocks require AssetClientId, AssetFileName, and positive AssetSizeBytes." }
-                        });
-
                         results.Add(new BlockCreatedPushResultDto
                         {
                             ClientId = item.ClientId,
                             ServerId = Guid.Empty,
                             Version = 0,
-                            Status = "failed"
+                            Status = SyncPushCreatedStatus.Failed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.ValidationFailed,
+                                Errors = new[] { "Asset blocks require AssetClientId, AssetFileName, and positive AssetSizeBytes." }
+                            }
                         });
 
                         continue;
@@ -881,20 +808,17 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 }
                 else
                 {
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "block",
-                        EntityId = null,
-                        ConflictType = "validation_failed",
-                        Errors = new[] { $"Unknown block type: {item.Type}" }
-                    });
-
                     results.Add(new BlockCreatedPushResultDto
                     {
                         ClientId = item.ClientId,
                         ServerId = Guid.Empty,
                         Version = 0,
-                        Status = "failed"
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = new[] { $"Unknown block type: {item.Type}" }
+                        }
                     });
 
                     continue;
@@ -902,20 +826,17 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 if (createResult.IsFailure)
                 {
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "block",
-                        EntityId = null,
-                        ConflictType = "validation_failed",
-                        Errors = createResult.Errors.Select(e => e.Message).ToArray()
-                    });
-
                     results.Add(new BlockCreatedPushResultDto
                     {
                         ClientId = item.ClientId,
                         ServerId = Guid.Empty,
                         Version = 0,
-                        Status = "failed"
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = createResult.Errors.Select(e => e.Message).ToArray()
+                        }
                     });
 
                     continue;
@@ -938,13 +859,10 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 }
                 else
                 {
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "block",
-                        EntityId = block.Id,
-                        ConflictType = "outbox_failed",
-                        Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
-                    });
+                    _logger.LogWarning(
+                        "Failed to create outbox message for block {BlockId}: {Errors}",
+                        block.Id,
+                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
                 }
 
                 results.Add(new BlockCreatedPushResultDto
@@ -952,7 +870,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     ClientId = item.ClientId,
                     ServerId = block.Id,
                     Version = block.Version,
-                    Status = "created"
+                    Status = SyncPushCreatedStatus.Created
                 });
             }
         }
@@ -961,7 +879,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                     SyncPushCommand request,
                                                     DateTime utcNow,
                                                     List<BlockUpdatedPushResultDto> results,
-                                                    List<SyncConflictDto> conflicts,
                                                     CancellationToken cancellationToken)
         {
             foreach (var item in request.Blocks.Updated)
@@ -974,14 +891,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = null,
-                        Status = "not_found"
-                    });
-
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "block",
-                        EntityId = item.Id,
-                        ConflictType = "not_found"
+                        Status = SyncPushUpdatedStatus.NotFound,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.NotFound
+                        }
                     });
 
                     continue;
@@ -994,14 +908,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = null,
-                        Status = "not_found"
-                    });
-
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "block",
-                        EntityId = item.Id,
-                        ConflictType = "not_found"
+                        Status = SyncPushUpdatedStatus.NotFound,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.NotFound
+                        }
                     });
 
                     continue;
@@ -1013,14 +924,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = null,
-                        Status = "deleted_on_server"
-                    });
-
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "block",
-                        EntityId = item.Id,
-                        ConflictType = "deleted_on_server"
+                        Status = SyncPushUpdatedStatus.DeletedOnServer,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.DeletedOnServer
+                        }
                     });
 
                     continue;
@@ -1032,17 +940,14 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = block.Version,
-                        Status = "conflict"
-                    });
-
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "block",
-                        EntityId = item.Id,
-                        ConflictType = "version_mismatch",
-                        ClientVersion = item.ExpectedVersion,
-                        ServerVersion = block.Version,
-                        ServerBlock = block.ToSyncDto()
+                        Status = SyncPushUpdatedStatus.Conflict,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.VersionMismatch,
+                            ClientVersion = item.ExpectedVersion,
+                            ServerVersion = block.Version,
+                            ServerBlock = block.ToSyncDto()
+                        }
                     });
 
                     continue;
@@ -1060,17 +965,14 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                         {
                             Id = item.Id,
                             NewVersion = block.Version,
-                            Status = "validation_failed"
-                        });
-
-                        conflicts.Add(new SyncConflictDto
-                        {
-                            EntityType = "block",
-                            EntityId = item.Id,
-                            ConflictType = "validation_failed",
-                            ClientVersion = item.ExpectedVersion,
-                            ServerVersion = block.Version,
-                            Errors = positionResult.Errors.Select(e => e.Message).ToArray()
+                            Status = SyncPushUpdatedStatus.ValidationFailed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.ValidationFailed,
+                                ClientVersion = item.ExpectedVersion,
+                                ServerVersion = block.Version,
+                                Errors = positionResult.Errors.Select(e => e.Message).ToArray()
+                            }
                         });
 
                         continue;
@@ -1088,17 +990,14 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                         {
                             Id = item.Id,
                             NewVersion = block.Version,
-                            Status = "validation_failed"
-                        });
-
-                        conflicts.Add(new SyncConflictDto
-                        {
-                            EntityType = "block",
-                            EntityId = item.Id,
-                            ConflictType = "validation_failed",
-                            ClientVersion = item.ExpectedVersion,
-                            ServerVersion = block.Version,
-                            Errors = contentResult.Errors.Select(e => e.Message).ToArray()
+                            Status = SyncPushUpdatedStatus.ValidationFailed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.ValidationFailed,
+                                ClientVersion = item.ExpectedVersion,
+                                ServerVersion = block.Version,
+                                Errors = contentResult.Errors.Select(e => e.Message).ToArray()
+                            }
                         });
 
                         continue;
@@ -1122,13 +1021,10 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     }
                     else
                     {
-                        conflicts.Add(new SyncConflictDto
-                        {
-                            EntityType = "block",
-                            EntityId = block.Id,
-                            ConflictType = "outbox_failed",
-                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
-                        });
+                        _logger.LogWarning(
+                            "Failed to create outbox message for block update {BlockId}: {Errors}",
+                            block.Id,
+                            string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
                     }
                 }
 
@@ -1136,7 +1032,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 {
                     Id = item.Id,
                     NewVersion = block.Version,
-                    Status = "updated"
+                    Status = SyncPushUpdatedStatus.Updated
                 });
             }
         }
@@ -1145,7 +1041,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                     SyncPushCommand request,
                                                     DateTime utcNow,
                                                     List<BlockDeletedPushResultDto> results,
-                                                    List<SyncConflictDto> conflicts,
                                                     CancellationToken cancellationToken)
         {
             foreach (var item in request.Blocks.Deleted)
@@ -1157,7 +1052,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     results.Add(new BlockDeletedPushResultDto
                     {
                         Id = item.Id,
-                        Status = "not_found"
+                        Status = SyncPushDeletedStatus.NotFound
                     });
 
                     continue;
@@ -1169,7 +1064,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     results.Add(new BlockDeletedPushResultDto
                     {
                         Id = item.Id,
-                        Status = "not_found"
+                        Status = SyncPushDeletedStatus.NotFound
                     });
 
                     continue;
@@ -1180,7 +1075,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     results.Add(new BlockDeletedPushResultDto
                     {
                         Id = item.Id,
-                        Status = "already_deleted"
+                        Status = SyncPushDeletedStatus.AlreadyDeleted
                     });
 
                     continue;
@@ -1202,19 +1097,16 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 }
                 else
                 {
-                    conflicts.Add(new SyncConflictDto
-                    {
-                        EntityType = "block",
-                        EntityId = block.Id,
-                        ConflictType = "outbox_failed",
-                        Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
-                    });
+                    _logger.LogWarning(
+                        "Failed to create outbox message for block delete {BlockId}: {Errors}",
+                        block.Id,
+                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
                 }
 
                 results.Add(new BlockDeletedPushResultDto
                 {
                     Id = item.Id,
-                    Status = "deleted"
+                    Status = SyncPushDeletedStatus.Deleted
                 });
             }
         }

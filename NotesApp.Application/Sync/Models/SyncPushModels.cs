@@ -30,9 +30,9 @@ namespace NotesApp.Application.Sync.Models
 
     public sealed record SyncPushTasksDto
     {
-        public IReadOnlyList<TaskCreatedPushItemDto> Created { get; init; } = Array.Empty<TaskCreatedPushItemDto>();
-        public IReadOnlyList<TaskUpdatedPushItemDto> Updated { get; init; } = Array.Empty<TaskUpdatedPushItemDto>();
-        public IReadOnlyList<TaskDeletedPushItemDto> Deleted { get; init; } = Array.Empty<TaskDeletedPushItemDto>();
+        public IReadOnlyList<TaskCreatedPushItemDto> Created { get; init; } = [];
+        public IReadOnlyList<TaskUpdatedPushItemDto> Updated { get; init; } = [];
+        public IReadOnlyList<TaskDeletedPushItemDto> Deleted { get; init; } = [];
     }
 
     public sealed record TaskCreatedPushItemDto
@@ -64,7 +64,6 @@ namespace NotesApp.Application.Sync.Models
         /// Used for optimistic concurrency.
         /// </summary>
         public long ExpectedVersion { get; init; }
-
         public DateOnly Date { get; init; }
         public string Title { get; init; } = string.Empty;
         public string? Description { get; init; }
@@ -134,9 +133,9 @@ namespace NotesApp.Application.Sync.Models
 
     public sealed record SyncPushBlocksDto
     {
-        public IReadOnlyList<BlockCreatedPushItemDto> Created { get; init; } = Array.Empty<BlockCreatedPushItemDto>();
-        public IReadOnlyList<BlockUpdatedPushItemDto> Updated { get; init; } = Array.Empty<BlockUpdatedPushItemDto>();
-        public IReadOnlyList<BlockDeletedPushItemDto> Deleted { get; init; } = Array.Empty<BlockDeletedPushItemDto>();
+        public IReadOnlyList<BlockCreatedPushItemDto> Created { get; init; } = [];
+        public IReadOnlyList<BlockUpdatedPushItemDto> Updated { get; init; } = [];
+        public IReadOnlyList<BlockDeletedPushItemDto> Deleted { get; init; } = [];
     }
 
     public sealed record BlockCreatedPushItemDto
@@ -235,33 +234,29 @@ namespace NotesApp.Application.Sync.Models
     {
         public SyncPushTasksResultDto Tasks { get; init; } = new();
         public SyncPushNotesResultDto Notes { get; init; } = new();
+        public SyncPushBlocksResultDto Blocks { get; init; } = new();
 
-        /// <summary>
-        /// Per-entity conflicts collected during processing (version mismatch,
-        /// not found, deleted on server, validation failures, etc.).
-        /// </summary>
-        public IReadOnlyList<SyncConflictDto> Conflicts { get; init; } = Array.Empty<SyncConflictDto>();
     }
 
     public sealed record SyncPushTasksResultDto
     {
-        public IReadOnlyList<TaskCreatedPushResultDto> Created { get; init; } = Array.Empty<TaskCreatedPushResultDto>();
-        public IReadOnlyList<TaskUpdatedPushResultDto> Updated { get; init; } = Array.Empty<TaskUpdatedPushResultDto>();
-        public IReadOnlyList<TaskDeletedPushResultDto> Deleted { get; init; } = Array.Empty<TaskDeletedPushResultDto>();
+        public IReadOnlyList<TaskCreatedPushResultDto> Created { get; init; } = [];
+        public IReadOnlyList<TaskUpdatedPushResultDto> Updated { get; init; } = [];
+        public IReadOnlyList<TaskDeletedPushResultDto> Deleted { get; init; } = [];
     }
 
     public sealed record SyncPushNotesResultDto
     {
-        public IReadOnlyList<NoteCreatedPushResultDto> Created { get; init; } = Array.Empty<NoteCreatedPushResultDto>();
-        public IReadOnlyList<NoteUpdatedPushResultDto> Updated { get; init; } = Array.Empty<NoteUpdatedPushResultDto>();
-        public IReadOnlyList<NoteDeletedPushResultDto> Deleted { get; init; } = Array.Empty<NoteDeletedPushResultDto>();
+        public IReadOnlyList<NoteCreatedPushResultDto> Created { get; init; } = [];
+        public IReadOnlyList<NoteUpdatedPushResultDto> Updated { get; init; } = [];
+        public IReadOnlyList<NoteDeletedPushResultDto> Deleted { get; init; } = [];
     }
 
     public sealed record SyncPushBlocksResultDto
     {
-        public IReadOnlyList<BlockCreatedPushResultDto> Created { get; init; } = Array.Empty<BlockCreatedPushResultDto>();
-        public IReadOnlyList<BlockUpdatedPushResultDto> Updated { get; init; } = Array.Empty<BlockUpdatedPushResultDto>();
-        public IReadOnlyList<BlockDeletedPushResultDto> Deleted { get; init; } = Array.Empty<BlockDeletedPushResultDto>();
+        public IReadOnlyList<BlockCreatedPushResultDto> Created { get; init; } = [];
+        public IReadOnlyList<BlockUpdatedPushResultDto> Updated { get; init; } = [];
+        public IReadOnlyList<BlockDeletedPushResultDto> Deleted { get; init; } = [];
     }
 
     public sealed record TaskCreatedPushResultDto
@@ -269,20 +264,35 @@ namespace NotesApp.Application.Sync.Models
         public Guid ClientId { get; init; }
         public Guid ServerId { get; init; }
         public long Version { get; init; }
-        public string Status { get; init; } = string.Empty; // e.g. "created", "failed"
+        public SyncPushCreatedStatus Status { get; init; }
+
+        /// <summary>
+        /// Conflict details when Status is Failed. Null for successful operations.
+        /// </summary>
+        public SyncPushConflictDetailDto? Conflict { get; init; }
     }
 
     public sealed record TaskUpdatedPushResultDto
     {
         public Guid Id { get; init; }
         public long? NewVersion { get; init; }
-        public string Status { get; init; } = string.Empty; // e.g. "updated", "conflict", "not_found"
+        public SyncPushUpdatedStatus Status { get; init; }
+
+        /// <summary>
+        /// Conflict details when Status indicates a failure. Null for successful operations.
+        /// </summary>
+        public SyncPushConflictDetailDto? Conflict { get; init; }
     }
 
     public sealed record TaskDeletedPushResultDto
     {
         public Guid Id { get; init; }
-        public string Status { get; init; } = string.Empty; // "deleted", "already_deleted", "not_found"
+        public SyncPushDeletedStatus Status { get; init; }
+
+        /// <summary>
+        /// Conflict details when Status indicates a failure. Null for successful operations.
+        /// </summary>
+        public SyncPushConflictDetailDto? Conflict { get; init; }
     }
 
     public sealed record NoteCreatedPushResultDto
@@ -290,20 +300,35 @@ namespace NotesApp.Application.Sync.Models
         public Guid ClientId { get; init; }
         public Guid ServerId { get; init; }
         public long Version { get; init; }
-        public string Status { get; init; } = string.Empty;
+        public SyncPushCreatedStatus Status { get; init; }
+
+        // <summary>
+        /// Conflict details when Status is Failed. Null for successful operations.
+        /// </summary>
+        public SyncPushConflictDetailDto? Conflict { get; init; }
     }
 
     public sealed record NoteUpdatedPushResultDto
     {
         public Guid Id { get; init; }
         public long? NewVersion { get; init; }
-        public string Status { get; init; } = string.Empty;
+        public SyncPushUpdatedStatus Status { get; init; }
+
+        /// <summary>
+        /// Conflict details when Status indicates a failure. Null for successful operations.
+        /// </summary>
+        public SyncPushConflictDetailDto? Conflict { get; init; }
     }
 
     public sealed record NoteDeletedPushResultDto
     {
         public Guid Id { get; init; }
-        public string Status { get; init; } = string.Empty;
+        public SyncPushDeletedStatus Status { get; init; }
+
+        /// <summary>
+        /// Conflict details when Status indicates a failure. Null for successful operations.
+        /// </summary>
+        public SyncPushConflictDetailDto? Conflict { get; init; }
     }
 
 
@@ -312,45 +337,80 @@ namespace NotesApp.Application.Sync.Models
         public Guid ClientId { get; init; }
         public Guid ServerId { get; init; }
         public long Version { get; init; }
-        public string Status { get; init; } = string.Empty; // e.g. "created", "failed"
+        public SyncPushCreatedStatus Status { get; init; }
+
+        /// <summary>
+        /// Conflict details when Status is Failed. Null for successful operations.
+        /// </summary>
+        public SyncPushConflictDetailDto? Conflict { get; init; }
     }
 
     public sealed record BlockUpdatedPushResultDto
     {
         public Guid Id { get; init; }
         public long? NewVersion { get; init; }
-        public string Status { get; init; } = string.Empty; // e.g. "updated", "conflict", "not_found"
+        public SyncPushUpdatedStatus Status { get; init; }
+
+        /// <summary>
+        /// Conflict details when Status indicates a failure. Null for successful operations.
+        /// </summary>
+        public SyncPushConflictDetailDto? Conflict { get; init; }
     }
 
     public sealed record BlockDeletedPushResultDto
     {
         public Guid Id { get; init; }
-        public string Status { get; init; } = string.Empty; // "deleted", "already_deleted", "not_found"
-    }
-
-    /// <summary>
-    /// Describes a conflict or problem encountered while processing a push item.
-    /// </summary>
-    public sealed record SyncConflictDto
-    {
-        public string EntityType { get; init; } = string.Empty; // "task" or "note"
-        public Guid? EntityId { get; init; }
+        public SyncPushDeletedStatus Status { get; init; }
 
         /// <summary>
-        /// e.g. "version_mismatch", "not_found", "deleted_on_server", "validation_failed"
+        /// Conflict details when Status indicates a failure. Null for successful operations.
         /// </summary>
-        public string ConflictType { get; init; } = string.Empty;
+        public SyncPushConflictDetailDto? Conflict { get; init; }
+    }
 
+    // ----------------------------
+    // Conflict Detail DTO
+    // ----------------------------
+
+    /// <summary>
+    /// Details about a conflict or problem encountered while processing a sync push item.
+    /// Embedded directly in each result DTO when a failure occurs.
+    /// </summary>
+    public sealed record SyncPushConflictDetailDto
+    {
+        /// <summary>
+        /// The type of conflict that occurred.
+        /// </summary>
+        public SyncConflictType ConflictType { get; init; }
+
+        /// <summary>
+        /// Client's expected version (for version mismatch conflicts).
+        /// </summary>
         public long? ClientVersion { get; init; }
+
+        /// <summary>
+        /// Server's current version (for version mismatch conflicts).
+        /// </summary>
         public long? ServerVersion { get; init; }
 
         /// <summary>
-        /// Optional server-side state snapshot for the entity at the time
-        /// of the conflict (for "version_mismatch" scenarios).
+        /// Server-side task state at conflict time (for version mismatch on tasks).
         /// </summary>
         public TaskSyncItemDto? ServerTask { get; init; }
+
+        /// <summary>
+        /// Server-side note state at conflict time (for version mismatch on notes).
+        /// </summary>
         public NoteSyncItemDto? ServerNote { get; init; }
+
+        /// <summary>
+        /// Server-side block state at conflict time (for version mismatch on blocks).
+        /// </summary>
         public BlockSyncItemDto? ServerBlock { get; init; }
+
+        /// <summary>
+        /// Validation or other error messages.
+        /// </summary>
         public IReadOnlyList<string> Errors { get; init; } = Array.Empty<string>();
     }
 }

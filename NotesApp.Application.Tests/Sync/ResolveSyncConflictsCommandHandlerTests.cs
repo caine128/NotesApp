@@ -69,9 +69,9 @@ namespace NotesApp.Application.Tests.Sync
                 {
                     new SyncConflictResolutionDto
                     {
-                        EntityType = "task",
+                        EntityType = SyncEntityType.Task,
                         EntityId = taskId,
-                        Choice = "keep_server",
+                        Choice = SyncResolutionChoice.KeepServer,
                         ExpectedVersion = task.Version
                     }
                 }
@@ -88,9 +88,9 @@ namespace NotesApp.Application.Tests.Sync
             var dto = result.Value;
 
             dto.Results.Should().ContainSingle(r =>
-                r.EntityType == "task" &&
+                r.EntityType == SyncEntityType.Task &&
                 r.EntityId == taskId &&
-                r.Status == "kept_server" &&
+                r.Status == SyncConflictResolutionStatus.KeptServer &&
                 r.NewVersion == task.Version);
 
             _outboxRepositoryMock.Verify(r => r.AddAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -115,9 +115,9 @@ namespace NotesApp.Application.Tests.Sync
                 {
                     new SyncConflictResolutionDto
                     {
-                        EntityType = "task",
+                        EntityType = SyncEntityType.Task,
                         EntityId = taskId,
-                        Choice = "keep_client",
+                        Choice = SyncResolutionChoice.KeepClient,
                         ExpectedVersion = originalVersion,
                         TaskData = new TaskConflictResolutionDataDto
                         {
@@ -144,9 +144,9 @@ namespace NotesApp.Application.Tests.Sync
             var dto = result.Value;
 
             dto.Results.Should().ContainSingle(r =>
-                r.EntityType == "task" &&
+                r.EntityType == SyncEntityType.Task &&
                 r.EntityId == taskId &&
-                r.Status == "updated" &&
+                r.Status == SyncConflictResolutionStatus.Updated &&
                 r.NewVersion.HasValue &&
                 r.NewVersion.Value > originalVersion);
 
@@ -175,9 +175,9 @@ namespace NotesApp.Application.Tests.Sync
                 {
                     new SyncConflictResolutionDto
                     {
-                        EntityType = "task",
+                        EntityType = SyncEntityType.Task,
                         EntityId = taskId,
-                        Choice = "keep_client",
+                        Choice = SyncResolutionChoice.KeepClient,
                         ExpectedVersion = 3, // wrong
                         TaskData = new TaskConflictResolutionDataDto
                         {
@@ -204,9 +204,9 @@ namespace NotesApp.Application.Tests.Sync
             var dto = result.Value;
 
             dto.Results.Should().ContainSingle(r =>
-                r.EntityType == "task" &&
+                r.EntityType == SyncEntityType.Task &&
                 r.EntityId == taskId &&
-                r.Status == "conflict" &&
+                r.Status == SyncConflictResolutionStatus.Conflict &&
                 r.NewVersion == 5);
 
             _outboxRepositoryMock.Verify(r => r.AddAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()), Times.Never);
