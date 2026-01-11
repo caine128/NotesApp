@@ -355,7 +355,7 @@ namespace NotesApp.Api.IntegrationTests.Sync
 
             result!.Tasks.Updated.Should().ContainSingle(u =>
                 u.Id == createdTask!.TaskId &&
-                u.Status == SyncPushUpdatedStatus.Conflict);
+                u.Status == SyncPushUpdatedStatus.Failed);
 
             var updateResult = result.Tasks.Updated.First(u => u.Id == createdTask.TaskId);
             updateResult.Conflict.Should().NotBeNull();

@@ -74,11 +74,10 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 return Result.Fail(new Error("Device.NotFound"));
             }
 
-            _logger.LogInformation(
-                "Sync push received from device {DeviceId} for user {UserId} at {UtcNow}",
-                request.DeviceId,
-                userId,
-                utcNow);
+            _logger.LogInformation("Sync push received from device {DeviceId} for user {UserId} at {UtcNow}",
+                                   request.DeviceId,
+                                   userId,
+                                   utcNow);
 
             var taskCreateResults = new List<TaskCreatedPushResultDto>();
             var taskUpdateResults = new List<TaskUpdatedPushResultDto>();
@@ -237,8 +236,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     task.SetReminder(item.ReminderAtUtc.Value, utcNow);
                 }
 
-                await _taskRepository.AddAsync(task, cancellationToken);
 
+                // Create outbox message BEFORE adding task to repository
                 var payload = OutboxPayloadBuilder.BuildTaskPayload(task, request.DeviceId);
 
                 var outboxResult = OutboxMessage.Create<TaskItem, TaskEventType>(
@@ -247,18 +246,27 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     payload,
                     utcNow);
 
-                if (outboxResult.IsSuccess)
+                if (outboxResult.IsFailure)
                 {
-                    await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                    results.Add(new TaskCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        ServerId = Guid.Empty,
+                        Version = 0,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
                 }
-                else
-                {
-                    // Log but don't fail - entity was created successfully
-                    _logger.LogWarning(
-                        "Failed to create outbox message for task {TaskId}: {Errors}",
-                        task.Id,
-                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
-                }
+
+                // Both entity and outbox message created successfully - add both to repositories
+                await _taskRepository.AddAsync(task, cancellationToken);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 // Store client-to-server ID mapping for block parent resolution
                 clientToServerIds[item.ClientId] = task.Id;
@@ -289,7 +297,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = null,
-                        Status = SyncPushUpdatedStatus.NotFound,
+                        Status = SyncPushUpdatedStatus.Failed,
                         Conflict = new SyncPushConflictDetailDto
                         {
                             ConflictType = SyncConflictType.NotFound
@@ -305,7 +313,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = null,
-                        Status = SyncPushUpdatedStatus.DeletedOnServer,
+                        Status = SyncPushUpdatedStatus.Failed,
                         Conflict = new SyncPushConflictDetailDto
                         {
                             ConflictType = SyncConflictType.DeletedOnServer
@@ -321,7 +329,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = task.Version,
-                        Status = SyncPushUpdatedStatus.Conflict,
+                        Status = SyncPushUpdatedStatus.Failed,
                         Conflict = new SyncPushConflictDetailDto
                         {
                             ConflictType = SyncConflictType.VersionMismatch,
@@ -349,7 +357,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = task.Version,
-                        Status = SyncPushUpdatedStatus.ValidationFailed,
+                        Status = SyncPushUpdatedStatus.Failed,
                         Conflict = new SyncPushConflictDetailDto
                         {
                             ConflictType = SyncConflictType.ValidationFailed,
@@ -371,6 +379,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     task.SetReminder(null, utcNow);
                 }
 
+                // Create outbox message - if this fails, the update was still applied to the entity
+                // but we return Failed to indicate the sync operation didn't complete properly
                 var payload = OutboxPayloadBuilder.BuildTaskPayload(task, request.DeviceId);
 
                 var outboxResult = OutboxMessage.Create<TaskItem, TaskEventType>(
@@ -379,17 +389,24 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     payload,
                     utcNow);
 
-                if (outboxResult.IsSuccess)
+                if (outboxResult.IsFailure)
                 {
-                    await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                    results.Add(new TaskUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = null,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
                 }
-                else
-                {
-                    _logger.LogWarning(
-                        "Failed to create outbox message for task update {TaskId}: {Errors}",
-                        task.Id,
-                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
-                }
+
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new TaskUpdatedPushResultDto
                 {
@@ -434,6 +451,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 task.SoftDelete(utcNow);
 
+                // Create outbox message - if this fails, we should not proceed with the delete
                 var payload = OutboxPayloadBuilder.BuildTaskPayload(task, request.DeviceId);
 
                 var outboxResult = OutboxMessage.Create<TaskItem, TaskEventType>(
@@ -442,17 +460,23 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     payload,
                     utcNow);
 
-                if (outboxResult.IsSuccess)
+                if (outboxResult.IsFailure)
                 {
-                    await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                    results.Add(new TaskDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
                 }
-                else
-                {
-                    _logger.LogWarning(
-                        "Failed to create outbox message for task delete {TaskId}: {Errors}",
-                        task.Id,
-                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
-                }
+
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new TaskDeletedPushResultDto
                 {
@@ -507,25 +531,35 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 var note = createResult.Value;
                 await _noteRepository.AddAsync(note, cancellationToken);
 
+               // Create outbox message BEFORE adding note to repository
                 var payload = OutboxPayloadBuilder.BuildNotePayload(note, request.DeviceId);
 
-                var outboxResult = OutboxMessage.Create<Note, NoteEventType>(
-                    note,
-                    NoteEventType.Created,
-                    payload,
-                    utcNow);
+                var outboxResult = OutboxMessage.Create<Note, NoteEventType>(note,
+                                                                             NoteEventType.Created,
+                                                                             payload,
+                                                                             utcNow);
 
-                if (outboxResult.IsSuccess)
+                if (outboxResult.IsFailure)
                 {
-                    await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                    results.Add(new NoteCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        ServerId = Guid.Empty,
+                        Version = 0,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
                 }
-                else
-                {
-                    _logger.LogWarning(
-                        "Failed to create outbox message for note {NoteId}: {Errors}",
-                        note.Id,
-                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
-                }
+
+                // Both entity and outbox message created successfully - add both to repositories
+                await _noteRepository.AddAsync(note, cancellationToken);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 // Store client-to-server ID mapping for block parent resolution
                 clientToServerIds[item.ClientId] = note.Id;
@@ -556,7 +590,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = null,
-                        Status = SyncPushUpdatedStatus.NotFound,
+                        Status = SyncPushUpdatedStatus.Failed,
                         Conflict = new SyncPushConflictDetailDto
                         {
                             ConflictType = SyncConflictType.NotFound
@@ -572,7 +606,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = null,
-                        Status = SyncPushUpdatedStatus.DeletedOnServer,
+                        Status = SyncPushUpdatedStatus.Failed,
                         Conflict = new SyncPushConflictDetailDto
                         {
                             ConflictType = SyncConflictType.DeletedOnServer
@@ -588,7 +622,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = note.Version,
-                        Status = SyncPushUpdatedStatus.Conflict,
+                        Status = SyncPushUpdatedStatus.Failed,
                         Conflict = new SyncPushConflictDetailDto
                         {
                             ConflictType = SyncConflictType.VersionMismatch,
@@ -614,7 +648,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = note.Version,
-                        Status = SyncPushUpdatedStatus.ValidationFailed,
+                        Status = SyncPushUpdatedStatus.Failed,
                         Conflict = new SyncPushConflictDetailDto
                         {
                             ConflictType = SyncConflictType.ValidationFailed,
@@ -635,17 +669,24 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     payload,
                     utcNow);
 
-                if (outboxResult.IsSuccess)
+                if (outboxResult.IsFailure)
                 {
-                    await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                    results.Add(new NoteUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = null,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
                 }
-                else
-                {
-                    _logger.LogWarning(
-                        "Failed to create outbox message for note update {NoteId}: {Errors}",
-                        note.Id,
-                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
-                }
+
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new NoteUpdatedPushResultDto
                 {
@@ -690,6 +731,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 note.SoftDelete(utcNow);
 
+                // Create outbox message - if this fails, we should not proceed with the delete
                 var payload = OutboxPayloadBuilder.BuildNotePayload(note, request.DeviceId);
 
                 var outboxResult = OutboxMessage.Create<Note, NoteEventType>(
@@ -698,17 +740,23 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     payload,
                     utcNow);
 
-                if (outboxResult.IsSuccess)
+                if (outboxResult.IsFailure)
                 {
-                    await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                    results.Add(new NoteDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
                 }
-                else
-                {
-                    _logger.LogWarning(
-                        "Failed to create outbox message for note delete {NoteId}: {Errors}",
-                        note.Id,
-                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
-                }
+
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new NoteDeletedPushResultDto
                 {
@@ -843,8 +891,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 }
 
                 var block = createResult.Value!;
-                await _blockRepository.AddAsync(block, cancellationToken);
 
+                // Create outbox message BEFORE adding block to repository
                 var payload = OutboxPayloadBuilder.BuildBlockPayload(block, request.DeviceId);
 
                 var outboxResult = OutboxMessage.Create<Block, BlockEventType>(
@@ -853,17 +901,27 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     payload,
                     utcNow);
 
-                if (outboxResult.IsSuccess)
+                if (outboxResult.IsFailure)
                 {
-                    await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                    results.Add(new BlockCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        ServerId = Guid.Empty,
+                        Version = 0,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
                 }
-                else
-                {
-                    _logger.LogWarning(
-                        "Failed to create outbox message for block {BlockId}: {Errors}",
-                        block.Id,
-                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
-                }
+
+                // Both entity and outbox message created successfully - add both to repositories
+                await _blockRepository.AddAsync(block, cancellationToken);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new BlockCreatedPushResultDto
                 {
@@ -891,7 +949,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = null,
-                        Status = SyncPushUpdatedStatus.NotFound,
+                        Status = SyncPushUpdatedStatus.Failed,
                         Conflict = new SyncPushConflictDetailDto
                         {
                             ConflictType = SyncConflictType.NotFound
@@ -908,7 +966,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = null,
-                        Status = SyncPushUpdatedStatus.NotFound,
+                        Status = SyncPushUpdatedStatus.Failed,
                         Conflict = new SyncPushConflictDetailDto
                         {
                             ConflictType = SyncConflictType.NotFound
@@ -924,7 +982,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = null,
-                        Status = SyncPushUpdatedStatus.DeletedOnServer,
+                        Status = SyncPushUpdatedStatus.Failed,
                         Conflict = new SyncPushConflictDetailDto
                         {
                             ConflictType = SyncConflictType.DeletedOnServer
@@ -940,7 +998,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Id = item.Id,
                         NewVersion = block.Version,
-                        Status = SyncPushUpdatedStatus.Conflict,
+                        Status = SyncPushUpdatedStatus.Failed,
                         Conflict = new SyncPushConflictDetailDto
                         {
                             ConflictType = SyncConflictType.VersionMismatch,
@@ -965,7 +1023,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                         {
                             Id = item.Id,
                             NewVersion = block.Version,
-                            Status = SyncPushUpdatedStatus.ValidationFailed,
+                            Status = SyncPushUpdatedStatus.Failed,
                             Conflict = new SyncPushConflictDetailDto
                             {
                                 ConflictType = SyncConflictType.ValidationFailed,
@@ -990,7 +1048,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                         {
                             Id = item.Id,
                             NewVersion = block.Version,
-                            Status = SyncPushUpdatedStatus.ValidationFailed,
+                            Status = SyncPushUpdatedStatus.Failed,
                             Conflict = new SyncPushConflictDetailDto
                             {
                                 ConflictType = SyncConflictType.ValidationFailed,
@@ -1015,17 +1073,24 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                         payload,
                         utcNow);
 
-                    if (outboxResult.IsSuccess)
+                    if (outboxResult.IsFailure)
                     {
-                        await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                        results.Add(new BlockUpdatedPushResultDto
+                        {
+                            Id = item.Id,
+                            NewVersion = null,
+                            Status = SyncPushUpdatedStatus.Failed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.OutboxFailed,
+                                Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                            }
+                        });
+
+                        continue;
                     }
-                    else
-                    {
-                        _logger.LogWarning(
-                            "Failed to create outbox message for block update {BlockId}: {Errors}",
-                            block.Id,
-                            string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
-                    }
+
+                    await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
                 }
 
                 results.Add(new BlockUpdatedPushResultDto
@@ -1083,6 +1148,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 block.SoftDelete(utcNow);
 
+                // Create outbox message - if this fails, we should not proceed with the delete
                 var payload = OutboxPayloadBuilder.BuildBlockPayload(block, request.DeviceId);
 
                 var outboxResult = OutboxMessage.Create<Block, BlockEventType>(
@@ -1091,17 +1157,23 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     payload,
                     utcNow);
 
-                if (outboxResult.IsSuccess)
+                if (outboxResult.IsFailure)
                 {
-                    await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                    results.Add(new BlockDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
                 }
-                else
-                {
-                    _logger.LogWarning(
-                        "Failed to create outbox message for block delete {BlockId}: {Errors}",
-                        block.Id,
-                        string.Join(", ", outboxResult.Errors.Select(e => e.Message)));
-                }
+
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new BlockDeletedPushResultDto
                 {

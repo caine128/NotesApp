@@ -97,6 +97,7 @@ namespace NotesApp.Application.Sync.Models
 
     /// <summary>
     /// Status values for entity update operations during sync push.
+    /// Binary outcome: Updated or Failed. When Failed, check Conflict.ConflictType for the reason.
     /// </summary>
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public enum SyncPushUpdatedStatus
@@ -107,24 +108,10 @@ namespace NotesApp.Application.Sync.Models
         Updated,
 
         /// <summary>
-        /// Entity was not found on the server.
+        /// Update operation failed. Check Conflict.ConflictType for the specific reason
+        /// (NotFound, DeletedOnServer, VersionMismatch, or ValidationFailed).
         /// </summary>
-        NotFound,
-
-        /// <summary>
-        /// Entity was deleted on the server before update could be applied.
-        /// </summary>
-        DeletedOnServer,
-
-        /// <summary>
-        /// Version mismatch - entity was modified by another client/device.
-        /// </summary>
-        Conflict,
-
-        /// <summary>
-        /// Update failed due to validation errors.
-        /// </summary>
-        ValidationFailed
+        Failed
     }
 
 
@@ -145,9 +132,16 @@ namespace NotesApp.Application.Sync.Models
         AlreadyDeleted,
 
         /// <summary>
-        /// Entity was not found on the server.
+        /// Entity was not found on the server (idempotent - desired end state achieved).
         /// </summary>
-        NotFound
+        NotFound,
+
+        /// <summary>
+        /// Delete operation failed due to infrastructure issues.
+        /// Check Conflict.ConflictType for the specific reason (typically OutboxFailed).
+        /// Entity was NOT deleted.
+        /// </summary>
+        Failed
     }
 
     /// <summary>

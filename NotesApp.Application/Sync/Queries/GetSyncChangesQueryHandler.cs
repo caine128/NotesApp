@@ -13,14 +13,14 @@ using System.Text;
 namespace NotesApp.Application.Sync.Queries
 {
     /// <summary>
-    /// Handles sync pull requests for tasks, notes, blocks, and assets.
+    /// Handles sync push from client devices:
+    /// - Applies creates/updates/deletes for tasks, notes, and blocks.
+    /// - Uses Version for optimistic concurrency on updates.
+    /// - Always uses "delete wins" semantics for deletes.
+    /// - Emits outbox messages for Created / Updated / Deleted events.
     /// 
-    /// Responsibilities:
-    /// - Determine current user from ICurrentUserService.
-    /// - Load changed entities via repositories.
-    /// - Categorise them into created / updated / deleted buckets.
-    /// - Generate pre-signed download URLs for assets.
-    /// - Stamp the response with a server-side timestamp in UTC.
+    /// Per-item conflicts (version mismatch, not found, etc.) are embedded
+    /// directly in each result DTO's Conflict property rather than in a separate list.
     /// </summary>
     public sealed class GetSyncChangesQueryHandler
         : IRequestHandler<GetSyncChangesQuery, Result<SyncChangesDto>>
