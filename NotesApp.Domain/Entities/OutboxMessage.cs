@@ -82,7 +82,7 @@ namespace NotesApp.Domain.Entities
                                                                              TEvent eventType,
                                                                              string payload,
                                                                              DateTime utcNow)
-            where TAggregate : Entity<Guid>, ICalendarEntity
+            where TAggregate : Entity<Guid>, ISyncableEntity
             where TEvent : struct, Enum
         {
             var errors = new List<DomainError>();

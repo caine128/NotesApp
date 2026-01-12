@@ -231,11 +231,28 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 var task = createResult.Value;
 
+                // Apply reminder if specified and check result
                 if (item.ReminderAtUtc is not null)
                 {
-                    task.SetReminder(item.ReminderAtUtc.Value, utcNow);
-                }
+                    var reminderResult = task.SetReminder(item.ReminderAtUtc.Value, utcNow);
+                    if (reminderResult.IsFailure)
+                    {
+                        results.Add(new TaskCreatedPushResultDto
+                        {
+                            ClientId = item.ClientId,
+                            ServerId = Guid.Empty,
+                            Version = 0,
+                            Status = SyncPushCreatedStatus.Failed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.ValidationFailed,
+                                Errors = reminderResult.Errors.Select(e => e.Message).ToArray()
+                            }
+                        });
 
+                        continue;
+                    }
+                }
 
                 // Create outbox message BEFORE adding task to repository
                 var payload = OutboxPayloadBuilder.BuildTaskPayload(task, request.DeviceId);
@@ -289,7 +306,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.Tasks.Updated)
             {
-                var task = await _taskRepository.GetByIdAsync(item.Id, cancellationToken);
+                // Load WITHOUT tracking - modifications won't auto-persist
+                var task = await _taskRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
 
                 if (task is null)
                 {
@@ -342,6 +360,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
+                // Modify entity in memory (NOT tracked, won't auto-persist)
                 var updateResult = task.Update(item.Title,
                                                item.Date,
                                                item.Description,
@@ -370,19 +389,26 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
-                if (item.ReminderAtUtc is not null)
+                var reminderResult = task.SetReminder(item.ReminderAtUtc, utcNow);
+                if (reminderResult.IsFailure)
                 {
-                    task.SetReminder(item.ReminderAtUtc.Value, utcNow);
-                }
-                else
-                {
-                    task.SetReminder(null, utcNow);
+                    results.Add(new TaskUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = null,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = reminderResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
                 }
 
-                // Create outbox message - if this fails, the update was still applied to the entity
-                // but we return Failed to indicate the sync operation didn't complete properly
+                // Create outbox message
                 var payload = OutboxPayloadBuilder.BuildTaskPayload(task, request.DeviceId);
-
                 var outboxResult = OutboxMessage.Create<TaskItem, TaskEventType>(
                     task,
                     TaskEventType.Updated,
@@ -391,6 +417,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 if (outboxResult.IsFailure)
                 {
+                    // Entity was modified but NOT tracked - won't be saved
                     results.Add(new TaskUpdatedPushResultDto
                     {
                         Id = item.Id,
@@ -406,6 +433,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
+                // SUCCESS: Attach modified entity and add outbox
+                _taskRepository.Update(task);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new TaskUpdatedPushResultDto
@@ -425,7 +454,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.Tasks.Deleted)
             {
-                var task = await _taskRepository.GetByIdAsync(item.Id, cancellationToken);
+                // Load WITHOUT tracking - modifications won't auto-persist
+                var task = await _taskRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
 
                 if (task is null)
                 {
@@ -449,11 +479,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
-                task.SoftDelete(utcNow);
-
-                // Create outbox message - if this fails, we should not proceed with the delete
+                // Create outbox message FIRST (entity not yet modified)
                 var payload = OutboxPayloadBuilder.BuildTaskPayload(task, request.DeviceId);
-
                 var outboxResult = OutboxMessage.Create<TaskItem, TaskEventType>(
                     task,
                     TaskEventType.Deleted,
@@ -476,6 +503,26 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
+                // Outbox created successfully - now safe to mark as deleted
+                var deleteResult = task.SoftDelete(utcNow);
+                if (deleteResult.IsFailure)
+                {
+                    results.Add(new TaskDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = deleteResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                // SUCCESS: Attach modified entity and add outbox
+                _taskRepository.Update(task);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new TaskDeletedPushResultDto
@@ -529,7 +576,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 }
 
                 var note = createResult.Value;
-                await _noteRepository.AddAsync(note, cancellationToken);
 
                // Create outbox message BEFORE adding note to repository
                 var payload = OutboxPayloadBuilder.BuildNotePayload(note, request.DeviceId);
@@ -582,7 +628,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.Notes.Updated)
             {
-                var note = await _noteRepository.GetByIdAsync(item.Id, cancellationToken);
+                // Load WITHOUT tracking - modifications won't auto-persist
+                var note = await _noteRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
 
                 if (note is null)
                 {
@@ -635,6 +682,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
+                // Modify entity in memory (NOT tracked, won't auto-persist)
                 var updateResult = note.Update(item.Title,
                                                item.Content,
                                                item.Summary,
@@ -661,8 +709,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
+                // Create outbox message
                 var payload = OutboxPayloadBuilder.BuildNotePayload(note, request.DeviceId);
-
                 var outboxResult = OutboxMessage.Create<Note, NoteEventType>(
                     note,
                     NoteEventType.Updated,
@@ -671,6 +719,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 if (outboxResult.IsFailure)
                 {
+                    // Entity was modified but NOT tracked - won't be saved
                     results.Add(new NoteUpdatedPushResultDto
                     {
                         Id = item.Id,
@@ -686,6 +735,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
+                // SUCCESS: Attach modified entity and add outbox
+                _noteRepository.Update(note);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new NoteUpdatedPushResultDto
@@ -705,7 +756,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.Notes.Deleted)
             {
-                var note = await _noteRepository.GetByIdAsync(item.Id, cancellationToken);
+                // Load WITHOUT tracking - modifications won't auto-persist
+                var note = await _noteRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
 
                 if (note is null)
                 {
@@ -729,11 +781,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
-                note.SoftDelete(utcNow);
-
-                // Create outbox message - if this fails, we should not proceed with the delete
+                // Create outbox message FIRST (entity not yet modified)
                 var payload = OutboxPayloadBuilder.BuildNotePayload(note, request.DeviceId);
-
                 var outboxResult = OutboxMessage.Create<Note, NoteEventType>(
                     note,
                     NoteEventType.Deleted,
@@ -756,6 +805,26 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
+                // Outbox created successfully - now safe to mark as deleted
+                var deleteResult = note.SoftDelete(utcNow);
+                if (deleteResult.IsFailure)
+                {
+                    results.Add(new NoteDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = deleteResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                // SUCCESS: Attach modified entity and add outbox
+                _noteRepository.Update(note);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new NoteDeletedPushResultDto
@@ -941,7 +1010,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.Blocks.Updated)
             {
-                var block = await _blockRepository.GetByIdAsync(item.Id, cancellationToken);
+                // Load WITHOUT tracking - modifications won't auto-persist
+                var block = await _blockRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
 
                 if (block is null)
                 {
@@ -1090,6 +1160,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                         continue;
                     }
 
+                    // SUCCESS: Attach modified entity and add outbox
+                    _blockRepository.Update(block);
                     await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
                 }
 
@@ -1110,7 +1182,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.Blocks.Deleted)
             {
-                var block = await _blockRepository.GetByIdAsync(item.Id, cancellationToken);
+                // Load WITHOUT tracking - modifications won't auto-persist
+                var block = await _blockRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
 
                 if (block is null)
                 {
@@ -1146,11 +1219,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
-                block.SoftDelete(utcNow);
-
-                // Create outbox message - if this fails, we should not proceed with the delete
+                // Create outbox message FIRST (entity not yet modified)
                 var payload = OutboxPayloadBuilder.BuildBlockPayload(block, request.DeviceId);
-
                 var outboxResult = OutboxMessage.Create<Block, BlockEventType>(
                     block,
                     BlockEventType.Deleted,
@@ -1173,6 +1243,26 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
+                // Outbox created successfully - now safe to mark as deleted
+                var deleteResult = block.SoftDelete(utcNow);
+                if (deleteResult.IsFailure)
+                {
+                    results.Add(new BlockDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = deleteResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                // SUCCESS: Attach modified entity and add outbox
+                _blockRepository.Update(block);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new BlockDeletedPushResultDto
@@ -1188,12 +1278,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         /// Returns the ParentId if provided, otherwise looks up the ParentClientId
         /// in the appropriate mapping dictionary.
         /// </summary>
-        private static Guid? ResolveParentId(
-            Guid? parentId,
-            Guid? parentClientId,
-            BlockParentType parentType,
-            Dictionary<Guid, Guid> taskClientToServerIds,
-            Dictionary<Guid, Guid> noteClientToServerIds)
+        private static Guid? ResolveParentId(Guid? parentId,
+                                             Guid? parentClientId,
+                                             BlockParentType parentType,
+                                             Dictionary<Guid, Guid> taskClientToServerIds,
+                                             Dictionary<Guid, Guid> noteClientToServerIds)
         {
             // If server ID is provided, use it directly
             if (parentId.HasValue && parentId.Value != Guid.Empty)

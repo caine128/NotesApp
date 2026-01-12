@@ -22,6 +22,13 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
                 .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
         }
 
+        public async Task<OutboxMessage?> GetByIdUntrackedAsync(Guid id, CancellationToken cancellationToken = default)
+        {
+            return await _context.OutboxMessages
+                .AsNoTracking()
+                .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+        }
+
         public async Task AddAsync(OutboxMessage entity, CancellationToken cancellationToken = default)
         {
             await _context.OutboxMessages.AddAsync(entity, cancellationToken);

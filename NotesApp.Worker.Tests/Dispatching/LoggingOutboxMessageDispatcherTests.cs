@@ -22,8 +22,7 @@ namespace NotesApp.Worker.Tests.Dispatching
         {
             public Guid UserId { get; private set; }
             public DateOnly Date { get; private set; }
-
-            long ICalendarEntity.Version => throw new NotImplementedException();
+            public long Version { get; private set; } = 1;
 
             public TestCalendarEntity(Guid userId, DateOnly date, DateTime utcNow)
                 : base(Guid.NewGuid(), utcNow)

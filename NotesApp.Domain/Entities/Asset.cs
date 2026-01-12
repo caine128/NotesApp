@@ -18,7 +18,7 @@ namespace NotesApp.Domain.Entities
     /// - BlobPath must be non-empty.
     /// - SizeBytes must be positive.
     /// </summary>
-    public sealed class Asset : Entity<Guid>
+    public sealed class Asset : Entity<Guid>, ISyncableEntity
     {
         // ENTITY CONSTANTS 
         public const int MaxFileNameLength = 256;

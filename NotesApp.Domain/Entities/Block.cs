@@ -16,10 +16,10 @@ namespace NotesApp.Domain.Entities
     /// - Text blocks must have TextContent (can be empty string).
     /// - Asset blocks must have AssetClientId, AssetFileName, and valid AssetSizeBytes.
     /// 
-    /// Note: Block does NOT implement ICalendarEntity as it is a component
-    /// of calendar entities (Note/Task), not a calendar entity itself.
+    /// Implements IVersionedSyncableEntity (not ICalendarEntity) as Block is a component
+    /// of calendar entities (Note/Task) and doesn't have its own Date property.
     /// </summary>
-    public sealed class Block : Entity<Guid>
+    public sealed class Block : Entity<Guid>, IVersionedSyncableEntity
     {
         // ENTITY CONSTANTS 
         public const int MaxPositionLength = 100;

@@ -37,6 +37,14 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
                 .FirstOrDefaultAsync(b => b.Id == id && !b.IsDeleted, cancellationToken);
         }
 
+        public async Task<Block?> GetByIdUntrackedAsync(Guid id,
+                                                        CancellationToken cancellationToken = default)
+        {
+            return await _dbContext.Blocks
+                .AsNoTracking()
+                .FirstOrDefaultAsync(b => b.Id == id && !b.IsDeleted, cancellationToken);
+        }
+
         public async Task AddAsync(Block entity,
                                    CancellationToken cancellationToken = default)
         {
