@@ -52,8 +52,9 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
             // 1) Resolve the current internal user id (our account-linking pattern)
             var currentUserId = await _currentUserService.GetUserIdAsync(cancellationToken);
 
-            // 2) Load the task from repository
-            var taskItem = await _taskRepository.GetByIdAsync(command.TaskId, cancellationToken);
+            // 2) Load the task WITHOUT tracking
+            //    This ensures modifications won't auto-persist if we return early due to failures
+            var taskItem = await _taskRepository.GetByIdUntrackedAsync(command.TaskId, cancellationToken);
 
             if (taskItem is null || taskItem.UserId != currentUserId)
             {
@@ -68,7 +69,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
 
             var utcNow = _clock.UtcNow;
 
-            // 3) Domain update (title + date + new fields)
+            // 3) Domain update (title + date + new fields) (entity is NOT tracked, so modifications are in-memory only)
             var updateResult = taskItem.Update(title: command.Title,
                                                date: command.Date,
                                                description: command.Description,
@@ -79,7 +80,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
                                                utcNow: utcNow);
             if (updateResult.IsFailure)
             {
-                // Convert DomainResult -> Result<TaskDto> with current DTO as value
+                // Entity modified but NOT tracked - won't persist
                 return updateResult.ToResult(() => taskItem.ToDetailDto());
             }
 
@@ -90,10 +91,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
                 return reminderResult.ToResult(() => taskItem.ToDetailDto());
             }
 
-            // 5) Persist changes
-            // NEW: mark entity as modified
-            _taskRepository.Update(taskItem);
-
+            // 5) Create outbox message BEFORE persisting
             var payload = JsonSerializer.Serialize(new
             {
                 TaskId = taskItem.Id,
@@ -111,28 +109,27 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
                 OccurredAtUtc = utcNow
             });
 
-            var outboxResult = OutboxMessage.Create<TaskItem, TaskEventType>(
-                aggregate: taskItem,
-                eventType: TaskEventType.Updated,
-                payload: payload,
-                utcNow: utcNow);
+            var outboxResult = OutboxMessage.Create<TaskItem, TaskEventType>(aggregate: taskItem,
+                                                                             eventType: TaskEventType.Updated,
+                                                                             payload: payload,
+                                                                             utcNow: utcNow);
 
             if (outboxResult.IsFailure || outboxResult.Value is null)
             {
                 return outboxResult.ToResult<OutboxMessage, TaskDetailDto>(_ => taskItem.ToDetailDto());
             }
 
+            // 6) SUCCESS: Now explicitly attach and persist
+            //    Update() attaches the untracked entity and marks it as Modified
+            _taskRepository.Update(taskItem);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
-
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            // 6) Map to DTO
-            var dto = taskItem.ToDetailDto();
             _logger.LogInformation("Task {TaskId} updated for user {UserId}.",
                                    taskItem.Id,
                                    currentUserId);
 
-            return Result.Ok(dto);
+            return Result.Ok(taskItem.ToDetailDto());
         }
     }
 }

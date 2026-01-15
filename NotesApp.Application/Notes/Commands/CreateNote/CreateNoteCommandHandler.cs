@@ -75,10 +75,8 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
 
             var note = createResult.Value;
 
-            // 4) Persistence: repository + unit of work.
-            await _noteRepository.AddAsync(note, cancellationToken);
-
-            // 5) Build outbox payload for NoteCreated
+            // 4) Create outbox message BEFORE adding to repositories
+            //    This ensures we don't touch persistence if outbox creation fails
             var payload = JsonSerializer.Serialize(new
             {
                 NoteId = note.Id,
@@ -103,10 +101,9 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
                 return outboxResult.ToResult<OutboxMessage, NoteDetailDto>(_ => note.ToDetailDto());
             }
 
-            var outboxMessage = outboxResult.Value;
-            await _outboxRepository.AddAsync(outboxMessage, cancellationToken);
-
-            // 6) Commit transaction
+            // 5) Persist: only after all domain operations and outbox creation succeed
+            await _noteRepository.AddAsync(note, cancellationToken);
+            await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Created note {NoteId} for user {UserId} on {Date}",
@@ -114,9 +111,8 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
                                    note.UserId,
                                    note.Date);
 
-            // 7) Map domain entity -> DTO
-            var dto = note.ToDetailDto();
-            return Result.Ok(dto);
+            // 6) Map domain entity -> DTO
+            return Result.Ok(note.ToDetailDto());
         }
     }
 }

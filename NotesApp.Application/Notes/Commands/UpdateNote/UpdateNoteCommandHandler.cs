@@ -39,13 +39,15 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
             _logger = logger;
         }
 
-        public async Task<Result<NoteDetailDto>> Handle(
-            UpdateNoteCommand command,
-            CancellationToken cancellationToken)
+        public async Task<Result<NoteDetailDto>> Handle(UpdateNoteCommand command,
+                                                        CancellationToken cancellationToken)
         {
+            // 1) Resolve current user
             var userId = await _currentUserService.GetUserIdAsync(cancellationToken);
 
-            var note = await _noteRepository.GetByIdAsync(command.NoteId, cancellationToken);
+            // 2) Load the note WITHOUT tracking
+            //    This ensures modifications won't auto-persist if we return early due to failures
+            var note = await _noteRepository.GetByIdUntrackedAsync(command.NoteId, cancellationToken);
 
             if (note is null || note.UserId != userId)
             {
@@ -59,24 +61,30 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
                         .WithMetadata("ErrorCode", "Notes.NotFound"));
             }
 
+            if (note.IsDeleted)
+            {
+                return Result.Fail<NoteDetailDto>(
+                    new Error("Cannot update a deleted note.")
+                        .WithMetadata("ErrorCode", "Notes.Deleted"));
+            }
+
             var utcNow = _clock.UtcNow;
 
-            var updateResult = note.Update(
-                title: command.Title,
-                content: command.Content,
-                summary: command.Summary,
-                tags: command.Tags,
-                date: command.Date,
-                utcNow: utcNow);
+            // 3) Domain update (entity is NOT tracked, so modifications are in-memory only)
+            var updateResult = note.Update(title: command.Title,
+                                           content: command.Content,
+                                           summary: command.Summary,
+                                           tags: command.Tags,
+                                           date: command.Date,
+                                           utcNow: utcNow);
 
             if (updateResult.IsFailure)
             {
+                // Entity modified but NOT tracked - won't persist
                 return updateResult.ToResult(() => note.ToDetailDto());
             }
 
-            _noteRepository.Update(note);
-
-            // Outbox for NoteUpdated
+            // 4) Create outbox message BEFORE persisting
             var payload = JsonSerializer.Serialize(new
             {
                 NoteId = note.Id,
@@ -98,11 +106,14 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
 
             if (outboxResult.IsFailure || outboxResult.Value is null)
             {
+                // Entity modified but NOT tracked - won't persist
                 return outboxResult.ToResult<OutboxMessage, NoteDetailDto>(_ => note.ToDetailDto());
             }
 
+            // 5) SUCCESS: Now explicitly attach and persist
+            //    Update() attaches the untracked entity and marks it as Modified
+            _noteRepository.Update(note);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
-
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(
@@ -110,8 +121,7 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
                 note.Id,
                 userId);
 
-            var dto = note.ToDetailDto();
-            return Result.Ok(dto);
+            return Result.Ok(note.ToDetailDto());
         }
     }
 }

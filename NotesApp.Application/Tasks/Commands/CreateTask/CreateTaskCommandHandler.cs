@@ -63,7 +63,7 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
 
             var taskItem = createResult.Value;
 
-            // 📌 3) Domain: set reminder if provided (also returns DomainResult)
+            // 4) Domain: set reminder if provided
             if (command.ReminderAtUtc.HasValue)
             {
                 var reminderResult = taskItem.SetReminder(command.ReminderAtUtc, utcNow);
@@ -75,11 +75,9 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
                 }
             }
 
-            // 📌 4) Persistence: repository + unit of work
-            //     (Infra errors here are exceptional and bubble as exceptions)
-            await _taskRepository.AddAsync(taskItem, cancellationToken);
 
-            // 5) Build outbox payload for TaskCreated
+            // 5) Create outbox message BEFORE adding to repositories
+            //    This ensures we don't touch persistence if outbox creation fails
             var payload = JsonSerializer.Serialize(new
             {
                 TaskId = taskItem.Id,
@@ -96,26 +94,23 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
                 OccurredAtUtc = utcNow
             });
 
-            var outboxResult = OutboxMessage.Create(
-                aggregate: taskItem,
-                eventType: TaskEventType.Created,
-                payload: payload,
-                utcNow: utcNow);
+            var outboxResult = OutboxMessage.Create(aggregate: taskItem,
+                                                    eventType: TaskEventType.Created,
+                                                    payload: payload,
+                                                    utcNow: utcNow);
 
             if (outboxResult.IsFailure || outboxResult.Value is null)
             {
                 return outboxResult.ToResult<OutboxMessage, TaskDetailDto>(_ => taskItem.ToDetailDto());
             }
 
-            var outboxMessage = outboxResult.Value;
-            await _outboxRepository.AddAsync(outboxMessage, cancellationToken);
-
-            // 6) Commit transaction
+            // 6) Persist: only after all domain operations and outbox creation succeed
+            await _taskRepository.AddAsync(taskItem, cancellationToken);
+            await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            // 7) Map domain entity -> DTO using our mapping extension
-            var dto = taskItem.ToDetailDto();
-            return Result.Ok(dto);
+            // 7) Map domain entity -> DTO
+            return Result.Ok(taskItem.ToDetailDto());
 
         }
     }
