@@ -18,13 +18,19 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
     /// Handles asset upload requests.
     /// 
     /// Workflow:
-    /// 1. Validate block exists and belongs to current user
-    /// 2. Verify block is awaiting upload (UploadStatus.Pending)
-    /// 3. Verify AssetClientId matches
-    /// 4. Upload binary to blob storage
-    /// 5. Create Asset entity
-    /// 6. Link asset to block
-    /// 7. Return download URL
+    /// 1. Validate inputs (size, etc.)
+    /// 2. Load block WITHOUT tracking
+    /// 3. Validate block state (ownership, type, status, AssetClientId)
+    /// 4. Check idempotency (existing asset)
+    /// 5. Upload binary to blob storage ← POINT OF NO RETURN
+    /// 6. Create Asset entity (in memory)
+    /// 7. Link asset to block (in memory)
+    /// 8. Create both outbox messages - FAIL if any error
+    /// 9. Persist everything atomically
+    /// 10. Return download URL
+    /// 
+    /// If blob upload fails, the block is marked as UploadFailed.
+    /// If any step after blob upload fails, the blob is cleaned up (best effort).
     /// </summary>
     public sealed class UploadAssetCommandHandler
         : IRequestHandler<UploadAssetCommand, Result<UploadAssetResultDto>>
@@ -87,7 +93,10 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
                 request.BlockId,
                 userId);
 
-            // Validate file size
+            // ═══════════════════════════════════════════════════════════════════
+            // PHASE 1: Validation (all before blob upload)
+            // ═══════════════════════════════════════════════════════════════════
+
             if (request.SizeBytes <= 0)
             {
                 return Result.Fail(new Error("Asset.Size.Invalid")
@@ -100,44 +109,34 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
                     .WithMetadata("Message", $"File size exceeds maximum allowed size of {MaxFileSizeBytes / (1024 * 1024)} MB."));
             }
 
-            // Find the block
-            var block = await _blockRepository.GetByIdAsync(request.BlockId, cancellationToken);
+            // Load block WITHOUT tracking
+            var block = await _blockRepository.GetByIdUntrackedAsync(request.BlockId, cancellationToken);
 
-            if (block is null)
+            if (block is null || block.UserId != userId)
             {
                 return Result.Fail(new Error("Block.NotFound")
                     .WithMetadata("Message", "Block not found."));
             }
 
-            // Verify ownership
-            if (block.UserId != userId)
-            {
-                return Result.Fail(new Error("Block.NotFound")
-                    .WithMetadata("Message", "Block not found."));
-            }
-
-            // Verify block is an asset block
             if (!Block.IsAssetBlockType(block.Type))
             {
                 return Result.Fail(new Error("Block.Type.Invalid")
                     .WithMetadata("Message", "Block is not an asset block type."));
             }
 
-            // Verify block is awaiting upload
             if (block.UploadStatus != UploadStatus.Pending)
             {
                 return Result.Fail(new Error("Block.Upload.InvalidStatus")
                     .WithMetadata("Message", $"Block upload status is {block.UploadStatus}, expected Pending."));
             }
 
-            // Verify AssetClientId matches
             if (block.AssetClientId != request.AssetClientId)
             {
                 return Result.Fail(new Error("Asset.ClientId.Mismatch")
                     .WithMetadata("Message", "AssetClientId does not match block's expected value."));
             }
 
-            // Check if asset already exists for this block (idempotency)
+            // Check idempotency
             var existingAsset = await _assetRepository.GetByBlockIdAsync(request.BlockId, cancellationToken);
             if (existingAsset is not null)
             {
@@ -146,7 +145,6 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
                     request.BlockId,
                     existingAsset.Id);
 
-                // Generate download URL for existing asset
                 var existingUrlResult = await _blobStorageService.GenerateDownloadUrlAsync(
                     AssetContainerName,
                     existingAsset.BlobPath,
@@ -155,11 +153,6 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
 
                 if (existingUrlResult.IsFailed)
                 {
-                    _logger.LogWarning(
-                        "Failed to generate download URL for existing asset {AssetId}: {Errors}",
-                        existingAsset.Id,
-                        string.Join(", ", existingUrlResult.Errors.Select(e => e.Message)));
-
                     return Result.Fail(existingUrlResult.Errors);
                 }
 
@@ -171,10 +164,12 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
                 });
             }
 
-            // Generate blob path: {userId}/{parentId}/{blockId}/{filename}
+            // ═══════════════════════════════════════════════════════════════════
+            // PHASE 2: Blob Upload (POINT OF NO RETURN)
+            // ═══════════════════════════════════════════════════════════════════
+
             var blobPath = GenerateBlobPath(userId, block.ParentId, block.Id, request.FileName);
 
-            // Upload to blob storage
             var uploadResult = await _blobStorageService.UploadAsync(AssetContainerName,
                                                                      blobPath,
                                                                      request.Content,
@@ -188,8 +183,9 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
                     request.BlockId,
                     string.Join(", ", uploadResult.Errors.Select(e => e.Message)));
 
-                // Mark block upload as failed
+                // Mark block upload as failed and persist
                 block.SetUploadFailed(utcNow);
+                _blockRepository.Update(block);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
                 return Result.Fail(new Error("Asset.Upload.Failed")
@@ -200,6 +196,10 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
                 "Asset uploaded to blob storage: {BlobPath}, Size: {SizeBytes}",
                 blobPath,
                 uploadResult.Value.SizeBytes);
+
+            // ═══════════════════════════════════════════════════════════════════
+            // PHASE 3: Create Entities and Outbox (in memory, validate all)
+            // ═══════════════════════════════════════════════════════════════════
 
             // Create Asset entity
             var assetResult = Asset.Create(userId,
@@ -216,23 +216,15 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
                     "Failed to create Asset entity: {Errors}",
                     string.Join(", ", assetResult.Errors.Select(e => e.Message)));
 
-                // Try to clean up the uploaded blob (best effort, don't fail if cleanup fails)
-                var deleteResult = await _blobStorageService.DeleteAsync(AssetContainerName, blobPath, cancellationToken);
-                if (deleteResult.IsFailed)
-                {
-                    _logger.LogWarning(
-                        "Failed to clean up blob after asset creation failure: {Errors}",
-                        string.Join(", ", deleteResult.Errors.Select(e => e.Message)));
-                }
+                await CleanupBlobAsync(blobPath, cancellationToken);
 
                 return Result.Fail(new Error("Asset.Create.Failed")
                     .WithMetadata("Message", "Failed to create asset record."));
             }
 
             var asset = assetResult.Value!;
-            await _assetRepository.AddAsync(asset, cancellationToken);
 
-            // Link asset to block
+            // Link asset to block (in memory - block is untracked)
             var linkResult = block.SetAssetUploaded(asset.Id, utcNow);
             if (linkResult.IsFailure)
             {
@@ -240,24 +232,33 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
                     "Failed to link asset to block: {Errors}",
                     string.Join(", ", linkResult.Errors.Select(e => e.Message)));
 
+                await CleanupBlobAsync(blobPath, cancellationToken);
+
                 return Result.Fail(new Error("Block.LinkAsset.Failed")
                     .WithMetadata("Message", "Failed to link asset to block."));
             }
 
-            // Create outbox message for the asset creation event
+            // Create Asset outbox message - MUST succeed
             var assetPayload = OutboxPayloadBuilder.BuildAssetPayload(asset, Guid.Empty);
-            var outboxResult = OutboxMessage.Create<Asset, AssetEventType>(
+            var assetOutboxResult = OutboxMessage.Create<Asset, AssetEventType>(
                 asset,
                 AssetEventType.Created,
                 assetPayload,
                 utcNow);
 
-            if (outboxResult.IsSuccess)
+            if (assetOutboxResult.IsFailure || assetOutboxResult.Value is null)
             {
-                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                _logger.LogError(
+                    "Failed to create Asset outbox message for block {BlockId}",
+                    request.BlockId);
+
+                await CleanupBlobAsync(blobPath, cancellationToken);
+
+                return Result.Fail(new Error("Outbox.Asset.CreateFailed")
+                    .WithMetadata("Message", "Failed to create asset sync event."));
             }
 
-            // Create outbox message for the block update event
+            // Create Block outbox message - MUST succeed
             var blockPayload = OutboxPayloadBuilder.BuildBlockPayload(block, Guid.Empty);
             var blockOutboxResult = OutboxMessage.Create<Block, BlockEventType>(
                 block,
@@ -265,14 +266,32 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
                 blockPayload,
                 utcNow);
 
-            if (blockOutboxResult.IsSuccess)
+            if (blockOutboxResult.IsFailure || blockOutboxResult.Value is null)
             {
-                await _outboxRepository.AddAsync(blockOutboxResult.Value, cancellationToken);
+                _logger.LogError(
+                    "Failed to create Block outbox message for block {BlockId}",
+                    request.BlockId);
+
+                await CleanupBlobAsync(blobPath, cancellationToken);
+
+                return Result.Fail(new Error("Outbox.Block.CreateFailed")
+                    .WithMetadata("Message", "Failed to create block sync event."));
             }
 
+            // ═══════════════════════════════════════════════════════════════════
+            // PHASE 4: Persist Everything (atomic)
+            // ═══════════════════════════════════════════════════════════════════
+
+            await _assetRepository.AddAsync(asset, cancellationToken);
+            _blockRepository.Update(block);
+            await _outboxRepository.AddAsync(assetOutboxResult.Value, cancellationToken);
+            await _outboxRepository.AddAsync(blockOutboxResult.Value, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            // Generate download URL
+            // ═══════════════════════════════════════════════════════════════════
+            // PHASE 5: Generate Download URL
+            // ═══════════════════════════════════════════════════════════════════
+
             var downloadUrlResult = await _blobStorageService.GenerateDownloadUrlAsync(AssetContainerName,
                                                                                        blobPath,
                                                                                        DownloadUrlValidity,
@@ -285,6 +304,8 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
                     asset.Id,
                     string.Join(", ", downloadUrlResult.Errors.Select(e => e.Message)));
 
+                // Asset was created successfully, but URL generation failed
+                // Return error - client can retry fetching the URL
                 return Result.Fail(downloadUrlResult.Errors);
             }
 
@@ -300,6 +321,20 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
             });
         }
 
+        /// <summary>
+        /// Attempts to clean up an uploaded blob. Best effort - does not throw on failure.
+        /// </summary>
+        private async Task CleanupBlobAsync(string blobPath, CancellationToken cancellationToken)
+        {
+            var deleteResult = await _blobStorageService.DeleteAsync(AssetContainerName, blobPath, cancellationToken);
+            if (deleteResult.IsFailed)
+            {
+                _logger.LogWarning(
+                    "Failed to clean up blob after failure: {BlobPath}. Errors: {Errors}",
+                    blobPath,
+                    string.Join(", ", deleteResult.Errors.Select(e => e.Message)));
+            }
+        }
 
         /// <summary>
         /// Generates a hierarchical blob path for the asset.

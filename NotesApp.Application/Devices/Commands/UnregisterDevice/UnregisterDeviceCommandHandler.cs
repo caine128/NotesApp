@@ -9,6 +9,13 @@ using System.Text;
 
 namespace NotesApp.Application.Devices.Commands.UnregisterDevice
 {
+    /// <summary>
+    /// Handles device unregistration (deactivation).
+    /// 
+    /// - Loads the device WITHOUT tracking to prevent auto-persistence on failure.
+    /// - Verifies ownership and deactivates via domain method.
+    /// - Persists only after domain operation succeeds.
+    /// </summary>
     public sealed class UnregisterDeviceCommandHandler
         : IRequestHandler<UnregisterDeviceCommand, Result>
     {
@@ -33,18 +40,24 @@ namespace NotesApp.Application.Devices.Commands.UnregisterDevice
         {
             var userId = await _currentUserService.GetUserIdAsync(cancellationToken);
 
-            var device = await _deviceRepository.GetByIdAsync(request.DeviceId, cancellationToken);
+            // Load WITHOUT tracking for consistency with other handlers
+            var device = await _deviceRepository.GetByIdUntrackedAsync(request.DeviceId, cancellationToken);
             if (device is null || device.UserId != userId)
             {
-                return Result.Fail(new Error("Device.NotFound"));
+                return Result.Fail(
+                    new Error("Device not found.")
+                        .WithMetadata("ErrorCode", "Device.NotFound"));
             }
 
+            // Apply domain operation (entity is NOT tracked, modifications are in-memory only)
             var domainResult = device.Deactivate(_clock.UtcNow);
             if (domainResult.IsFailure)
             {
+                // Entity modified but NOT tracked - won't persist
                 return domainResult.ToResult();
             }
 
+            // SUCCESS: Explicitly attach and persist
             _deviceRepository.Update(device);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 

@@ -18,6 +18,8 @@ namespace NotesApp.Application.Devices.Commands.RegisterDevice
     /// - If token exists for same user: reactivate + touch.
     /// - If token exists for another user: reassign to current user.
     /// - If token doesn't exist: create new device.
+    ///     
+    /// Existing devices are loaded WITHOUT tracking to prevent auto-persistence on failure.
     /// </summary>
     public sealed class RegisterDeviceCommandHandler
         : IRequestHandler<RegisterDeviceCommand, Result<UserDeviceDto>>
@@ -47,12 +49,14 @@ namespace NotesApp.Application.Devices.Commands.RegisterDevice
             // Normalize token once
             var normalizedToken = request.DeviceToken?.Trim() ?? string.Empty;
 
-            // 1) Try to find existing device by token (any user)
-            var existing = await _deviceRepository.GetByTokenAsync(normalizedToken, cancellationToken);
+            // Load WITHOUT tracking - modifications won't auto-persist if we return early
+            var existing = await _deviceRepository.GetByTokenUntrackedAsync(normalizedToken, cancellationToken);
 
             if (existing is null)
             {
-                // 2a) No existing device -> create new
+                // ═══════════════════════════════════════════════════════════════
+                // CREATE PATH: No existing device -> create new
+                // ═══════════════════════════════════════════════════════════════
                 var createResult = UserDevice.Create(userId,
                                                      normalizedToken,
                                                      request.Platform,
@@ -61,7 +65,6 @@ namespace NotesApp.Application.Devices.Commands.RegisterDevice
 
                 if (createResult.IsFailure)
                 {
-                    // Uses your DomainResult<T> → Result<TDto> extension
                     return createResult.ToResult<UserDevice, UserDeviceDto>(device => device.ToDto());
                 }
 
@@ -69,57 +72,63 @@ namespace NotesApp.Application.Devices.Commands.RegisterDevice
                 await _deviceRepository.AddAsync(device, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-                var dto = device.ToDto();
-                return Result.Ok(dto);
+                return Result.Ok(device.ToDto());
             }
+
             else
             {
-                // 2b) Device exists -> reuse / reassign logic
+                // ═══════════════════════════════════════════════════════════════
+                // UPDATE PATH: Device exists -> reuse / reassign
+                // Entity is NOT tracked, modifications are in-memory only
+                // ═══════════════════════════════════════════════════════════════
                 if (existing.UserId != userId)
                 {
                     // Token migrated from another user -> reassign
                     var reassignResult = existing.ReassignToUser(userId, utcNow);
                     if (reassignResult.IsFailure)
                     {
+                        // Entity modified but NOT tracked - won't persist
                         return reassignResult.ToResult();
                     }
+
                     if (!string.IsNullOrWhiteSpace(request.DeviceName))
                     {
                         var updateNameResult = existing.UpdateName(request.DeviceName, utcNow);
                         if (updateNameResult.IsFailure)
                         {
+                            // Entity modified but NOT tracked - won't persist
                             return updateNameResult.ToResult();
                         }
                     }
                 }
                 else
                 {
-                    // Same user:
-                    // - make sure it's active
-                    // - update name if changed
+                    // Same user: reactivate and update name if changed
                     var reactivateResult = existing.Reactivate(utcNow);
                     if (reactivateResult.IsFailure)
                     {
+                        // Entity modified but NOT tracked - won't persist
                         return reactivateResult.ToResult();
                     }
 
                     if (!string.IsNullOrWhiteSpace(request.DeviceName))
                     {
-                        var updateNameDomainResult = existing.UpdateName(request.DeviceName, utcNow);
-                        if (updateNameDomainResult.IsFailure)
+                        var updateNameResult = existing.UpdateName(request.DeviceName, utcNow);
+                        if (updateNameResult.IsFailure)
                         {
-                            return updateNameDomainResult.ToResult();
+                            // Entity modified but NOT tracked - won't persist
+                            return updateNameResult.ToResult();
                         }
                     }
 
                     existing.TouchLastSeen(utcNow);
                 }
 
+                // SUCCESS: Explicitly attach and persist
                 _deviceRepository.Update(existing);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-                var dto=existing.ToDto();   
-                return Result.Ok(dto);
+                return Result.Ok(existing.ToDto());
             }
         }
 

@@ -56,6 +56,21 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
                 .FirstOrDefaultAsync(d => d.DeviceToken == normalized, cancellationToken);
         }
 
+        public async Task<UserDevice?> GetByTokenUntrackedAsync(string deviceToken,
+                                                               CancellationToken cancellationToken = default)
+        {
+            var normalized = deviceToken?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return null;
+            }
+
+            return await _context.UserDevices
+                .AsNoTracking()
+                .IgnoreQueryFilters() // we might want to see deleted devices for migrations
+                .FirstOrDefaultAsync(d => d.DeviceToken == normalized, cancellationToken);
+        }
+
         public async Task<IReadOnlyList<UserDevice>> GetActiveDevicesForUserAsync(Guid userId,
                                                                                   CancellationToken cancellationToken = default)
         {

@@ -16,12 +16,11 @@ namespace NotesApp.Application.Tasks.Commands.SetTaskCompletion
 {
     /// <summary>
     /// Handles the SetTaskCompletionCommand:
-    /// 1) Resolves the current user from the token.
-    /// 2) Loads the TaskItem from the repository.
-    /// 3) Ensures the task belongs to the current user.
-    /// 4) Applies the completion state in the domain (MarkCompleted/MarkPending).
-    /// 5) Persists the change using UnitOfWork.
-    /// 6) Returns the updated TaskDto wrapped in a FluentResults.Result.
+    /// - Loads the task WITHOUT tracking to prevent auto-persistence on failure.
+    /// - Ensures the task belongs to the current user and is not deleted.
+    /// - Applies the completion state in the domain (MarkCompleted/MarkPending).
+    /// - Creates outbox message BEFORE persisting.
+    /// - Persists changes only after all validations succeed.
     /// </summary>
     public sealed class SetTaskCompletionCommandHandler
         : IRequestHandler<SetTaskCompletionCommand, Result<TaskDetailDto>>
@@ -54,14 +53,13 @@ namespace NotesApp.Application.Tasks.Commands.SetTaskCompletion
             // 1) Resolve current internal user Id from token/claims.
             var currentUserId = await _currentUserService.GetUserIdAsync(cancellationToken);
 
-            // 2) Load the task from the repository
+            // 2) Load the task WITHOUT tracking
+            //    This ensures modifications won't auto-persist if we return early due to failures
             var taskItem = await _taskRepository
-                .GetByIdAsync(command.TaskId, cancellationToken);
+                .GetByIdUntrackedAsync(command.TaskId, cancellationToken);
 
             if (taskItem is null || taskItem.UserId != currentUserId)
             {
-                // We deliberately return "not found" instead of "forbidden"
-                // to avoid leaking existence of other users' tasks.
                 _logger.LogWarning(
                     "SetTaskCompletion failed: task {TaskId} not found for user {UserId}.",
                     command.TaskId,
@@ -72,25 +70,27 @@ namespace NotesApp.Application.Tasks.Commands.SetTaskCompletion
                         .WithMetadata("ErrorCode", "Tasks.NotFound"));
             }
 
+            if (taskItem.IsDeleted)
+            {
+                return Result.Fail<TaskDetailDto>(
+                    new Error("Cannot modify a deleted task.")
+                        .WithMetadata("ErrorCode", "Tasks.Deleted"));
+            }
+
             var utcNow = _clock.UtcNow;
 
-            // 3) Apply the desired completion state at the domain level.
-            // These methods are already idempotent and enforce invariants.
+            // 3) Apply the desired completion state (entity is NOT tracked, modifications are in-memory only)
             var completionResult = command.IsCompleted
                 ? taskItem.MarkCompleted(utcNow)
                 : taskItem.MarkPending(utcNow);
 
             if (completionResult.IsFailure)
             {
-                // Convert DomainResult -> Result<TaskDto> with the current DTO as value.
-                // This preserves any domain error codes/messages while still returning
-                // the current state of the task to the client.
+                // Entity modified but NOT tracked - won't persist
                 return completionResult.ToResult(() => taskItem.ToDetailDto());
             }
 
-            // 4) Mark the entity as modified so EF Core tracks the change.
-            _taskRepository.Update(taskItem);
-
+            // 4) Create outbox message BEFORE persisting
             var payload = JsonSerializer.Serialize(new
             {
                 TaskId = taskItem.Id,
@@ -102,24 +102,30 @@ namespace NotesApp.Application.Tasks.Commands.SetTaskCompletion
                 OccurredAtUtc = utcNow
             });
 
-            var outboxResult = OutboxMessage.Create<TaskItem, TaskEventType>(
-                aggregate: taskItem,
-                eventType: TaskEventType.CompletionChanged,
-                payload: payload,
-                utcNow: utcNow);
+            var outboxResult = OutboxMessage.Create<TaskItem, TaskEventType>(aggregate: taskItem,
+                                                                             eventType: TaskEventType.CompletionChanged,
+                                                                             payload: payload,
+                                                                             utcNow: utcNow);
 
             if (outboxResult.IsFailure || outboxResult.Value is null)
             {
+                // Entity modified but NOT tracked - won't persist
                 return outboxResult.ToResult<OutboxMessage, TaskDetailDto>(_ => taskItem.ToDetailDto());
             }
 
+            // 5) SUCCESS: Now explicitly attach and persist
+            //    Update() attaches the untracked entity and marks it as Modified
+            _taskRepository.Update(taskItem);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
-
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            // 6) Return updated DTO as Result.Ok<T>
-            var dto = taskItem.ToDetailDto();
-            return Result.Ok(dto);
+            _logger.LogInformation(
+                "Task {TaskId} completion set to {IsCompleted} for user {UserId}.",
+                taskItem.Id,
+                taskItem.IsCompleted,
+                currentUserId);
+
+            return Result.Ok(taskItem.ToDetailDto());
         }
     }
 }

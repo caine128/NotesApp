@@ -24,7 +24,12 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
     /// 
     /// Second-level conflicts (server changed again before resolution) are
     /// reported with Status = "conflict" and no changes applied.
-    /// </summary>
+    /// 
+    /// Each resolution is processed independently:
+    /// - Entities are loaded WITHOUT tracking to prevent auto-persistence on failure.
+    /// - ALL domain operations and outbox creation must succeed for an item to be persisted.
+    /// - Individual item failures are reported without affecting other items.
+    /// - Only fully successful items are persisted at the end.
     public sealed class ResolveSyncConflictsCommandHandler
         : IRequestHandler<ResolveSyncConflictsCommand, Result<ResolveSyncConflictsResultDto>>
     {
@@ -66,6 +71,10 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
                                    utcNow);
 
             var results = new List<SyncConflictResolutionResultItemDto>();
+
+            // Track successful resolutions that need to be persisted
+            var pendingTaskUpdates = new List<(TaskItem Task, OutboxMessage Outbox)>();
+            var pendingNoteUpdates = new List<(Note Note, OutboxMessage Outbox)>();
 
             foreach (var resolution in request.Request.Resolutions)
             {

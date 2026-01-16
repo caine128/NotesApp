@@ -17,6 +17,13 @@ namespace NotesApp.Application.Abstractions.Persistence
                                           CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Finds a device by its token, regardless of user. WITHOUT change tracking.
+        /// Use <see cref="IRepository{TEntity}.Update"/> to persist changes.
+        /// </summary>
+        Task<UserDevice?> GetByTokenUntrackedAsync(string deviceToken,
+                                                   CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Returns all active (non-deleted, IsActive = true) devices for the given user.
         /// </summary>
         Task<IReadOnlyList<UserDevice>> GetActiveDevicesForUserAsync(Guid userId,
