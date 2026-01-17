@@ -102,7 +102,6 @@ namespace NotesApp.Application.Sync.Models
 
         public DateOnly Date { get; init; }
         public string? Title { get; init; }
-        public string? Content { get; init; }
         public string? Summary { get; init; }
         public string? Tags { get; init; }
     }
@@ -114,7 +113,6 @@ namespace NotesApp.Application.Sync.Models
 
         public DateOnly Date { get; init; }
         public string? Title { get; init; }
-        public string? Content { get; init; }
         public string? Summary { get; init; }
         public string? Tags { get; init; }
     }

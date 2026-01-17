@@ -16,10 +16,10 @@ namespace NotesApp.Application.Sync.Models
     /// <summary>
     /// Resolution instruction for a single conflicted entity.
     /// 
-    /// EntityType: "task" or "note"
-    /// Choice: "keep_client" | "keep_server" | "merge"
+    /// EntityType: "Task", "Note", or "Block"
+    /// Choice: "KeepServer" | "KeepClient" | "Merge"
     /// 
-    /// For keep_client / merge, the corresponding TaskData / NoteData
+    /// For KeepClient / Merge, the corresponding TaskData / NoteData / BlockData
     /// must be provided and will be treated as the desired final state.
     /// </summary>
     public sealed record SyncConflictResolutionDto
@@ -37,6 +37,7 @@ namespace NotesApp.Application.Sync.Models
 
         public TaskConflictResolutionDataDto? TaskData { get; init; }
         public NoteConflictResolutionDataDto? NoteData { get; init; }
+        public BlockConflictResolutionDataDto? BlockData { get; init; }
     }
 
     /// <summary>
@@ -62,10 +63,35 @@ namespace NotesApp.Application.Sync.Models
     {
         public DateOnly Date { get; init; }
         public string? Title { get; init; }
-        public string? Content { get; init; }
         public string? Summary { get; init; }
         public string? Tags { get; init; }
     }
+
+    /// <summary>
+    /// Client-provided desired state for a block when resolving a conflict.
+    /// 
+    /// Blocks are resolved atomically - the entire block state (position + content)
+    /// is replaced as a unit. This is simpler and more predictable than field-level merging.
+    /// 
+    /// Note: Asset properties (AssetId, AssetClientId, etc.) are NOT included because
+    /// assets are immutable once uploaded. If a block references an asset, that reference
+    /// cannot be changed through conflict resolution.
+    /// </summary>
+    public sealed record BlockConflictResolutionDataDto
+    {
+        /// <summary>
+        /// The desired position (fractional index) for the block.
+        /// Required for all block types.
+        /// </summary>
+        public string Position { get; init; } = string.Empty;
+
+        /// <summary>
+        /// The desired text content for text-based blocks.
+        /// Ignored for asset blocks (Image, File).
+        /// </summary>
+        public string? TextContent { get; init; }
+    }
+
 
     /// <summary>
     /// Result for a single resolved conflict.

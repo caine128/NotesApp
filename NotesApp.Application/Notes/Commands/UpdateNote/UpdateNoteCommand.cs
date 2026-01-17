@@ -15,7 +15,6 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
 
         public string? Title { get; init; }
 
-        public string? Content { get; init; }
 
         /// <summary>
         /// Optional user-provided summary. AI may override/update later.

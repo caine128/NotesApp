@@ -10,9 +10,13 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
     /// <summary>
     /// Command to create a new note for the current user and a given date.
     /// 
+    /// BLOCK-BASED CONTENT MODEL:
+    /// Note no longer stores content directly. Content should be added as
+    /// Block entities after Note creation via the Blocks API or sync push.
+    /// 
     /// Invariants are enforced in the Note domain entity:
     /// - UserId must be non-empty (we get it from the current user).
-    /// - At least Title or Content must have data.
+    /// - Title is required (non-empty).
     /// </summary>
     public sealed class CreateNoteCommand : IRequest<Result<NoteDetailDto>>
     {
@@ -26,10 +30,6 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
         /// </summary>
         public string? Title { get; init; }
 
-        /// <summary>
-        /// Optional note content/body.
-        /// </summary>
-        public string? Content { get; init; }
 
         /// <summary>
         /// Optional user-provided summary. AI may override/update later.

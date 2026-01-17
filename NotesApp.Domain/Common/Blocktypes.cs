@@ -10,7 +10,6 @@ namespace NotesApp.Domain.Common
     public enum BlockParentType
     {
         Note = 0,
-        Task = 1
     }
 
     /// <summary>

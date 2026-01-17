@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -17,19 +18,14 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
                 .NotEqual(default(DateOnly))
                 .WithMessage("Date is required.");
 
-            RuleFor(x => x)
-                .Must(cmd =>
-                    !string.IsNullOrWhiteSpace(cmd.Title) ||
-                    !string.IsNullOrWhiteSpace(cmd.Content))
-                .WithMessage("Note must have at least a title or some content.");
-
+            // CHANGED: Title is now required (content is in blocks)
             RuleFor(x => x.Title)
-                .MaximumLength(200)
+                .NotEmpty()
+                .WithMessage("Note title is required.")
+                .MaximumLength(Note.MaxTitleLength)
                 .WithMessage("Title cannot exceed 200 characters.");
 
-            RuleFor(x => x.Content)
-                .MaximumLength(8000)
-                .WithMessage("Content cannot exceed 8000 characters.");
+            
 
             RuleFor(x => x.Summary)
                 .MaximumLength(4000)

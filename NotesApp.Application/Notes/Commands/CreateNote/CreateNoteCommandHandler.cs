@@ -62,7 +62,6 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
             var createResult = Note.Create(userId: userId,
                                            date: command.Date,
                                            title: command.Title,
-                                           content: command.Content,
                                            summary: command.Summary,
                                            tags: command.Tags,
                                            utcNow: utcNow);
@@ -83,7 +82,6 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
                 note.UserId,
                 note.Date,
                 note.Title,
-                note.Content,
                 note.Summary,
                 note.Tags,
                 Event = NoteEventType.Created.ToString(),

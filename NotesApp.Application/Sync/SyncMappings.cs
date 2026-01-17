@@ -35,7 +35,6 @@ namespace NotesApp.Application.Sync
                 Id = note.Id,
                 Date = note.Date,
                 Title = note.Title,
-                Content = note.Content,
                 Summary = note.Summary,
                 Tags = note.Tags,
                 Version = note.Version,

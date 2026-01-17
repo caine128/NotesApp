@@ -72,7 +72,6 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
 
             // 3) Domain update (entity is NOT tracked, so modifications are in-memory only)
             var updateResult = note.Update(title: command.Title,
-                                           content: command.Content,
                                            summary: command.Summary,
                                            tags: command.Tags,
                                            date: command.Date,
@@ -91,7 +90,6 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
                 note.UserId,
                 note.Date,
                 note.Title,
-                note.Content,
                 note.Summary,
                 note.Tags,
                 Event = NoteEventType.Updated.ToString(),

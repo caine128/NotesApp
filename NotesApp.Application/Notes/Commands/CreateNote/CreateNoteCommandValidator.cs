@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -18,23 +19,14 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
                 .Must(d => d != default)
                 .WithMessage("Date is required.");
 
-            // At least Title or Content must be non-empty.
-            // This mirrors the invariant in Note.Create, but gives earlier feedback.
-            RuleFor(x => x)
-                .Must(x =>
-                    !string.IsNullOrWhiteSpace(x.Title) ||
-                    !string.IsNullOrWhiteSpace(x.Content))
-                .WithMessage("Note must have at least a title or some content.");
-
-            // Optional: keep Title length reasonable
+            // CHANGED: Title is now required (content is in blocks)
             RuleFor(x => x.Title)
-                .MaximumLength(200)
+                .NotEmpty()
+                .WithMessage("Note title is required.")
+                .MaximumLength(Note.MaxTitleLength)
                 .WithMessage("Title cannot exceed 200 characters.");
 
-            // Optional: keep Content size sane (tune as you like)
-            RuleFor(x => x.Content)
-                .MaximumLength(4000)
-                .WithMessage("Content cannot exceed 4000 characters.");
+        
 
             RuleFor(x => x.Tags)
                  .MaximumLength(1000)
