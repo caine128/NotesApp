@@ -179,21 +179,6 @@ namespace NotesApp.Application.Blocks.Commands.CreateBlock
                     }
                     break;
 
-                case BlockParentType.Task:
-                    var task = await _taskRepository.GetByIdAsync(parentId, cancellationToken);
-                    if (task is null || task.UserId != userId || task.IsDeleted)
-                    {
-                        _logger.LogWarning(
-                            "CreateBlock failed: Task {TaskId} not found for user {UserId}",
-                            parentId,
-                            userId);
-
-                        return Result.Fail<BlockDetailDto>(
-                            new Error("Parent task not found.")
-                                .WithMetadata("ErrorCode", "Blocks.ParentNotFound"));
-                    }
-                    break;
-
                 default:
                     return Result.Fail<BlockDetailDto>(
                         new Error($"Unknown parent type: {parentType}")

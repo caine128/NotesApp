@@ -673,8 +673,8 @@ namespace NotesApp.Application.Tests.Sync
                     {
                         ClientId = clientId,
                         Date = new DateOnly(2025, 1, 2),
-                        Title = "New Note",
-                        Content = "Note content"
+                        Title = "New Note"
+                        // CHANGED: Content removed - content is now in blocks
                     }
                 }
                 }
@@ -767,8 +767,8 @@ namespace NotesApp.Application.Tests.Sync
                         Id = noteId,
                         ExpectedVersion = 1,
                         Date = existingNote.Date,
-                        Title = "Updated Title",
-                        Content = "Updated content"
+                        Title = "Updated Title"
+                        // CHANGED: Content removed - content is now in blocks
                     }
                 }
                 }
@@ -1228,8 +1228,8 @@ namespace NotesApp.Application.Tests.Sync
                     {
                         ClientId = noteClientId,
                         Date = new DateOnly(2025, 1, 2),
-                        Title = "Parent Note",
-                        Content = "Content"
+                        Title = "Parent Note"
+                        // CHANGED: Content removed - content is now in blocks
                     }
                 }
                 },
@@ -1703,7 +1703,7 @@ namespace NotesApp.Application.Tests.Sync
                     {
                         ClientId = Guid.NewGuid(),
                         ParentId = Guid.NewGuid(),
-                        ParentType = BlockParentType.Task,
+                        ParentType = BlockParentType.Note,  // CHANGED: Task -> Note (Tasks don't have blocks)
                         Type = BlockType.Paragraph,
                         Position = "a0",
                         TextContent = "Block content"
@@ -1857,11 +1857,11 @@ namespace NotesApp.Application.Tests.Sync
 
         private static Note CreateNote(Guid userId, DateTime utcNow)
         {
+            // CHANGED: content parameter removed from Note.Create
             var createResult = Note.Create(
                 userId,
                 new DateOnly(2025, 1, 2),
                 "Test Note",
-                "Content",
                 null,
                 null,
                 utcNow);

@@ -12,6 +12,12 @@ using System.Text;
 
 namespace NotesApp.Application.Tests.Notes
 {
+    /// <summary>
+    /// Integration tests for GetNoteDetailQueryHandler.
+    /// 
+    /// CHANGED: Tests updated for block-based content model.
+    /// Note no longer has a Content property.
+    /// </summary>
     public sealed class GetNoteDetailQueryHandlerTests
     {
         [Fact]
@@ -30,11 +36,11 @@ namespace NotesApp.Application.Tests.Notes
                 .Setup(s => s.GetUserIdAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(userId);
 
+            // CHANGED: Note.Create no longer takes content parameter
             var myNoteResult = Note.Create(
                 userId: userId,
                 date: new DateOnly(2025, 2, 20),
                 title: "My note",
-                content: "My content",
                 summary: "summary",
                 tags: "tag1",
                 utcNow: DateTime.UtcNow);
@@ -45,7 +51,6 @@ namespace NotesApp.Application.Tests.Notes
                 userId: otherUserId,
                 date: new DateOnly(2025, 2, 21),
                 title: "Other note",
-                content: "C",
                 summary: null,
                 tags: null,
                 utcNow: DateTime.UtcNow);
@@ -68,7 +73,6 @@ namespace NotesApp.Application.Tests.Notes
             dto.Should().NotBeNull();
             dto.NoteId.Should().Be(myNote.Id);
             dto.Title.Should().Be("My note");
-            dto.Content.Should().Be("My content");
             dto.Date.Should().Be(new DateOnly(2025, 2, 20));
         }
 
@@ -112,11 +116,11 @@ namespace NotesApp.Application.Tests.Notes
                 .Setup(s => s.GetUserIdAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(currentUserId);
 
+            // CHANGED: Note.Create no longer takes content parameter
             var otherNoteResult = Note.Create(
                 userId: otherUserId,
                 date: new DateOnly(2025, 2, 20),
                 title: "Other users note",
-                content: "C",
                 summary: null,
                 tags: null,
                 utcNow: DateTime.UtcNow);

@@ -17,18 +17,20 @@ using System.Text;
 namespace NotesApp.Application.Tests.Notes
 {
     /// <summary>
-    /// Application-level tests for CreateNoteCommandHandler.
-    /// Uses:
-    /// - real NotesAppDbContext (SQL Server test instance)
-    /// - real NoteRepository + UnitOfWork + SystemClock
-    /// - mocked ICurrentUserService + ILogger
+    /// Integration tests for CreateNoteCommandHandler using real SQL Server.
+    /// 
+    /// CHANGED: Tests updated for block-based content model.
+    /// Note no longer has a Content property.
     /// </summary>
     public sealed class CreateNoteCommandHandlerTests
     {
+        /// <summary>
+        /// Happy path: create a note with valid Title, Summary, and Tags.
+        /// Handler should persist and return the note.
+        /// </summary>
         [Fact]
-        public async Task Handle_creates_note_and_persists_main_fields()
+        public async Task Handle_with_valid_command_creates_and_returns_note()
         {
-            // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
             INoteRepository noteRepository = new NoteRepository(context);
@@ -55,12 +57,13 @@ namespace NotesApp.Application.Tests.Notes
 
             var date = new DateOnly(2025, 2, 20);
 
+            // CHANGED: Content removed from command
             var command = new CreateNoteCommand
             {
                 Date = date,
                 Title = "Client feedback",
-                Content = "Discussed façade options.",
-                // Summary / Tags may be null or later filled by AI – keep simple here
+                Summary = "Meeting notes summary",
+                Tags = "client,feedback"
             };
 
             var before = DateTime.UtcNow;
@@ -75,10 +78,10 @@ namespace NotesApp.Application.Tests.Notes
             var dto = result.Value;
 
             dto.Title.Should().Be(command.Title);
-            dto.Content.Should().Be(command.Content);
             dto.Date.Should().Be(command.Date);
+            dto.Summary.Should().Be(command.Summary);
+            dto.Tags.Should().Be(command.Tags);
 
-            // Summary/Tags likely null at creation time unless you already populate them
             dto.CreatedAtUtc.Should().BeOnOrAfter(before);
             dto.CreatedAtUtc.Should().BeOnOrBefore(after);
             dto.UpdatedAtUtc.Should().BeOnOrAfter(dto.CreatedAtUtc);
@@ -90,16 +93,15 @@ namespace NotesApp.Application.Tests.Notes
 
             persisted.Should().NotBeNull();
             persisted!.Title.Should().Be(command.Title);
-            persisted.Content.Should().Be(command.Content);
             persisted.Date.Should().Be(command.Date);
             persisted.UserId.Should().Be(userId);
         }
 
         /// <summary>
-        /// Edge case: both Title and Content empty should fail and not persist.
+        /// Edge case: empty Title should fail (Title is now required).
         /// </summary>
         [Fact]
-        public async Task Handle_with_empty_title_and_content_returns_failure_and_does_not_persist()
+        public async Task Handle_with_empty_title_returns_failure_and_does_not_persist()
         {
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
@@ -125,11 +127,11 @@ namespace NotesApp.Application.Tests.Notes
                 clock,
                 loggerMock.Object);
 
+            // CHANGED: Title is now required (was: Title OR Content required)
             var command = new CreateNoteCommand
             {
                 Date = new DateOnly(2025, 2, 20),
-                Title = "",
-                Content = ""
+                Title = ""
             };
 
             var result = await handler.Handle(command, CancellationToken.None);

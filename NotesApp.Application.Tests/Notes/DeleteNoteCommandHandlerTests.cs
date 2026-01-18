@@ -19,6 +19,11 @@ using System.Text;
 
 namespace NotesApp.Application.Tests.Notes
 {
+    /// <summary>
+    /// Integration tests for DeleteNoteCommandHandler.
+    /// 
+    /// CHANGED: Handler now requires IBlockRepository for cascade deletion.
+    /// </summary>
     public class DeleteNoteCommandHandlerTests
     {
         [Fact]
@@ -27,6 +32,7 @@ namespace NotesApp.Application.Tests.Notes
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
             INoteRepository noteRepository = new NoteRepository(context);
+            IBlockRepository blockRepository = new BlockRepository(context);  // ADDED
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -39,13 +45,13 @@ namespace NotesApp.Application.Tests.Notes
                 .Setup(s => s.GetUserIdAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(userId);
 
-            // Seed a note first (using Note.Create directly, or through handler)
+            // Seed a note first (using Note.Create directly)
+            // CHANGED: content parameter removed
             var utcNow = clock.UtcNow;
             var domainNoteResult = Note.Create(
                 userId,
                 new DateOnly(2025, 2, 20),
                 "Title",
-                "Content",
                 null,
                 string.Empty,
                 utcNow);
@@ -53,8 +59,10 @@ namespace NotesApp.Application.Tests.Notes
             await noteRepository.AddAsync(note, CancellationToken.None);
             await unitOfWork.SaveChangesAsync(CancellationToken.None);
 
+            // CHANGED: Added blockRepository parameter
             var handler = new DeleteNoteCommandHandler(
                 noteRepository,
+                blockRepository,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
@@ -70,14 +78,13 @@ namespace NotesApp.Application.Tests.Notes
             result.IsSuccess.Should().BeTrue();
 
             // Assert note is soft-deleted
-            // Assert note is soft-deleted
             var persistedNote = await context.Notes
-                .IgnoreQueryFilters()  // <-- ADD THIS
+                .IgnoreQueryFilters()
                 .AsNoTracking()
                 .SingleAsync(n => n.Id == note.Id);
             persistedNote.IsDeleted.Should().BeTrue();
 
-            // Assert outbox message exists (OutboxMessages doesn't have a query filter, but being explicit doesn't hurt)
+            // Assert outbox message exists
             var outbox = await context.OutboxMessages
                 .AsNoTracking()
                 .SingleAsync(o => o.AggregateId == note.Id && o.UserId == userId);
@@ -94,6 +101,7 @@ namespace NotesApp.Application.Tests.Notes
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
             INoteRepository noteRepository = new NoteRepository(context);
+            IBlockRepository blockRepository = new BlockRepository(context);  // ADDED
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -107,8 +115,10 @@ namespace NotesApp.Application.Tests.Notes
 
             var logger = new LoggerFactory().CreateLogger<DeleteNoteCommandHandler>();
 
+            // CHANGED: Added blockRepository parameter
             var handler = new DeleteNoteCommandHandler(
                 noteRepository,
+                blockRepository,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
@@ -137,6 +147,7 @@ namespace NotesApp.Application.Tests.Notes
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
             INoteRepository noteRepository = new NoteRepository(context);
+            IBlockRepository blockRepository = new BlockRepository(context);  // ADDED
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -152,11 +163,11 @@ namespace NotesApp.Application.Tests.Notes
             var logger = new LoggerFactory().CreateLogger<DeleteNoteCommandHandler>();
 
             // Seed a note for a different user
+            // CHANGED: content parameter removed
             var createResult = Note.Create(
                 userId: otherUserId,
                 date: new DateOnly(2025, 2, 20),
                 title: "Other users note",
-                content: "Content",
                 summary: null,
                 tags: null,
                 utcNow: DateTime.UtcNow);
@@ -167,8 +178,10 @@ namespace NotesApp.Application.Tests.Notes
             await context.Notes.AddAsync(otherNote);
             await context.SaveChangesAsync();
 
+            // CHANGED: Added blockRepository parameter
             var handler = new DeleteNoteCommandHandler(
                 noteRepository,
+                blockRepository,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
@@ -200,6 +213,7 @@ namespace NotesApp.Application.Tests.Notes
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
             INoteRepository noteRepository = new NoteRepository(context);
+            IBlockRepository blockRepository = new BlockRepository(context);  // ADDED
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -214,11 +228,11 @@ namespace NotesApp.Application.Tests.Notes
             var logger = new LoggerFactory().CreateLogger<DeleteNoteCommandHandler>();
 
             // Seed a deleted note
+            // CHANGED: content parameter removed
             var createResult = Note.Create(
                 userId: userId,
                 date: new DateOnly(2025, 2, 20),
                 title: "Note",
-                content: "Content",
                 summary: null,
                 tags: null,
                 utcNow: DateTime.UtcNow);
@@ -231,8 +245,10 @@ namespace NotesApp.Application.Tests.Notes
             await context.Notes.AddAsync(note);
             await context.SaveChangesAsync();
 
+            // CHANGED: Added blockRepository parameter
             var handler = new DeleteNoteCommandHandler(
                 noteRepository,
+                blockRepository,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,

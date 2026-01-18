@@ -40,8 +40,8 @@ namespace NotesApp.Application.Tests.Sync
                         {
                             ClientId = Guid.NewGuid(),
                             Date = new DateOnly(2025, 1, 2),
-                            Title = "Note",
-                            Content = "Content"
+                            Title = "Note"
+                            // CHANGED: Content removed - content is now in blocks
                         }
                     }
                 }
@@ -128,8 +128,8 @@ namespace NotesApp.Application.Tests.Sync
                 {
                     ClientId = Guid.NewGuid(),
                     Date = new DateOnly(2025, 1, 2),
-                    Title = $"Note Created {i}",
-                    Content = "Content"
+                    Title = $"Note Created {i}"
+                    // CHANGED: Content removed - content is now in blocks
                 })
                 .ToArray();
 
@@ -139,7 +139,7 @@ namespace NotesApp.Application.Tests.Sync
                     Id = Guid.NewGuid(),
                     Date = new DateOnly(2025, 1, 2),
                     Title = $"Note Updated {i}",
-                    Content = "Content",
+                    // CHANGED: Content removed - content is now in blocks
                     ExpectedVersion = 1
                 })
                 .ToArray();

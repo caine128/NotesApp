@@ -23,6 +23,9 @@ namespace NotesApp.Api.IntegrationTests.Notes
     /// - Get overview for a date range
     /// - Update notes
     /// - Delete notes (soft delete + user isolation)
+    /// 
+    /// CHANGED: Tests updated for block-based content model.
+    /// Note no longer has a Content property - Title is now required.
     /// </summary>
     public sealed class NotesEndpointsTests : IClassFixture<NotesAppApiFactory>
     {
@@ -44,11 +47,11 @@ namespace NotesApp.Api.IntegrationTests.Notes
             // Arrange
             var date = new DateOnly(2025, 11, 10);
 
+            // CHANGED: Content removed from payload
             var createPayload = new
             {
                 Date = date,
                 Title = "Daily log",
-                Content = "Worked on NotesApp integration tests.",
                 Summary = "Short summary",
                 Tags = "work,notes"
             };
@@ -63,7 +66,6 @@ namespace NotesApp.Api.IntegrationTests.Notes
             created.Should().NotBeNull();
             created!.NoteId.Should().NotBeEmpty();
             created.Title.Should().Be(createPayload.Title);
-            created.Content.Should().Be(createPayload.Content);
             created.Date.Should().Be(date);
             created.Summary.Should().Be(createPayload.Summary);
             created.Tags.Should().Be(createPayload.Tags);
@@ -82,7 +84,6 @@ namespace NotesApp.Api.IntegrationTests.Notes
             detail.Should().NotBeNull();
             detail!.NoteId.Should().Be(noteId);
             detail.Title.Should().Be(createPayload.Title);
-            detail.Content.Should().Be(createPayload.Content);
             detail.Date.Should().Be(date);
             detail.Summary.Should().Be(createPayload.Summary);
             detail.Tags.Should().Be(createPayload.Tags);
@@ -105,14 +106,13 @@ namespace NotesApp.Api.IntegrationTests.Notes
         }
 
         [Fact]
-        public async Task Create_note_with_empty_title_and_content_returns_bad_request()
+        public async Task Create_note_with_empty_title_returns_bad_request()
         {
-            // Arrange
+            // CHANGED: Title is now required (was: Title OR Content required)
             var payload = new
             {
                 Date = new DateOnly(2025, 11, 10),
                 Title = "   ",         // invalid (whitespace)
-                Content = (string?)null,
                 Summary = (string?)null,
                 Tags = (string?)null
             };
@@ -137,11 +137,11 @@ namespace NotesApp.Api.IntegrationTests.Notes
             var user1Client = _factory.CreateClientAsUser(user1Id);
             var user2Client = _factory.CreateClientAsUser(user2Id);
 
+            // CHANGED: Content removed from payloads
             var user1Payload = new
             {
                 Date = date,
                 Title = "User1 note",
-                Content = "Content 1",
                 Summary = (string?)null,
                 Tags = (string?)null
             };
@@ -150,7 +150,6 @@ namespace NotesApp.Api.IntegrationTests.Notes
             {
                 Date = date,
                 Title = "User2 note",
-                Content = "Content 2",
                 Summary = (string?)null,
                 Tags = (string?)null
             };
@@ -360,11 +359,11 @@ namespace NotesApp.Api.IntegrationTests.Notes
             // Arrange
             var originalDate = new DateOnly(2025, 11, 10);
 
+            // CHANGED: Content removed from payload
             var createPayload = new
             {
                 Date = originalDate,
                 Title = "Original title",
-                Content = "Original content",
                 Summary = "Original summary",
                 Tags = "tag1"
             };
@@ -379,11 +378,11 @@ namespace NotesApp.Api.IntegrationTests.Notes
 
             var newDate = originalDate.AddDays(1);
 
+            // CHANGED: Content removed from payload
             var updatePayload = new
             {
                 Date = newDate,
                 Title = "Updated title",
-                Content = "Updated content",
                 Summary = "Updated summary",
                 Tags = "tag2,tag3"
             };
@@ -399,7 +398,6 @@ namespace NotesApp.Api.IntegrationTests.Notes
 
             updated!.NoteId.Should().Be(noteId);
             updated.Title.Should().Be(updatePayload.Title);
-            updated.Content.Should().Be(updatePayload.Content);
             updated.Date.Should().Be(newDate);
             updated.Summary.Should().Be(updatePayload.Summary);
             updated.Tags.Should().Be(updatePayload.Tags);
@@ -411,16 +409,15 @@ namespace NotesApp.Api.IntegrationTests.Notes
         }
 
         [Fact]
-        public async Task Update_with_empty_title_and_content_returns_bad_request()
+        public async Task Update_with_empty_title_returns_bad_request()
         {
-            // Arrange
+            // CHANGED: Title is now required (was: Title OR Content required)
             var date = new DateOnly(2025, 11, 10);
 
             var createPayload = new
             {
                 Date = date,
                 Title = "Valid title",
-                Content = "Some content",
                 Summary = (string?)null,
                 Tags = (string?)null
             };
@@ -433,12 +430,11 @@ namespace NotesApp.Api.IntegrationTests.Notes
 
             var noteId = created!.NoteId;
 
-            // Title and Content both empty -> validator should fail
+            // Title empty -> validator should fail
             var invalidUpdatePayload = new
             {
                 Date = date,
                 Title = "   ",
-                Content = "   ",
                 Summary = (string?)null,
                 Tags = (string?)null
             };
@@ -462,11 +458,11 @@ namespace NotesApp.Api.IntegrationTests.Notes
 
             var date = new DateOnly(2025, 11, 10);
 
+            // CHANGED: Content removed from payload
             var createPayload = new
             {
                 Date = date,
                 Title = "Owner's note",
-                Content = "Owner content",
                 Summary = (string?)null,
                 Tags = (string?)null
             };
@@ -479,11 +475,11 @@ namespace NotesApp.Api.IntegrationTests.Notes
 
             var noteId = created!.NoteId;
 
+            // CHANGED: Content removed from payload
             var attackerUpdatePayload = new
             {
                 Date = date,
                 Title = "Attacker edit",
-                Content = "Should not be allowed",
                 Summary = (string?)null,
                 Tags = (string?)null
             };
@@ -506,11 +502,11 @@ namespace NotesApp.Api.IntegrationTests.Notes
             // Arrange
             var date = new DateOnly(2025, 11, 10);
 
+            // CHANGED: Content removed from payload
             var createPayload = new
             {
                 Date = date,
                 Title = "Note to delete",
-                Content = "Will be deleted",
                 Summary = (string?)null,
                 Tags = (string?)null
             };
@@ -569,11 +565,11 @@ namespace NotesApp.Api.IntegrationTests.Notes
 
             var date = new DateOnly(2025, 11, 10);
 
+            // CHANGED: Content removed from payload
             var createPayload = new
             {
                 Date = date,
                 Title = "Owner's note",
-                Content = "Owner content",
                 Summary = (string?)null,
                 Tags = (string?)null
             };
@@ -636,11 +632,11 @@ namespace NotesApp.Api.IntegrationTests.Notes
 
             var date = new DateOnly(2025, 11, 10);
 
+            // CHANGED: Content removed from payload
             var createPayload = new
             {
                 Date = date,
                 Title = "Outbox create note",
-                Content = "Some content",
                 Summary = (string?)null,
                 Tags = (string?)null
             };
@@ -720,12 +716,11 @@ namespace NotesApp.Api.IntegrationTests.Notes
 
             var date = new DateOnly(2025, 11, 10);
 
-            // Invalid: both Title and Content empty
+            // Invalid: Title empty (Title is now required)
             var payload = new
             {
                 Date = date,
                 Title = "",
-                Content = "",
                 Summary = (string?)null,
                 Tags = (string?)null
             };
@@ -753,6 +748,10 @@ namespace NotesApp.Api.IntegrationTests.Notes
 
         #region Helpers
 
+        /// <summary>
+        /// Helper to create a simple note.
+        /// CHANGED: Content removed from payload.
+        /// </summary>
         private static async Task<NoteDetailDto> CreateSimpleNoteAsync(
             HttpClient client,
             DateOnly date,
@@ -762,7 +761,6 @@ namespace NotesApp.Api.IntegrationTests.Notes
             {
                 Date = date,
                 Title = title,
-                Content = "content",
                 Summary = (string?)null,
                 Tags = (string?)null
             };

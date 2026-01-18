@@ -26,6 +26,18 @@ namespace NotesApp.Application.Abstractions.Persistence
                                                      CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Returns all blocks for the given parent (Note only), ordered by Position.
+        /// Soft-deleted blocks are excluded.
+        /// 
+        /// UNTRACKED: Entities are NOT tracked by EF Core change tracker.
+        /// Use this for operations where you want to control persistence atomicity
+        /// (e.g., cascade deletion where you want all-or-nothing behavior).
+        /// </summary>
+        Task<IReadOnlyList<Block>> GetForParentUntrackedAsync(Guid parentId,
+                                                              BlockParentType parentType,
+                                                              CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Returns all blocks for a user that have changed since the given timestamp.
         /// 
         /// Semantics:

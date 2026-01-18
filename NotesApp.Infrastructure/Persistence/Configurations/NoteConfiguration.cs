@@ -34,11 +34,6 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
                    .IsRequired(false)
                    .HasMaxLength(Note.MaxTitleLength);
 
-            builder.Property(n => n.Content)
-                   .IsRequired(false);
-            // If you want to cap the size, you can do:
-            // .HasMaxLength(4000) or .HasColumnType("nvarchar(max)");
-
             // Versioning
             builder.Property(n => n.Version)
                    .IsRequired()

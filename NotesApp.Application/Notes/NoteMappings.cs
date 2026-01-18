@@ -15,7 +15,6 @@ namespace NotesApp.Application.Notes
         public static NoteDetailDto ToDetailDto(this Note note) =>
           new(note.Id,
               note.Title,
-              note.Content,
               note.Date,
               note.Summary,
               note.Tags,

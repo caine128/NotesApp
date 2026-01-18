@@ -28,15 +28,16 @@ namespace NotesApp.Application.Tests.Notes
             var date = new DateOnly(2025, 2, 20);
             var otherDate = new DateOnly(2025, 2, 21);
 
+            // CHANGED: content parameter removed from Note.Create
             // Notes for current user on date
-            var n1 = Note.Create(userId, date, "T1", "C1", null, null, DateTime.UtcNow).Value!;
-            var n2 = Note.Create(userId, date, "T2", "C2", null, null, DateTime.UtcNow).Value!;
+            var n1 = Note.Create(userId, date, "T1", null, null, DateTime.UtcNow).Value!;
+            var n2 = Note.Create(userId, date, "T2", null, null, DateTime.UtcNow).Value!;
 
             // Note for current user on another date
-            var nOtherDate = Note.Create(userId, otherDate, "T3", "C3", null, null, DateTime.UtcNow).Value!;
+            var nOtherDate = Note.Create(userId, otherDate, "T3", null, null, DateTime.UtcNow).Value!;
 
             // Note for another user on same date
-            var nOtherUser = Note.Create(otherUserId, date, "T4", "C4", null, null, DateTime.UtcNow).Value!;
+            var nOtherUser = Note.Create(otherUserId, date, "T4", null, null, DateTime.UtcNow).Value!; ;
 
             await context.Notes.AddRangeAsync(n1, n2, nOtherDate, nOtherUser);
             await context.SaveChangesAsync();
@@ -64,17 +65,18 @@ namespace NotesApp.Application.Tests.Notes
             var start = new DateOnly(2025, 2, 20);
             var endExclusive = new DateOnly(2025, 2, 23);
 
+            // CHANGED: content parameter removed from Note.Create
             // In-range for current user: 20,21,22
-            var n1 = Note.Create(userId, new DateOnly(2025, 2, 20), "D20", "C", null, null, DateTime.UtcNow).Value!;
-            var n2 = Note.Create(userId, new DateOnly(2025, 2, 21), "D21", "C", null, null, DateTime.UtcNow).Value!;
-            var n3 = Note.Create(userId, new DateOnly(2025, 2, 22), "D22", "C", null, null, DateTime.UtcNow).Value!;
+            var n1 = Note.Create(userId, new DateOnly(2025, 2, 20), "D20", null, null, DateTime.UtcNow).Value!;
+            var n2 = Note.Create(userId, new DateOnly(2025, 2, 21), "D21", null, null, DateTime.UtcNow).Value!;
+            var n3 = Note.Create(userId, new DateOnly(2025, 2, 22), "D22", null, null, DateTime.UtcNow).Value!;
 
             // Out-of-range for current user
-            var beforeRange = Note.Create(userId, new DateOnly(2025, 2, 19), "Before", "C", null, null, DateTime.UtcNow).Value!;
-            var afterRange = Note.Create(userId, new DateOnly(2025, 2, 23), "After", "C", null, null, DateTime.UtcNow).Value!;
+            var beforeRange = Note.Create(userId, new DateOnly(2025, 2, 19), "Before", null, null, DateTime.UtcNow).Value!;
+            var afterRange = Note.Create(userId, new DateOnly(2025, 2, 23), "After", null, null, DateTime.UtcNow).Value!;
 
             // In-range for other user
-            var otherUserInRange = Note.Create(otherUserId, new DateOnly(2025, 2, 21), "Other", "C", null, null, DateTime.UtcNow).Value!;
+            var otherUserInRange = Note.Create(otherUserId, new DateOnly(2025, 2, 21), "Other", null, null, DateTime.UtcNow).Value!; ;
 
             await context.Notes.AddRangeAsync(n1, n2, n3, beforeRange, afterRange, otherUserInRange);
             await context.SaveChangesAsync();

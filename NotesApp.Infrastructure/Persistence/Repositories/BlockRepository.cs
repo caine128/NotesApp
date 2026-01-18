@@ -78,6 +78,20 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<IReadOnlyList<Block>> GetForParentUntrackedAsync(Guid parentId,
+                                                                           BlockParentType parentType,
+                                                                           CancellationToken cancellationToken = default)
+        {
+            return await _dbContext.Blocks
+                .AsNoTracking()
+                .Where(b => b.ParentId == parentId
+                            && b.ParentType == parentType
+                            && !b.IsDeleted)
+                .OrderBy(b => b.Position)
+                .ToListAsync(cancellationToken);
+        }
+
+        /// <inheritdoc />
         public async Task<IReadOnlyList<Block>> GetChangedSinceAsync(Guid userId,
                                                                      DateTime? since,
                                                                      CancellationToken cancellationToken = default)

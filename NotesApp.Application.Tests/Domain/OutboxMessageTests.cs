@@ -7,6 +7,11 @@ using System.Text;
 
 namespace NotesApp.Application.Tests.Domain
 {
+    /// <summary>
+    /// Unit tests for OutboxMessage entity.
+    /// 
+    /// CHANGED: Note.Create calls updated for block-based model (no content parameter).
+    /// </summary>
     public sealed class OutboxMessageTests
     {
         [Fact]
@@ -17,11 +22,11 @@ namespace NotesApp.Application.Tests.Domain
             var date = new DateOnly(2025, 2, 20);
             var utcNow = new DateTime(2025, 2, 1, 12, 0, 0, DateTimeKind.Utc);
 
+            // CHANGED: content parameter removed from Note.Create
             var note = Note.Create(
                 userId: userId,
                 date: date,
                 title: "Title",
-                content: "Content",
                 summary: null,
                 tags: null,
                 utcNow: utcNow).Value!;
@@ -71,11 +76,11 @@ namespace NotesApp.Application.Tests.Domain
         [Fact]
         public void Create_with_empty_payload_returns_failure()
         {
+            // CHANGED: content parameter removed from Note.Create
             var note = Note.Create(
                 userId: Guid.NewGuid(),
                 date: new DateOnly(2025, 2, 20),
                 title: "Title",
-                content: "Content",
                 summary: null,
                 tags: null,
                 utcNow: DateTime.UtcNow).Value!;
@@ -93,11 +98,11 @@ namespace NotesApp.Application.Tests.Domain
         [Fact]
         public void MarkProcessed_sets_processed_time_and_is_idempotent()
         {
+            // CHANGED: content parameter removed from Note.Create
             var note = Note.Create(
                 userId: Guid.NewGuid(),
                 date: new DateOnly(2025, 2, 20),
                 title: "Title",
-                content: "Content",
                 summary: null,
                 tags: null,
                 utcNow: DateTime.UtcNow).Value!;
@@ -129,11 +134,11 @@ namespace NotesApp.Application.Tests.Domain
         [Fact]
         public void IncrementAttempt_increases_attempt_count_and_updates_timestamp()
         {
+            // CHANGED: content parameter removed from Note.Create
             var note = Note.Create(
                 userId: Guid.NewGuid(),
                 date: new DateOnly(2025, 2, 20),
                 title: "Title",
-                content: "Content",
                 summary: null,
                 tags: null,
                 utcNow: DateTime.UtcNow).Value!;

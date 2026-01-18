@@ -1,9 +1,11 @@
 ﻿using FluentAssertions;
 using FluentResults;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Configuration;
 using NotesApp.Application.Sync.Models;
 using NotesApp.Application.Sync.Queries;
 using NotesApp.Domain.Entities;
@@ -14,10 +16,17 @@ using System.Text;
 
 namespace NotesApp.Application.Tests.Sync
 {
+    /// <summary>
+    /// Unit tests for GetSyncChangesQueryHandler.
+    /// 
+    /// CHANGED: Handler now requires IBlockRepository, IAssetRepository, and IOptions&lt;AssetStorageOptions&gt;.
+    /// </summary>
     public sealed class GetSyncChangesQueryHandlerTests
     {
         private readonly Mock<ITaskRepository> _taskRepositoryMock = new();
         private readonly Mock<INoteRepository> _noteRepositoryMock = new();
+        private readonly Mock<IBlockRepository> _blockRepositoryMock = new();
+        private readonly Mock<IAssetRepository> _assetRepositoryMock = new();
         private readonly Mock<IUserDeviceRepository> _deviceRepositoryMock = new();
         private readonly Mock<ICurrentUserService> _currentUserServiceMock = new();
         private readonly Mock<ILogger<GetSyncChangesQueryHandler>> _loggerMock = new();
@@ -30,12 +39,28 @@ namespace NotesApp.Application.Tests.Sync
                 .Setup(s => s.GetUserIdAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(_userId);
 
+            // Setup empty returns for block and asset repositories
+            _blockRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<Block>());
+
+            _assetRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<Asset>());
+
+            // Create options with default values
+            var assetOptions = Options.Create(new AssetStorageOptions());
+
             return new GetSyncChangesQueryHandler(
                 _taskRepositoryMock.Object,
                 _noteRepositoryMock.Object,
+                _blockRepositoryMock.Object,
+                _assetRepositoryMock.Object,
                 _deviceRepositoryMock.Object,
                 _currentUserServiceMock.Object,
-                _loggerMock.Object);
+                assetOptions,
+                _loggerMock.Object,
+                blobStorageService: null);
         }
 
         [Fact]
@@ -87,7 +112,7 @@ namespace NotesApp.Application.Tests.Sync
                 .ReturnsAsync(new List<Note> { note });
 
             var handler = CreateHandler();
-            var query = new GetSyncChangesQuery(SinceUtc: null, DeviceId: null,MaxItemsPerEntity:null);
+            var query = new GetSyncChangesQuery(SinceUtc: null, DeviceId: null, MaxItemsPerEntity: null);
 
             // Act
             Result<SyncChangesDto> result = await handler.Handle(query, CancellationToken.None);
@@ -156,7 +181,7 @@ namespace NotesApp.Application.Tests.Sync
                 .ReturnsAsync(new List<Note> { createdNote, updatedNote, deletedNote });
 
             var handler = CreateHandler();
-            var query = new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity:null);
+            var query = new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: null);
 
             // Act
             var result = await handler.Handle(query, CancellationToken.None);
@@ -235,11 +260,11 @@ namespace NotesApp.Application.Tests.Sync
             DateTime updatedAt,
             bool isDeleted)
         {
+            // CHANGED: content parameter removed from Note.Create
             var result = Note.Create(
                 userId,
                 new DateOnly(2025, 1, 2),
                 "Title",
-                "Content",
                 null,
                 null,
                 createdAt);

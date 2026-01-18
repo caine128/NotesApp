@@ -5,6 +5,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Abstractions.Storage;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Configuration;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
@@ -18,16 +19,16 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
     /// Handles asset upload requests.
     /// 
     /// Workflow:
-    /// 1. Validate inputs (size, etc.)
+    /// 1. [Validator] Input validation (BlockId, AssetClientId, FileName, SizeBytes, Content)
     /// 2. Load block WITHOUT tracking
-    /// 3. Validate block state (ownership, type, status, AssetClientId)
+    /// 3. Validate block state (ownership, type, status, AssetClientId match)
     /// 4. Check idempotency (existing asset)
     /// 5. Upload binary to blob storage ← POINT OF NO RETURN
     /// 6. Create Asset entity (in memory)
     /// 7. Link asset to block (in memory)
     /// 8. Create both outbox messages - FAIL if any error
     /// 9. Persist everything atomically
-    /// 10. Return download URL
+    /// 10. Return download URL (best effort - may be null on transient failure)
     /// 
     /// If blob upload fails, the block is marked as UploadFailed.
     /// If any step after blob upload fails, the blob is cleaned up (best effort).
@@ -42,25 +43,8 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
         private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISystemClock _clock;
+        private readonly AssetStorageOptions _options;
         private readonly ILogger<UploadAssetCommandHandler> _logger;
-
-        //TODO: Make this configurable and move to settings
-        /// <summary>
-        /// Container name for user assets in blob storage.
-        /// </summary>
-        private const string AssetContainerName = "user-assets";
-
-        //TODO: Make this configurable and move to settings
-        /// <summary>
-        /// Maximum allowed file size (50 MB).
-        /// </summary>
-        private const long MaxFileSizeBytes = 50 * 1024 * 1024;
-
-        //TODO: Make this configurable and move to settings
-        /// <summary>
-        /// Validity period for download URLs returned after upload.
-        /// </summary>
-        private static readonly TimeSpan DownloadUrlValidity = TimeSpan.FromHours(1);
 
         public UploadAssetCommandHandler(IBlockRepository blockRepository,
                                          IAssetRepository assetRepository,
@@ -69,6 +53,7 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
                                          IOutboxRepository outboxRepository,
                                          IUnitOfWork unitOfWork,
                                          ISystemClock clock,
+                                         IOptions<AssetStorageOptions> options,
                                          ILogger<UploadAssetCommandHandler> logger)
         {
             _blockRepository = blockRepository;
@@ -78,6 +63,7 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
             _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _clock = clock;
+            _options = options.Value;
             _logger = logger;
         }
 
@@ -94,21 +80,13 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
                 userId);
 
             // ═══════════════════════════════════════════════════════════════════
-            // PHASE 1: Validation (all before blob upload)
+            // PHASE 1: Business Validation (requires database access)
+            // 
+            // Note: Input validation (BlockId, AssetClientId, FileName, ContentType,
+            // SizeBytes, Content) is handled by UploadAssetCommandValidator.
             // ═══════════════════════════════════════════════════════════════════
 
-            if (request.SizeBytes <= 0)
-            {
-                return Result.Fail(new Error("Asset.Size.Invalid")
-                    .WithMetadata("Message", "File size must be positive."));
-            }
-
-            if (request.SizeBytes > MaxFileSizeBytes)
-            {
-                return Result.Fail(new Error("Asset.Size.TooLarge")
-                    .WithMetadata("Message", $"File size exceeds maximum allowed size of {MaxFileSizeBytes / (1024 * 1024)} MB."));
-            }
-
+           
             // Load block WITHOUT tracking
             var block = await _blockRepository.GetByIdUntrackedAsync(request.BlockId, cancellationToken);
 
@@ -140,16 +118,14 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
             var existingAsset = await _assetRepository.GetByBlockIdAsync(request.BlockId, cancellationToken);
             if (existingAsset is not null)
             {
-                _logger.LogWarning(
-                    "Asset already exists for block {BlockId}. Returning existing asset {AssetId}.",
-                    request.BlockId,
-                    existingAsset.Id);
+                _logger.LogWarning("Asset already exists for block {BlockId}. Returning existing asset {AssetId}.",
+                                   request.BlockId,
+                                   existingAsset.Id);
 
-                var existingUrlResult = await _blobStorageService.GenerateDownloadUrlAsync(
-                    AssetContainerName,
-                    existingAsset.BlobPath,
-                    DownloadUrlValidity,
-                    cancellationToken);
+                var existingUrlResult = await _blobStorageService.GenerateDownloadUrlAsync(_options.ContainerName,
+                                                                                           existingAsset.BlobPath,
+                                                                                           _options.DownloadUrlValidity,
+                                                                                           cancellationToken);
 
                 if (existingUrlResult.IsFailed)
                 {
@@ -170,7 +146,7 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
 
             var blobPath = GenerateBlobPath(userId, block.ParentId, block.Id, request.FileName);
 
-            var uploadResult = await _blobStorageService.UploadAsync(AssetContainerName,
+            var uploadResult = await _blobStorageService.UploadAsync(_options.ContainerName,
                                                                      blobPath,
                                                                      request.Content,
                                                                      request.ContentType,
@@ -178,10 +154,9 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
 
             if (uploadResult.IsFailed)
             {
-                _logger.LogError(
-                    "Failed to upload asset to blob storage for block {BlockId}: {Errors}",
-                    request.BlockId,
-                    string.Join(", ", uploadResult.Errors.Select(e => e.Message)));
+                _logger.LogError("Failed to upload asset to blob storage for block {BlockId}: {Errors}",
+                                 request.BlockId,
+                                 string.Join(", ", uploadResult.Errors.Select(e => e.Message)));
 
                 // Mark block upload as failed and persist
                 block.SetUploadFailed(utcNow);
@@ -192,10 +167,9 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
                     .WithMetadata("Message", "Failed to upload asset to storage."));
             }
 
-            _logger.LogInformation(
-                "Asset uploaded to blob storage: {BlobPath}, Size: {SizeBytes}",
-                blobPath,
-                uploadResult.Value.SizeBytes);
+            _logger.LogInformation("Asset uploaded to blob storage: {BlobPath}, Size: {SizeBytes}",
+                                   blobPath,
+                                   uploadResult.Value.SizeBytes);
 
             // ═══════════════════════════════════════════════════════════════════
             // PHASE 3: Create Entities and Outbox (in memory, validate all)
@@ -292,21 +266,33 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
             // PHASE 5: Generate Download URL
             // ═══════════════════════════════════════════════════════════════════
 
-            var downloadUrlResult = await _blobStorageService.GenerateDownloadUrlAsync(AssetContainerName,
+            // URL generation is a read-only operation that can fail transiently.
+            // Since the asset is already successfully created and persisted,
+            // we should not fail the entire operation. Instead:
+            // - Try to generate URL
+            // - If it fails, return success with null URL
+            // - Client can fetch the URL later via a separate endpoint or retry
+
+            string? downloadUrl = null;
+
+            var downloadUrlResult = await _blobStorageService.GenerateDownloadUrlAsync(_options.ContainerName,
                                                                                        blobPath,
-                                                                                       DownloadUrlValidity,
+                                                                                       _options.DownloadUrlValidity,
                                                                                        cancellationToken);
 
             if (downloadUrlResult.IsFailed)
             {
                 _logger.LogWarning(
-                    "Failed to generate download URL for asset {AssetId}: {Errors}",
+                    "Failed to generate download URL for asset {AssetId}. " +
+                    "Asset was created successfully - client can fetch URL separately. Errors: {Errors}",
                     asset.Id,
                     string.Join(", ", downloadUrlResult.Errors.Select(e => e.Message)));
 
-                // Asset was created successfully, but URL generation failed
-                // Return error - client can retry fetching the URL
-                return Result.Fail(downloadUrlResult.Errors);
+                // Don't fail - asset is created, URL can be fetched later
+            }
+            else
+            {
+                downloadUrl = downloadUrlResult.Value;
             }
 
             _logger.LogInformation("Asset {AssetId} created and linked to block {BlockId}",
@@ -317,7 +303,7 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
             {
                 AssetId = asset.Id,
                 BlockId = block.Id,
-                DownloadUrl = downloadUrlResult.Value
+                DownloadUrl = downloadUrl  // May be null if URL generation failed
             });
         }
 
@@ -326,7 +312,7 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
         /// </summary>
         private async Task CleanupBlobAsync(string blobPath, CancellationToken cancellationToken)
         {
-            var deleteResult = await _blobStorageService.DeleteAsync(AssetContainerName, blobPath, cancellationToken);
+            var deleteResult = await _blobStorageService.DeleteAsync(_options.ContainerName, blobPath, cancellationToken);
             if (deleteResult.IsFailed)
             {
                 _logger.LogWarning(

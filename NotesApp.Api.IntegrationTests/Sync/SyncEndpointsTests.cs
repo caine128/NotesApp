@@ -82,11 +82,11 @@ namespace NotesApp.Api.IntegrationTests.Sync
             taskDto.Should().NotBeNull();
 
             // Create a note
+            // CHANGED: Content removed - content is now in blocks
             var createNotePayload = new
             {
                 Date = date,
                 Title = "Sync test note",
-                Content = "Note created before initial sync",
                 Summary = "Summary",
                 Tags = "sync,test"
             };
@@ -142,7 +142,7 @@ namespace NotesApp.Api.IntegrationTests.Sync
             {
                 Date = date,
                 Title = "Initial note",
-                Content = "Created before first sync",
+                // CHANGED: Content removed - content is now in blocks
                 Summary = "Summary",
                 Tags = "sync,test"
             };
@@ -180,7 +180,7 @@ namespace NotesApp.Api.IntegrationTests.Sync
             {
                 Date = date,
                 Title = "New note after sync",
-                Content = "Should appear as created in incremental sync",
+                // CHANGED: Content removed - content is now in blocks
                 Summary = "Summary",
                 Tags = "sync,test"
             };
@@ -241,8 +241,8 @@ namespace NotesApp.Api.IntegrationTests.Sync
                         {
                             ClientId = Guid.NewGuid(),
                             Date = new DateOnly(2025, 11, 10),
-                            Title = "Pushed note",
-                            Content = "Created via sync push"
+                            Title = "Pushed note"
+                            // CHANGED: Content removed - content is now in blocks
                         }
                     }
                 }
@@ -391,11 +391,11 @@ namespace NotesApp.Api.IntegrationTests.Sync
             // Create 3 notes
             for (int i = 0; i < 3; i++)
             {
+                // CHANGED: Content removed - content is now in blocks
                 var createNotePayload = new
                 {
                     Date = date,
                     Title = $"Note {i}",
-                    Content = "For pagination test",
                     Summary = "Summary",
                     Tags = "sync,test"
                 };

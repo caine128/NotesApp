@@ -552,7 +552,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 var createResult = Note.Create(userId,
                                                item.Date,
                                                item.Title,
-                                               item.Content,
                                                item.Summary,
                                                item.Tags,
                                                utcNow);
@@ -684,7 +683,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 // Modify entity in memory (NOT tracked, won't auto-persist)
                 var updateResult = note.Update(item.Title,
-                                               item.Content,
                                                item.Summary,
                                                item.Tags,
                                                item.Date,
@@ -1296,19 +1294,13 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 return null;
             }
 
-            var mapping = parentType switch
-            {
-                BlockParentType.Task => taskClientToServerIds,
-                BlockParentType.Note => noteClientToServerIds,
-                _ => null
-            };
-
-            if (mapping is null)
+            // CHANGED: Only Note is supported as parent (Tasks don't have blocks)
+            if (parentType != BlockParentType.Note)
             {
                 return null;
             }
 
-            return mapping.TryGetValue(parentClientId.Value, out var serverId)
+            return noteClientToServerIds.TryGetValue(parentClientId.Value, out var serverId)
                 ? serverId
                 : null;
         }

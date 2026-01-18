@@ -33,15 +33,16 @@ namespace NotesApp.Application.Tests.Notes
             var start = new DateOnly(2025, 2, 20);
             var endExclusive = new DateOnly(2025, 2, 23);
 
-            var n1 = Note.Create(userId, new DateOnly(2025, 2, 20), "D20", "C", null, null, DateTime.UtcNow).Value!;
-            var n2 = Note.Create(userId, new DateOnly(2025, 2, 21), "D21-1", "C", null, null, DateTime.UtcNow).Value!;
-            var n3 = Note.Create(userId, new DateOnly(2025, 2, 21), "D21-2", "C", null, null, DateTime.UtcNow).Value!;
-            var n4 = Note.Create(userId, new DateOnly(2025, 2, 22), "D22", "C", null, null, DateTime.UtcNow).Value!;
+            // CHANGED: content parameter removed from Note.Create
+            var n1 = Note.Create(userId, new DateOnly(2025, 2, 20), "D20", null, null, DateTime.UtcNow).Value!;
+            var n2 = Note.Create(userId, new DateOnly(2025, 2, 21), "D21-1", null, null, DateTime.UtcNow).Value!;
+            var n3 = Note.Create(userId, new DateOnly(2025, 2, 21), "D21-2", null, null, DateTime.UtcNow).Value!;
+            var n4 = Note.Create(userId, new DateOnly(2025, 2, 22), "D22", null, null, DateTime.UtcNow).Value!;
 
-            var beforeRange = Note.Create(userId, new DateOnly(2025, 2, 19), "Before", "C", null, null, DateTime.UtcNow).Value!;
-            var afterRange = Note.Create(userId, new DateOnly(2025, 2, 23), "After", "C", null, null, DateTime.UtcNow).Value!;
+            var beforeRange = Note.Create(userId, new DateOnly(2025, 2, 19), "Before", null, null, DateTime.UtcNow).Value!;
+            var afterRange = Note.Create(userId, new DateOnly(2025, 2, 23), "After", null, null, DateTime.UtcNow).Value!;
 
-            var otherUserNote = Note.Create(otherUserId, new DateOnly(2025, 2, 21), "Other", "C", null, null, DateTime.UtcNow).Value!;
+            var otherUserNote = Note.Create(otherUserId, new DateOnly(2025, 2, 21), "Other", null, null, DateTime.UtcNow).Value!; ;
 
             await context.Notes.AddRangeAsync(
                 n1, n2, n3, n4,

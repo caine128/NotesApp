@@ -80,11 +80,11 @@ namespace NotesApp.Application.Tests.Outbox
             var originDeviceId = Guid.NewGuid();
             var now = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
 
+            // CHANGED: content parameter removed from Note.Create
             var createResult = Note.Create(
                 userId,
                 new DateOnly(2025, 1, 3),
                 title: "Note title",
-                content: "Note content",
                 summary: "Summary",
                 tags: "tag1,tag2",
                 utcNow: now);

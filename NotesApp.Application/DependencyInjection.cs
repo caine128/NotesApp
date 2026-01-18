@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NotesApp.Application.Common.Behaviors;
+using NotesApp.Application.Configuration;
 using NotesApp.Application.Tasks.Commands.CreateTask;
 
 
@@ -27,8 +28,11 @@ namespace NotesApp.Application
             // 3) MediatR pipeline behaviors (ValidationBehavior, later maybe LoggingBehavior)
             services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 
-            // 4) Application-level options (if/when we add them) can be configured here.
-            //    e.g., services.AddOptions<CalendarOptions>()...
+            // 4) Application-level options
+            services.AddOptions<AssetStorageOptions>()
+                .Bind(configuration.GetSection(AssetStorageOptions.SectionName))
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
 
             return services;
         }

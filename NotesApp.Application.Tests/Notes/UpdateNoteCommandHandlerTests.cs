@@ -14,6 +14,12 @@ using System.Text;
 
 namespace NotesApp.Application.Tests.Notes
 {
+    /// <summary>
+    /// Unit tests for UpdateNoteCommandHandler.
+    /// 
+    /// CHANGED: Tests updated for block-based content model.
+    /// Note no longer has a Content property - Title is now required.
+    /// </summary>
     public sealed class UpdateNoteCommandHandlerTests
     {
         private readonly Mock<INoteRepository> _noteRepository = new();
@@ -42,15 +48,18 @@ namespace NotesApp.Application.Tests.Notes
                 _logger.Object);
         }
 
+        /// <summary>
+        /// Creates a test Note entity.
+        /// CHANGED: Note.Create no longer takes content parameter.
+        /// </summary>
         private Note CreateNote(Guid id, bool deleted = false)
         {
             var note = Note.Create(
                 _userId,
                 new DateOnly(2025, 2, 20),
                 "Original title",
-                "Original content",
-                null,
-                null,
+                null,  // summary
+                null,  // tags
                 _now).Value!;
 
             typeof(Note).GetProperty("Id")!.SetValue(note, id);
@@ -73,17 +82,17 @@ namespace NotesApp.Application.Tests.Notes
             var noteId = Guid.NewGuid();
             var note = CreateNote(noteId);
 
-            _noteRepository.Setup(r => r.GetByIdAsync(noteId, It.IsAny<CancellationToken>()))
+            _noteRepository.Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(note);
 
             var handler = CreateHandler();
 
+            // CHANGED: Content removed from command
             var command = new UpdateNoteCommand
             {
                 NoteId = noteId,
                 Date = new DateOnly(2025, 2, 22),
                 Title = "Updated title",
-                Content = "Updated content",
                 Summary = "summary",
                 Tags = "tag1"
             };
@@ -95,7 +104,6 @@ namespace NotesApp.Application.Tests.Notes
             result.IsSuccess.Should().BeTrue();
             result.Value.Should().NotBeNull();
             result.Value.Title.Should().Be("Updated title");
-            result.Value.Content.Should().Be("Updated content");
 
             _noteRepository.Verify(r => r.Update(note), Times.Once);
             _outboxRepository.Verify(r => r.AddAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -108,17 +116,17 @@ namespace NotesApp.Application.Tests.Notes
         [Fact]
         public async Task Handle_WhenNoteDoesNotExist_ReturnsNotFound()
         {
-            _noteRepository.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            _noteRepository.Setup(r => r.GetByIdUntrackedAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((Note?)null);
 
             var handler = CreateHandler();
 
+            // CHANGED: Content removed from command
             var command = new UpdateNoteCommand
             {
                 NoteId = Guid.NewGuid(),
                 Date = new DateOnly(2025, 2, 20),
-                Title = "A",
-                Content = "B"
+                Title = "A title"
             };
 
             var result = await handler.Handle(command, CancellationToken.None);
@@ -136,17 +144,17 @@ namespace NotesApp.Application.Tests.Notes
             var note = CreateNote(Guid.NewGuid());
             typeof(Note).GetProperty("UserId")!.SetValue(note, Guid.NewGuid());
 
-            _noteRepository.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            _noteRepository.Setup(r => r.GetByIdUntrackedAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(note);
 
             var handler = CreateHandler();
 
+            // CHANGED: Content removed from command
             var command = new UpdateNoteCommand
             {
                 NoteId = note.Id,
                 Date = new DateOnly(2025, 2, 20),
-                Title = "A",
-                Content = "B"
+                Title = "A title"
             };
 
             var result = await handler.Handle(command, CancellationToken.None);
@@ -164,17 +172,17 @@ namespace NotesApp.Application.Tests.Notes
             var noteId = Guid.NewGuid();
             var note = CreateNote(noteId, deleted: true);
 
-            _noteRepository.Setup(r => r.GetByIdAsync(noteId, It.IsAny<CancellationToken>()))
+            _noteRepository.Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(note);
 
             var handler = CreateHandler();
 
+            // CHANGED: Content removed from command
             var command = new UpdateNoteCommand
             {
                 NoteId = noteId,
                 Date = new DateOnly(2025, 2, 20),
-                Title = "Updated",
-                Content = "Updated"
+                Title = "Updated"
             };
 
             var result = await handler.Handle(command, CancellationToken.None);
@@ -184,25 +192,25 @@ namespace NotesApp.Application.Tests.Notes
         }
 
         // -------------------------------------------------------------------------
-        // 5. Invalid Update (empty title + empty content)
+        // 5. Invalid Update (empty title) - CHANGED: Title is now required
         // -------------------------------------------------------------------------
         [Fact]
-        public async Task Handle_InvalidUpdate_ReturnsDomainFailure()
+        public async Task Handle_EmptyTitle_ReturnsDomainFailure()
         {
             var noteId = Guid.NewGuid();
             var note = CreateNote(noteId);
 
-            _noteRepository.Setup(r => r.GetByIdAsync(noteId, It.IsAny<CancellationToken>()))
+            _noteRepository.Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(note);
 
             var handler = CreateHandler();
 
+            // CHANGED: Title is now required (was: Title OR Content required)
             var command = new UpdateNoteCommand
             {
                 NoteId = noteId,
                 Date = new DateOnly(2025, 2, 20),
-                Title = "   ",
-                Content = "   "
+                Title = "   "
             };
 
             var result = await handler.Handle(command, CancellationToken.None);
@@ -220,17 +228,17 @@ namespace NotesApp.Application.Tests.Notes
             var noteId = Guid.NewGuid();
             var note = CreateNote(noteId);
 
-            _noteRepository.Setup(r => r.GetByIdAsync(noteId, It.IsAny<CancellationToken>()))
+            _noteRepository.Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(note);
 
             var handler = CreateHandler();
 
+            // CHANGED: Content removed from command
             var command = new UpdateNoteCommand
             {
                 NoteId = noteId,
                 Date = default,
-                Title = "Updated title",
-                Content = "Updated content"
+                Title = "Updated title"
             };
 
             var result = await handler.Handle(command, CancellationToken.None);
@@ -238,7 +246,5 @@ namespace NotesApp.Application.Tests.Notes
             result.IsFailed.Should().BeTrue();
             result.Errors.Should().NotBeEmpty();
         }
-
-     
     }
 }

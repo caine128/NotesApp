@@ -6,6 +6,13 @@ using System.Text;
 
 namespace NotesApp.Application.Tests.Domain
 {
+    /// <summary>
+    /// Unit tests for the Note entity.
+    /// 
+    /// CHANGED: Tests updated to reflect block-based content model.
+    /// Note no longer has a Content property - content is stored in blocks.
+    /// Title is now required.
+    /// </summary>
     public sealed class NoteTests
     {
         [Fact]
@@ -16,12 +23,11 @@ namespace NotesApp.Application.Tests.Domain
             var date = new DateOnly(2024, 1, 2);
             var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
 
-            // Act
+            // Act - CHANGED: Content parameter removed
             var result = Note.Create(
                 userId: userId,
                 date: date,
                 title: "  Title  ",
-                content: "  Content  ",
                 summary: "  Summary  ",
                 tags: "  tag1, tag2  ",
                 utcNow: now);
@@ -33,7 +39,6 @@ namespace NotesApp.Application.Tests.Domain
             note.UserId.Should().Be(userId);
             note.Date.Should().Be(date);
             note.Title.Should().Be("Title");
-            note.Content.Should().Be("Content");
             note.Summary.Should().Be("Summary");
             note.Tags.Should().Be("tag1, tag2");
             note.Version.Should().Be(1);
@@ -41,8 +46,9 @@ namespace NotesApp.Application.Tests.Domain
         }
 
         [Fact]
-        public void Create_with_empty_title_and_content_returns_failure()
+        public void Create_with_empty_title_returns_failure()
         {
+            // CHANGED: Title is now required (content is in blocks)
             var userId = Guid.NewGuid();
             var date = new DateOnly(2024, 1, 2);
             var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
@@ -51,13 +57,13 @@ namespace NotesApp.Application.Tests.Domain
                 userId: userId,
                 date: date,
                 title: "   ",
-                content: "   ",
                 summary: null,
                 tags: null,
                 utcNow: now);
 
             result.IsSuccess.Should().BeFalse();
             result.Errors.Should().NotBeEmpty();
+            result.Errors.Should().Contain(e => e.Code == "Note.Title.Empty");
         }
 
         [Fact]
@@ -69,7 +75,6 @@ namespace NotesApp.Application.Tests.Domain
                 userId: Guid.NewGuid(),
                 date: new DateOnly(2024, 1, 2),
                 title: "Title",
-                content: "Content",
                 summary: null,
                 tags: null,
                 utcNow: now);
@@ -89,7 +94,6 @@ namespace NotesApp.Application.Tests.Domain
                 userId: Guid.NewGuid(),
                 date: new DateOnly(2024, 1, 2),
                 title: "Title",
-                content: "Content",
                 summary: null,
                 tags: null,
                 utcNow: now);
@@ -100,9 +104,9 @@ namespace NotesApp.Application.Tests.Domain
             var initialVersion = note.Version;
             var initialUpdatedAt = note.UpdatedAtUtc;
 
+            // CHANGED: Update no longer takes content parameter
             var updateResult = note.Update(
                 title: "New Title",
-                content: "New Content",
                 summary: "New Summary",
                 tags: "tag1,tag2",
                 date: new DateOnly(2024, 1, 3),
@@ -113,7 +117,6 @@ namespace NotesApp.Application.Tests.Domain
             note.Version.Should().Be(initialVersion + 1);
             note.UpdatedAtUtc.Should().BeAfter(initialUpdatedAt);
             note.Title.Should().Be("New Title");
-            note.Content.Should().Be("New Content");
             note.Summary.Should().Be("New Summary");
             note.Tags.Should().Be("tag1,tag2");
         }
@@ -129,7 +132,6 @@ namespace NotesApp.Application.Tests.Domain
                 userId: Guid.NewGuid(),
                 date: initialDate,
                 title: "Title",
-                content: "Content",
                 summary: null,
                 tags: null,
                 utcNow: now);
@@ -169,7 +171,6 @@ namespace NotesApp.Application.Tests.Domain
                 userId: Guid.NewGuid(),
                 date: new DateOnly(2024, 1, 2),
                 title: "Title",
-                content: "Content",
                 summary: null,
                 tags: null,
                 utcNow: now);
@@ -209,7 +210,6 @@ namespace NotesApp.Application.Tests.Domain
                 userId: Guid.NewGuid(),
                 date: new DateOnly(2024, 1, 2),
                 title: "Title",
-                content: "Content",
                 summary: null,
                 tags: null,
                 utcNow: now);
@@ -234,8 +234,10 @@ namespace NotesApp.Application.Tests.Domain
         }
 
         [Fact]
-        public void GetDisplayTitle_prefers_title_then_content_snippet_then_fallback()
+        public void GetDisplayTitle_returns_title_or_fallback()
         {
+            // CHANGED: Content-based display title is no longer supported
+            // Title is required, so we only test title and fallback scenarios
             var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
             var userId = Guid.NewGuid();
             var date = new DateOnly(2024, 1, 2);
@@ -245,7 +247,6 @@ namespace NotesApp.Application.Tests.Domain
                 userId,
                 date,
                 title: "My Title",
-                content: "Content",
                 summary: null,
                 tags: null,
                 utcNow: now);
@@ -253,35 +254,67 @@ namespace NotesApp.Application.Tests.Domain
             withTitleResult.IsSuccess.Should().BeTrue();
             withTitleResult.Value.GetDisplayTitle().Should().Be("My Title");
 
-            // Without title but with content
-            var withContentResult = Note.Create(
-                userId,
-                date,
-                title: "",
-                content: "Content only",
-                summary: null,
-                tags: null,
-                utcNow: now);
-
-            withContentResult.IsSuccess.Should().BeTrue();
-            withContentResult.Value.GetDisplayTitle().Should().StartWith("Content");
-
-            // Neither title nor content (this state shouldn’t normally exist due to invariants,
-            // but if it did, we still expect a fallback)
-            var emptyNote = Note.Create(
+            // Test fallback by forcing empty title (shouldn't normally happen due to invariants)
+            var validNote = Note.Create(
                 userId,
                 date,
                 title: "Title",
-                content: "Content",
                 summary: null,
                 tags: null,
                 utcNow: now).Value;
 
             // Force empty for safety test
-            typeof(Note).GetProperty(nameof(Note.Title))!.SetValue(emptyNote, string.Empty);
-            typeof(Note).GetProperty(nameof(Note.Content))!.SetValue(emptyNote, string.Empty);
+            typeof(Note).GetProperty(nameof(Note.Title))!.SetValue(validNote, string.Empty);
 
-            emptyNote.GetDisplayTitle().Should().Be("Untitled note");
+            validNote.GetDisplayTitle().Should().Be("Untitled note");
+        }
+
+        [Fact]
+        public void Update_with_empty_title_returns_failure()
+        {
+            // CHANGED: Title is now required during updates
+            var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            var result = Note.Create(
+                userId: Guid.NewGuid(),
+                date: new DateOnly(2024, 1, 2),
+                title: "Original Title",
+                summary: null,
+                tags: null,
+                utcNow: now);
+
+            result.IsSuccess.Should().BeTrue();
+            var note = result.Value;
+
+            var updateResult = note.Update(
+                title: "   ",
+                summary: null,
+                tags: null,
+                date: new DateOnly(2024, 1, 3),
+                utcNow: now.AddMinutes(1));
+
+            updateResult.IsSuccess.Should().BeFalse();
+            updateResult.Errors.Should().Contain(e => e.Code == "Note.Title.Empty");
+        }
+
+        [Fact]
+        public void Create_with_title_exceeding_max_length_returns_failure()
+        {
+            var userId = Guid.NewGuid();
+            var date = new DateOnly(2024, 1, 2);
+            var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            var longTitle = new string('a', Note.MaxTitleLength + 1);
+
+            var result = Note.Create(
+                userId: userId,
+                date: date,
+                title: longTitle,
+                summary: null,
+                tags: null,
+                utcNow: now);
+
+            result.IsSuccess.Should().BeFalse();
+            result.Errors.Should().Contain(e => e.Code == "Note.Title.TooLong");
         }
     }
 }

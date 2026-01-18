@@ -35,10 +35,11 @@ namespace NotesApp.Application.Tests.Notes
 
             var date = new DateOnly(2025, 2, 20);
 
-            var n1 = Note.Create(userId, date, "T1", "C1", null, null, DateTime.UtcNow).Value!;
-            var n2 = Note.Create(userId, date, "T2", "C2", null, null, DateTime.UtcNow).Value!;
-            var otherDate = Note.Create(userId, new DateOnly(2025, 2, 21), "Other date", "C", null, null, DateTime.UtcNow).Value!;
-            var otherUser = Note.Create(otherUserId, date, "Other user", "C", null, null, DateTime.UtcNow).Value!;
+            // CHANGED: content parameter removed from Note.Create
+            var n1 = Note.Create(userId, date, "T1", null, null, DateTime.UtcNow).Value!;
+            var n2 = Note.Create(userId, date, "T2", null, null, DateTime.UtcNow).Value!;
+            var otherDate = Note.Create(userId, new DateOnly(2025, 2, 21), "Other date", null, null, DateTime.UtcNow).Value!;
+            var otherUser = Note.Create(otherUserId, date, "Other user", null, null, DateTime.UtcNow).Value!;
 
             await context.Notes.AddRangeAsync(n1, n2, otherDate, otherUser);
             await context.SaveChangesAsync();

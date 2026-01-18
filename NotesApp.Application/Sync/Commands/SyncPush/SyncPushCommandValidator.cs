@@ -309,7 +309,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     {
                         Date = dto.Date,
                         Title = dto.Title,
-                        Content = dto.Content,
                         Summary = dto.Summary,
                         Tags = dto.Tags
                     };
@@ -351,7 +350,6 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                         NoteId = dto.Id,
                         Date = dto.Date,
                         Title = dto.Title,
-                        Content = dto.Content,
                         Summary = dto.Summary,
                         Tags = dto.Tags
                     };

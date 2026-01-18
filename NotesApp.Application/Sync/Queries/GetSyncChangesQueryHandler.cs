@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Abstractions.Storage;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Configuration;
 using NotesApp.Application.Sync.Models;
 using NotesApp.Domain.Entities;
 using System;
@@ -13,14 +14,20 @@ using System.Text;
 namespace NotesApp.Application.Sync.Queries
 {
     /// <summary>
-    /// Handles sync push from client devices:
-    /// - Applies creates/updates/deletes for tasks, notes, and blocks.
-    /// - Uses Version for optimistic concurrency on updates.
-    /// - Always uses "delete wins" semantics for deletes.
-    /// - Emits outbox messages for Created / Updated / Deleted events.
+    /// Handles sync pull requests from client devices.
     /// 
-    /// Per-item conflicts (version mismatch, not found, etc.) are embedded
-    /// directly in each result DTO's Conflict property rather than in a separate list.
+    /// Returns all changes (tasks, notes, blocks, assets) since a given timestamp:
+    /// - Initial sync (SinceUtc = null): Returns all non-deleted entities
+    /// - Incremental sync: Categorises entities into created/updated/deleted buckets
+    ///   based on CreatedAtUtc vs SinceUtc comparison
+    /// 
+    /// Features:
+    /// - Optional device ownership validation
+    /// - Pagination via MaxItemsPerEntity (separate limits per entity type)
+    /// - HasMore indicators for truncated results
+    /// - Pre-signed download URLs for assets (graceful failure if URL generation fails)
+    /// 
+    /// Note: This is a read-only query - no outbox messages are emitted.
     /// </summary>
     public sealed class GetSyncChangesQueryHandler
         : IRequestHandler<GetSyncChangesQuery, Result<SyncChangesDto>>
@@ -32,19 +39,8 @@ namespace NotesApp.Application.Sync.Queries
         private readonly IUserDeviceRepository _deviceRepository;
         private readonly ICurrentUserService _currentUserService;
         private readonly IBlobStorageService? _blobStorageService;
+        private readonly AssetStorageOptions _assetOptions;
         private readonly ILogger<GetSyncChangesQueryHandler> _logger;
-
-        //TODO: the name should go to the contral config.
-        /// <summary>
-        /// Container name for user assets in blob storage.
-        /// </summary>
-        private const string AssetContainerName = "user-assets";
-
-        //TODO: the name should go to the contral config.
-        /// <summary>
-        /// Validity period for asset download URLs.
-        /// </summary>
-        private static readonly TimeSpan AssetDownloadUrlValidity = TimeSpan.FromHours(1);
 
         public GetSyncChangesQueryHandler(ITaskRepository taskRepository,
                                           INoteRepository noteRepository,
@@ -52,6 +48,7 @@ namespace NotesApp.Application.Sync.Queries
                                           IAssetRepository assetRepository,
                                           IUserDeviceRepository deviceRepository,
                                           ICurrentUserService currentUserService,
+                                          IOptions<AssetStorageOptions> assetOptions,
                                           ILogger<GetSyncChangesQueryHandler> logger,
                                           IBlobStorageService? blobStorageService = null)
         {
@@ -61,6 +58,7 @@ namespace NotesApp.Application.Sync.Queries
             _assetRepository = assetRepository;
             _deviceRepository = deviceRepository;
             _currentUserService = currentUserService;
+            _assetOptions = assetOptions.Value;
             _blobStorageService = blobStorageService;
             _logger = logger;
         }
@@ -417,9 +415,9 @@ namespace NotesApp.Application.Sync.Queries
                 string? downloadUrl = null;
                 if (_blobStorageService is not null)
                 {
-                    var urlResult = await _blobStorageService.GenerateDownloadUrlAsync(AssetContainerName,
+                    var urlResult = await _blobStorageService.GenerateDownloadUrlAsync(_assetOptions.ContainerName,
                                                                                        asset.BlobPath,
-                                                                                       AssetDownloadUrlValidity,
+                                                                                       _assetOptions.DownloadUrlValidity,
                                                                                        cancellationToken);
 
                     if (urlResult.IsSuccess)

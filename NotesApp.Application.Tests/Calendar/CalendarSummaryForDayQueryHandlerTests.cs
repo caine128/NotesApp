@@ -55,13 +55,12 @@ namespace NotesApp.Application.Tests.Calendar
                 travelTime: null,
                 utcNow: DateTime.UtcNow).Value;
 
-            // Seed notes for user and other user
+            // Seed notes for user and other user - CHANGED: content parameter removed
             var userNote = Note.Create(
                 userId: userId,
                 date: date,
                 utcNow: DateTime.UtcNow,
                 title: "User note",
-                content: "Content",
                 summary: null,
                 tags: null).Value;
 
@@ -70,7 +69,6 @@ namespace NotesApp.Application.Tests.Calendar
                 date: date,
                 utcNow: DateTime.UtcNow,
                 title: "Other user note",
-                content: "Secret content",
                 summary: null,
                 tags: null).Value;
 

@@ -14,11 +14,17 @@ using System.Text;
 
 namespace NotesApp.Application.Tests.Sync
 {
+    /// <summary>
+    /// Unit tests for ResolveSyncConflictsCommandHandler.
+    /// 
+    /// CHANGED: Handler now requires IBlockRepository for block conflict resolution.
+    /// </summary>
     public sealed class ResolveSyncConflictsCommandHandlerTests
     {
         private readonly Mock<ICurrentUserService> _currentUserServiceMock = new();
         private readonly Mock<ITaskRepository> _taskRepositoryMock = new();
         private readonly Mock<INoteRepository> _noteRepositoryMock = new();
+        private readonly Mock<IBlockRepository> _blockRepositoryMock = new();  // ADDED
         private readonly Mock<IOutboxRepository> _outboxRepositoryMock = new();
         private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
         private readonly Mock<ISystemClock> _clockMock = new();
@@ -41,10 +47,12 @@ namespace NotesApp.Application.Tests.Sync
                 .Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
                 .Returns(Task.CompletedTask);
 
+            // CHANGED: Added blockRepository parameter
             return new ResolveSyncConflictsCommandHandler(
                 _currentUserServiceMock.Object,
                 _taskRepositoryMock.Object,
                 _noteRepositoryMock.Object,
+                _blockRepositoryMock.Object,
                 _outboxRepositoryMock.Object,
                 _unitOfWorkMock.Object,
                 _clockMock.Object,

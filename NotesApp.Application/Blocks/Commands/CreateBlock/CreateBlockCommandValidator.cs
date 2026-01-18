@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -29,7 +30,9 @@ namespace NotesApp.Application.Blocks.Commands.CreateBlock
 
             RuleFor(x => x.ParentType)
                 .IsInEnum()
-                .WithMessage("ParentType must be a valid value (Note or Task).");
+                .WithMessage("ParentType must be Note. Tasks do not support blocks.")
+                .Must(t => t == BlockParentType.Note)
+                .WithMessage("Only Note is supported as parent type. Tasks do not have blocks.");
 
             RuleFor(x => x.Type)
                 .IsInEnum()

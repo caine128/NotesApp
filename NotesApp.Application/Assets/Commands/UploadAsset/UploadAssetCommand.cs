@@ -61,7 +61,11 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
 
         /// <summary>
         /// Pre-signed download URL for the uploaded asset.
+        /// 
+        /// May be null if URL generation failed transiently after the asset was 
+        /// successfully created. In this case, the client should fetch the URL 
+        /// separately using the GetAssetDownloadUrl endpoint or sync pull.
         /// </summary>
-        public string DownloadUrl { get; init; } = string.Empty;
+        public string? DownloadUrl { get; init; }
     }
 }
