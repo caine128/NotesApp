@@ -4,11 +4,18 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using NotesApp.Application.Assets.Commands.UploadAsset;
+using NotesApp.Application.Assets.Models;
 
 namespace NotesApp.Api.Controllers
 {
     /// <summary>
     /// Handles asset (file/image) upload and download operations.
+    /// 
+    /// Note: Unlike other controllers, this controller cannot use commands directly as
+    /// [FromBody] parameters because file uploads use IFormFile (multipart form data),
+    /// not JSON. The controller extracts data from IFormFile and builds the command.
+    /// 
+    /// All validation is handled by UploadAssetCommandValidator via the MediatR pipeline.
     /// </summary>
     [Route("api/[controller]")]
     [ApiController]
@@ -43,15 +50,8 @@ namespace NotesApp.Api.Controllers
                                                 IFormFile file,
                                                 CancellationToken cancellationToken)
         {
-            if (file is null || file.Length == 0)
-            {
-                return BadRequest(new { Error = "No file provided or file is empty." });
-            }
-
-            if (string.IsNullOrWhiteSpace(assetClientId))
-            {
-                return BadRequest(new { Error = "AssetClientId is required." });
-            }
+            // Validation is handled by UploadAssetCommandValidator via MediatR pipeline.
+            // Controller only extracts data from IFormFile and builds the command.
 
             using var stream = file.OpenReadStream();
 
@@ -92,20 +92,8 @@ namespace NotesApp.Api.Controllers
                                                       [FromQuery] string? contentType,
                                                       CancellationToken cancellationToken)
         {
-            if (string.IsNullOrWhiteSpace(assetClientId))
-            {
-                return BadRequest(new { Error = "AssetClientId is required." });
-            }
-
-            if (string.IsNullOrWhiteSpace(fileName))
-            {
-                return BadRequest(new { Error = "FileName is required." });
-            }
-
-            if (Request.ContentLength is null || Request.ContentLength == 0)
-            {
-                return BadRequest(new { Error = "No content provided." });
-            }
+            // Validation is handled by UploadAssetCommandValidator via MediatR pipeline.
+            // Controller only extracts data from Request and builds the command.
 
             var command = new UploadAssetCommand
             {

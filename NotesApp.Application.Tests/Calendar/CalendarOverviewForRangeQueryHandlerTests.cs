@@ -91,7 +91,6 @@ namespace NotesApp.Application.Tests.Calendar
                 date: day1,
                 utcNow: DateTime.UtcNow,
                 title: "Note d1",
-                content: "N1",
                 summary: null,
                 tags: null).Value;
 
@@ -100,7 +99,6 @@ namespace NotesApp.Application.Tests.Calendar
                 date: day1,
                 utcNow: DateTime.UtcNow,
                 title: "Other user note",
-                content: "N-other",
                 summary: null,
                 tags: null).Value;
 
@@ -109,7 +107,6 @@ namespace NotesApp.Application.Tests.Calendar
                 date: endExclusive,
                 utcNow: DateTime.UtcNow,
                 title: "Note at endExclusive",
-                content: "N3",
                 summary: null,
                 tags: null).Value;
 

@@ -50,7 +50,6 @@ namespace NotesApp.Application.Tests.Calendar
                                  date: day1,
                                  utcNow: DateTime.UtcNow,
                                  title: "Note day1",
-                                 content: "Content 1",
                                  summary: null,
                                  tags: null).Value;
 
@@ -58,7 +57,6 @@ namespace NotesApp.Application.Tests.Calendar
                                  date: day3,
                                  utcNow: DateTime.UtcNow,
                                  title: "Note day3",
-                                 content: "Content 3",
                                  summary: null,
                                  tags: null).Value;
 
