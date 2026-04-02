@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using NotesApp.Application.Assets.Commands.UploadAsset;
 using NotesApp.Application.Assets.Models;
+using NotesApp.Application.Assets.Queries.GetAssetDownloadUrl;
 
 namespace NotesApp.Api.Controllers
 {
@@ -67,6 +68,24 @@ namespace NotesApp.Api.Controllers
 
             var result = await _mediator.Send(command, cancellationToken);
 
+            return result.ToActionResult();
+        }
+
+
+        /// <summary>
+        /// Generates a pre-signed download URL for an asset.
+        /// The URL is valid for a limited time (configured via AssetStorage:DownloadUrlValidityMinutes).
+        /// </summary>
+        /// <param name="id">ID of the asset.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>Pre-signed download URL string.</returns>
+        [HttpGet("{id:guid}/download-url")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetDownloadUrl([FromRoute] Guid id,
+                                                         CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetAssetDownloadUrlQuery(id), cancellationToken);
             return result.ToActionResult();
         }
 

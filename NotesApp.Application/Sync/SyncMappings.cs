@@ -65,10 +65,7 @@ namespace NotesApp.Application.Sync
             };
         }
 
-        /// <summary>
-        /// Maps Asset to sync DTO. Download URL must be set separately.
-        /// </summary>
-        public static AssetSyncItemDto ToSyncDto(this Asset asset, string? downloadUrl = null)
+        public static AssetSyncItemDto ToSyncDto(this Asset asset)
         {
             return new AssetSyncItemDto
             {
@@ -77,7 +74,6 @@ namespace NotesApp.Application.Sync
                 FileName = asset.FileName,
                 ContentType = asset.ContentType,
                 SizeBytes = asset.SizeBytes,
-                DownloadUrl = downloadUrl,
                 CreatedAtUtc = asset.CreatedAtUtc,
                 UpdatedAtUtc = asset.UpdatedAtUtc
             };

@@ -1,11 +1,8 @@
 ﻿using FluentResults;
 using MediatR;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NotesApp.Application.Abstractions.Persistence;
-using NotesApp.Application.Abstractions.Storage;
 using NotesApp.Application.Common.Interfaces;
-using NotesApp.Application.Configuration;
 using NotesApp.Application.Sync.Models;
 using NotesApp.Domain.Entities;
 using System;
@@ -16,18 +13,20 @@ namespace NotesApp.Application.Sync.Queries
 {
     /// <summary>
     /// Handles sync pull requests from client devices.
-    /// 
+    ///
     /// Returns all changes (tasks, notes, blocks, assets) since a given timestamp:
     /// - Initial sync (SinceUtc = null): Returns all non-deleted entities
     /// - Incremental sync: Categorises entities into created/updated/deleted buckets
     ///   based on CreatedAtUtc vs SinceUtc comparison
-    /// 
+    ///
     /// Features:
     /// - Optional device ownership validation
     /// - Pagination via MaxItemsPerEntity (separate limits per entity type)
     /// - HasMore indicators for truncated results
-    /// - Pre-signed download URLs for assets (graceful failure if URL generation fails)
-    /// 
+    ///
+    /// Asset download URLs are NOT included in the sync response.
+    /// Use GET /api/assets/{id}/download-url to obtain a pre-signed URL on demand.
+    ///
     /// Note: This is a read-only query - no outbox messages are emitted.
     /// </summary>
     public sealed class GetSyncChangesQueryHandler
@@ -39,8 +38,6 @@ namespace NotesApp.Application.Sync.Queries
         private readonly IAssetRepository _assetRepository;
         private readonly IUserDeviceRepository _deviceRepository;
         private readonly ICurrentUserService _currentUserService;
-        private readonly IBlobStorageService? _blobStorageService;
-        private readonly AssetStorageOptions _assetOptions;
         private readonly ILogger<GetSyncChangesQueryHandler> _logger;
 
         public GetSyncChangesQueryHandler(ITaskRepository taskRepository,
@@ -49,9 +46,7 @@ namespace NotesApp.Application.Sync.Queries
                                           IAssetRepository assetRepository,
                                           IUserDeviceRepository deviceRepository,
                                           ICurrentUserService currentUserService,
-                                          IOptions<AssetStorageOptions> assetOptions,
-                                          ILogger<GetSyncChangesQueryHandler> logger,
-                                          IBlobStorageService? blobStorageService = null)
+                                          ILogger<GetSyncChangesQueryHandler> logger)
         {
             _taskRepository = taskRepository;
             _noteRepository = noteRepository;
@@ -59,8 +54,6 @@ namespace NotesApp.Application.Sync.Queries
             _assetRepository = assetRepository;
             _deviceRepository = deviceRepository;
             _currentUserService = currentUserService;
-            _assetOptions = assetOptions.Value;
-            _blobStorageService = blobStorageService;
             _logger = logger;
         }
 
@@ -111,7 +104,7 @@ namespace NotesApp.Application.Sync.Queries
             var tasksBuckets = CategoriseTasks(tasks, request.SinceUtc);
             var notesBuckets = CategoriseNotes(notes, request.SinceUtc);
             var blocksBuckets = CategoriseBlocks(blocks, request.SinceUtc);
-            var assetsBuckets = await CategoriseAssetsAsync(assets, request.SinceUtc, cancellationToken);
+            var assetsBuckets = CategoriseAssets(assets, request.SinceUtc);
 
             // Determine effective max items per entity
             var effectiveMax = request.MaxItemsPerEntity ?? SyncLimits.DefaultPullMaxItemsPerEntity;
@@ -390,11 +383,9 @@ namespace NotesApp.Application.Sync.Queries
         /// <summary>
         /// Categorises assets into created/deleted buckets.
         /// Assets are immutable, so there's no "updated" bucket.
-        /// Generates pre-signed download URLs for created assets.
+        /// Download URLs are not included; clients should call GET /api/assets/{id}/download-url on demand.
         /// </summary>
-        private async Task<SyncAssetsChangesDto> CategoriseAssetsAsync(IReadOnlyList<Asset> assets,
-                                                                       DateTime? sinceUtc,
-                                                                       CancellationToken cancellationToken)
+        private static SyncAssetsChangesDto CategoriseAssets(IReadOnlyList<Asset> assets, DateTime? sinceUtc)
         {
             var createdList = new List<AssetSyncItemDto>();
             var deletedList = new List<DeletedSyncItemDto>();
@@ -412,30 +403,7 @@ namespace NotesApp.Application.Sync.Queries
                     continue;
                 }
 
-                // Generate pre-signed download URL for the asset
-                string? downloadUrl = null;
-                if (_blobStorageService is not null)
-                {
-                    var urlResult = await _blobStorageService.GenerateDownloadUrlAsync(_assetOptions.ContainerName,
-                                                                                       asset.BlobPath,
-                                                                                       _assetOptions.DownloadUrlValidity,
-                                                                                       cancellationToken);
-
-                    if (urlResult.IsSuccess)
-                    {
-                        downloadUrl = urlResult.Value;
-                    }
-                    else
-                    {
-                        _logger.LogWarning(
-                            "Failed to generate download URL for asset {AssetId}: {Errors}",
-                            asset.Id,
-                            string.Join(", ", urlResult.Errors.Select(e => e.Message)));
-                        // Continue without download URL - client can request it separately
-                    }
-                }
-
-                createdList.Add(asset.ToSyncDto(downloadUrl));
+                createdList.Add(asset.ToSyncDto());
             }
 
             return new SyncAssetsChangesDto

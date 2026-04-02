@@ -165,7 +165,7 @@ namespace NotesApp.Application.Sync.Models
 
     /// <summary>
     /// Full asset representation used in sync payloads.
-    /// Includes a pre-signed download URL for fetching the binary content.
+    /// Download URLs are not included here; use GET /api/assets/{id}/download-url to obtain one on demand.
     /// </summary>
     public sealed record AssetSyncItemDto
     {
@@ -174,12 +174,6 @@ namespace NotesApp.Application.Sync.Models
         public string FileName { get; init; } = string.Empty;
         public string ContentType { get; init; } = string.Empty;
         public long SizeBytes { get; init; }
-
-        /// <summary>
-        /// Pre-signed URL for downloading the asset.
-        /// Valid for a limited time (e.g., 1 hour).
-        /// </summary>
-        public string? DownloadUrl { get; init; }
 
         public DateTime CreatedAtUtc { get; init; }
         public DateTime UpdatedAtUtc { get; init; }
