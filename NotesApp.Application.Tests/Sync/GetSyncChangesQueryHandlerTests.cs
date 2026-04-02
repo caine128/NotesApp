@@ -1,11 +1,9 @@
 ﻿using FluentAssertions;
 using FluentResults;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Moq;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common.Interfaces;
-using NotesApp.Application.Configuration;
 using NotesApp.Application.Sync.Models;
 using NotesApp.Application.Sync.Queries;
 using NotesApp.Domain.Entities;
@@ -18,8 +16,6 @@ namespace NotesApp.Application.Tests.Sync
 {
     /// <summary>
     /// Unit tests for GetSyncChangesQueryHandler.
-    /// 
-    /// CHANGED: Handler now requires IBlockRepository, IAssetRepository, and IOptions&lt;AssetStorageOptions&gt;.
     /// </summary>
     public sealed class GetSyncChangesQueryHandlerTests
     {
@@ -48,9 +44,6 @@ namespace NotesApp.Application.Tests.Sync
                 .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new List<Asset>());
 
-            // Create options with default values
-            var assetOptions = Options.Create(new AssetStorageOptions());
-
             return new GetSyncChangesQueryHandler(
                 _taskRepositoryMock.Object,
                 _noteRepositoryMock.Object,
@@ -58,9 +51,7 @@ namespace NotesApp.Application.Tests.Sync
                 _assetRepositoryMock.Object,
                 _deviceRepositoryMock.Object,
                 _currentUserServiceMock.Object,
-                assetOptions,
-                _loggerMock.Object,
-                blobStorageService: null);
+                _loggerMock.Object);
         }
 
         [Fact]
