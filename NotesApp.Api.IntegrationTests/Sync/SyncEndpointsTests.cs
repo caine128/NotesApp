@@ -213,12 +213,22 @@ namespace NotesApp.Api.IntegrationTests.Sync
         {
             // Arrange
             var client = _factory.CreateClientAsUser(Guid.NewGuid());
-            var deviceId = Guid.NewGuid();
             var now = DateTime.UtcNow;
+
+            // Register a device so the push handler can validate it
+            var registerResponse = await client.PostAsJsonAsync("/api/devices", new RegisterDeviceCommand
+            {
+                DeviceToken = "integration-test-token-push",
+                Platform = DevicePlatform.Android,
+                DeviceName = "Integration test device"
+            });
+            registerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var deviceDto = await registerResponse.Content.ReadFromJsonAsync<UserDeviceDto>();
+            deviceDto.Should().NotBeNull();
 
             var payload = new SyncPushCommandPayloadDto
             {
-                DeviceId = deviceId,
+                DeviceId = deviceDto!.Id,
                 ClientSyncTimestampUtc = now,
                 Tasks = new SyncPushTasksDto
                 {
@@ -295,8 +305,18 @@ namespace NotesApp.Api.IntegrationTests.Sync
         {
             // Arrange
             var client = _factory.CreateClientAsUser(Guid.NewGuid());
-            var deviceId = Guid.NewGuid();
             var now = DateTime.UtcNow;
+
+            // Register a device so the push handler can validate it
+            var registerResponse = await client.PostAsJsonAsync("/api/devices", new RegisterDeviceCommand
+            {
+                DeviceToken = "integration-test-token-update",
+                Platform = DevicePlatform.Android,
+                DeviceName = "Integration test device"
+            });
+            registerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var deviceDto = await registerResponse.Content.ReadFromJsonAsync<UserDeviceDto>();
+            deviceDto.Should().NotBeNull();
             var date = new DateOnly(2025, 11, 10);
 
             // First create a task via the normal endpoint
@@ -321,7 +341,7 @@ namespace NotesApp.Api.IntegrationTests.Sync
             // Build a push payload with wrong ExpectedVersion
             var pushPayload = new SyncPushCommandPayloadDto
             {
-                DeviceId = deviceId,
+                DeviceId = deviceDto!.Id,
                 ClientSyncTimestampUtc = now,
                 Tasks = new SyncPushTasksDto
                 {

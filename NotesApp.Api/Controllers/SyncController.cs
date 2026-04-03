@@ -74,7 +74,7 @@ namespace NotesApp.Api.Controllers
 
             var command = new SyncPushCommand
             {
-                DeviceId = payload.DeviceId,
+                DeviceId = effectiveDeviceId ?? payload.DeviceId,
                 ClientSyncTimestampUtc = payload.ClientSyncTimestampUtc,
                 Tasks = payload.Tasks,
                 Notes = payload.Notes,
