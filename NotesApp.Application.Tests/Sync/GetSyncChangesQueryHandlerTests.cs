@@ -6,10 +6,12 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Sync.Models;
 using NotesApp.Application.Sync.Queries;
+using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using NotesApp.Domain.Users;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace NotesApp.Application.Tests.Sync
@@ -35,14 +37,14 @@ namespace NotesApp.Application.Tests.Sync
                 .Setup(s => s.GetUserIdAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(_userId);
 
-            // Setup empty returns for block and asset repositories
+            // Setup empty returns for block and asset repositories by default
             _blockRepositoryMock
                 .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<Block>());
+                .Returns(Task.FromResult<IReadOnlyList<Block>>(new List<Block>()));
 
             _assetRepositoryMock
                 .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<Asset>());
+                .Returns(Task.FromResult<IReadOnlyList<Asset>>(new List<Asset>()));
 
             return new GetSyncChangesQueryHandler(
                 _taskRepositoryMock.Object,
@@ -91,9 +93,12 @@ namespace NotesApp.Application.Tests.Sync
             var since = (DateTime?)null;
             var now = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
 
+            var handler = CreateHandler(); // First: sets default empty returns
+
             var task = CreateTask(_userId, now, isDeleted: false);
             var note = CreateNote(_userId, now, isDeleted: false);
 
+            // Override defaults with test-specific data
             _taskRepositoryMock
                 .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new List<TaskItem> { task });
@@ -102,7 +107,6 @@ namespace NotesApp.Application.Tests.Sync
                 .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new List<Note> { note });
 
-            var handler = CreateHandler();
             var query = new GetSyncChangesQuery(SinceUtc: null, DeviceId: null, MaxItemsPerEntity: null);
 
             // Act
@@ -132,6 +136,8 @@ namespace NotesApp.Application.Tests.Sync
         {
             // Arrange
             var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            var handler = CreateHandler(); // First: sets default empty returns
 
             var createdTask = CreateTask(_userId,
                 createdAt: since.AddMinutes(1),
@@ -163,6 +169,7 @@ namespace NotesApp.Application.Tests.Sync
                 updatedAt: since.AddMinutes(3),
                 isDeleted: true);
 
+            // Override defaults with test-specific data
             _taskRepositoryMock
                 .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new List<TaskItem> { createdTask, updatedTask, deletedTask });
@@ -171,7 +178,6 @@ namespace NotesApp.Application.Tests.Sync
                 .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new List<Note> { createdNote, updatedNote, deletedNote });
 
-            var handler = CreateHandler();
             var query = new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: null);
 
             // Act
@@ -191,6 +197,350 @@ namespace NotesApp.Application.Tests.Sync
 
             dto.Tasks.Deleted[0].DeletedAtUtc.Should().Be(deletedTask.UpdatedAtUtc);
             dto.Notes.Deleted[0].DeletedAtUtc.Should().Be(deletedNote.UpdatedAtUtc);
+        }
+
+        [Fact]
+        public async Task Handle_initial_sync_includes_blocks_as_created()
+        {
+            // Arrange
+            var since = (DateTime?)null;
+            var now = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            // Setup tasks/notes BEFORE CreateHandler (CreateHandler won't override these)
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler(); // Sets up block/asset defaults; task/note already set
+
+            // Override block repo AFTER CreateHandler (last setup wins)
+            var block = CreateBlock(_userId, now, isDeleted: false);
+            _blockRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<Block> { block });
+
+            var query = new GetSyncChangesQuery(SinceUtc: null, DeviceId: null, MaxItemsPerEntity: null);
+
+            // Act
+            var result = await handler.Handle(query, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            var dto = result.Value;
+
+            dto.Blocks.Created.Should().ContainSingle(b => b.Id == block.Id);
+            dto.Blocks.Updated.Should().BeEmpty();
+            dto.Blocks.Deleted.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Handle_initial_sync_includes_assets_without_download_url()
+        {
+            // Arrange
+            var since = (DateTime?)null;
+            var now = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            // Setup tasks/notes BEFORE CreateHandler
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler(); // Sets up block/asset defaults
+
+            // Override asset repo AFTER CreateHandler
+            var asset = CreateAsset(_userId, now, isDeleted: false);
+            _assetRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<Asset> { asset });
+
+            var query = new GetSyncChangesQuery(SinceUtc: null, DeviceId: null, MaxItemsPerEntity: null);
+
+            // Act
+            var result = await handler.Handle(query, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            var dto = result.Value;
+
+            dto.Assets.Created.Should().ContainSingle(a => a.Id == asset.Id);
+            dto.Assets.Deleted.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Handle_incremental_sync_categorises_blocks_into_created_updated_deleted()
+        {
+            // Arrange
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            // Setup tasks/notes BEFORE CreateHandler
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler(); // Sets up block/asset defaults
+
+            // Override block repo AFTER CreateHandler
+            var createdBlock = CreateBlock(_userId,
+                createdAt: since.AddMinutes(1),
+                updatedAt: since.AddMinutes(1),
+                isDeleted: false);
+
+            var updatedBlock = CreateBlock(_userId,
+                createdAt: since.AddMinutes(-10),
+                updatedAt: since.AddMinutes(2),
+                isDeleted: false);
+
+            var deletedBlock = CreateBlock(_userId,
+                createdAt: since.AddMinutes(-20),
+                updatedAt: since.AddMinutes(3),
+                isDeleted: true);
+
+            _blockRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<Block> { createdBlock, updatedBlock, deletedBlock });
+
+            var query = new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: null);
+
+            // Act
+            var result = await handler.Handle(query, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            var dto = result.Value;
+
+            dto.Blocks.Created.Should().ContainSingle(b => b.Id == createdBlock.Id);
+            dto.Blocks.Updated.Should().ContainSingle(b => b.Id == updatedBlock.Id);
+            dto.Blocks.Deleted.Should().ContainSingle(b => b.Id == deletedBlock.Id);
+            dto.Blocks.Deleted[0].DeletedAtUtc.Should().Be(deletedBlock.UpdatedAtUtc);
+        }
+
+        [Fact]
+        public async Task Handle_incremental_sync_categorises_assets_into_created_and_deleted_only()
+        {
+            // Arrange
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            // Setup tasks/notes BEFORE CreateHandler
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler(); // Sets up block/asset defaults
+
+            // Override asset repo AFTER CreateHandler
+            var createdAsset = CreateAsset(_userId,
+                createdAt: since.AddMinutes(1),
+                updatedAt: since.AddMinutes(1),
+                isDeleted: false);
+
+            var deletedAsset = CreateAsset(_userId,
+                createdAt: since.AddMinutes(-20),
+                updatedAt: since.AddMinutes(3),
+                isDeleted: true);
+
+            _assetRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<Asset> { createdAsset, deletedAsset });
+
+            var query = new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: null);
+
+            // Act
+            var result = await handler.Handle(query, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            var dto = result.Value;
+
+            // Assets have no "updated" bucket — they're immutable
+            dto.Assets.Created.Should().ContainSingle(a => a.Id == createdAsset.Id);
+            dto.Assets.Deleted.Should().ContainSingle(a => a.Id == deletedAsset.Id);
+            dto.Assets.Deleted[0].DeletedAtUtc.Should().Be(deletedAsset.UpdatedAtUtc);
+        }
+
+        [Fact]
+        public async Task Handle_with_deleted_device_returns_DeviceNotFound_error()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var deviceId = Guid.NewGuid();
+
+            var device = UserDevice.Create(
+                _userId,
+                "token-456",
+                DevicePlatform.IOS,
+                "My device",
+                DateTime.UtcNow).Value!;
+
+            // Mark device as deleted via soft-delete
+            typeof(UserDevice).GetProperty(nameof(UserDevice.IsDeleted))!
+                .SetValue(device, true);
+
+            _deviceRepositoryMock
+                .Setup(r => r.GetByIdAsync(deviceId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(device);
+
+            var query = new GetSyncChangesQuery(SinceUtc: null, DeviceId: deviceId, MaxItemsPerEntity: null);
+
+            // Act
+            var result = await handler.Handle(query, CancellationToken.None);
+
+            // Assert
+            result.IsFailed.Should().BeTrue();
+            result.Errors.Should().Contain(e => e.Message == "Device.NotFound");
+        }
+
+        [Fact]
+        public async Task Handle_with_null_device_id_skips_device_check_and_succeeds()
+        {
+            // Arrange
+            // Setup tasks/notes BEFORE CreateHandler so they return empty
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, (DateTime?)null, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, (DateTime?)null, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+            var query = new GetSyncChangesQuery(SinceUtc: null, DeviceId: null, MaxItemsPerEntity: null);
+
+            // Act
+            var result = await handler.Handle(query, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            _deviceRepositoryMock.Verify(
+                r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task Handle_with_MaxItemsPerEntity_truncates_tasks_and_sets_HasMore_true()
+        {
+            // Arrange
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            const int maxItems = 2;
+
+            // 3 tasks created after since → all go to "created" bucket → total = 3 > 2
+            var tasks = Enumerable.Range(0, 3)
+                .Select(i => CreateTask(_userId,
+                    createdAt: since.AddMinutes(i + 1),
+                    updatedAt: since.AddMinutes(i + 1),
+                    isDeleted: false))
+                .ToList();
+
+            // Setup BEFORE CreateHandler
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(tasks));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+            var query = new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: maxItems);
+
+            // Act
+            var result = await handler.Handle(query, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            var dto = result.Value;
+
+            dto.HasMoreTasks.Should().BeTrue();
+            (dto.Tasks.Created.Count + dto.Tasks.Updated.Count + dto.Tasks.Deleted.Count)
+                .Should().BeLessThanOrEqualTo(maxItems);
+        }
+
+        [Fact]
+        public async Task Handle_with_MaxItemsPerEntity_does_not_set_HasMore_when_within_limit()
+        {
+            // Arrange
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            const int maxItems = 10;
+
+            var task = CreateTask(_userId,
+                createdAt: since.AddMinutes(1),
+                updatedAt: since.AddMinutes(1),
+                isDeleted: false);
+
+            // Setup BEFORE CreateHandler
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem> { task }));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+            var query = new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: maxItems);
+
+            // Act
+            var result = await handler.Handle(query, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            result.Value.HasMoreTasks.Should().BeFalse();
+            result.Value.HasMoreNotes.Should().BeFalse();
+            result.Value.HasMoreBlocks.Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task Handle_with_MaxItemsPerEntity_truncates_blocks_independently()
+        {
+            // Arrange
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            const int maxItems = 1;
+
+            // Setup tasks/notes BEFORE CreateHandler
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler(); // Sets up block/asset defaults
+
+            // 2 blocks → total 2 > 1 → HasMoreBlocks; override AFTER CreateHandler
+            var blocks = Enumerable.Range(0, 2)
+                .Select(i => CreateBlock(_userId,
+                    createdAt: since.AddMinutes(i + 1),
+                    updatedAt: since.AddMinutes(i + 1),
+                    isDeleted: false))
+                .ToList();
+
+            _blockRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(blocks);
+
+            var query = new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: maxItems);
+
+            // Act
+            var result = await handler.Handle(query, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            result.Value.HasMoreBlocks.Should().BeTrue();
+            result.Value.HasMoreTasks.Should().BeFalse();
+            result.Value.HasMoreNotes.Should().BeFalse();
+
+            var totalBlocks = result.Value.Blocks.Created.Count
+                + result.Value.Blocks.Updated.Count
+                + result.Value.Blocks.Deleted.Count;
+            totalBlocks.Should().BeLessThanOrEqualTo(maxItems);
         }
 
         private static TaskItem CreateTask(
@@ -276,6 +626,88 @@ namespace NotesApp.Application.Tests.Sync
             }
 
             return note;
+        }
+
+        private static Block CreateBlock(
+            Guid userId,
+            DateTime createdAt,
+            bool isDeleted)
+        {
+            return CreateBlock(userId, createdAt, createdAt, isDeleted);
+        }
+
+        private static Block CreateBlock(
+            Guid userId,
+            DateTime createdAt,
+            DateTime updatedAt,
+            bool isDeleted)
+        {
+            var result = Block.CreateTextBlock(
+                userId,
+                Guid.NewGuid(),
+                BlockParentType.Note,
+                BlockType.Paragraph,
+                "a0",
+                "Test content",
+                createdAt);
+
+            result.IsSuccess.Should().BeTrue();
+            var block = result.Value!;
+
+            typeof(Block).GetProperty(nameof(Block.CreatedAtUtc))!
+                .SetValue(block, createdAt);
+
+            typeof(Block).GetProperty(nameof(Block.UpdatedAtUtc))!
+                .SetValue(block, updatedAt);
+
+            if (isDeleted)
+            {
+                typeof(Block).GetProperty(nameof(Block.IsDeleted))!
+                    .SetValue(block, true);
+            }
+
+            return block;
+        }
+
+        private static Asset CreateAsset(
+            Guid userId,
+            DateTime createdAt,
+            bool isDeleted)
+        {
+            return CreateAsset(userId, createdAt, createdAt, isDeleted);
+        }
+
+        private static Asset CreateAsset(
+            Guid userId,
+            DateTime createdAt,
+            DateTime updatedAt,
+            bool isDeleted)
+        {
+            var result = Asset.Create(
+                userId,
+                Guid.NewGuid(),
+                "file.jpg",
+                "image/jpeg",
+                1024,
+                "path/to/blob",
+                createdAt);
+
+            result.IsSuccess.Should().BeTrue();
+            var asset = result.Value!;
+
+            typeof(Asset).GetProperty(nameof(Asset.CreatedAtUtc))!
+                .SetValue(asset, createdAt);
+
+            typeof(Asset).GetProperty(nameof(Asset.UpdatedAtUtc))!
+                .SetValue(asset, updatedAt);
+
+            if (isDeleted)
+            {
+                typeof(Asset).GetProperty(nameof(Asset.IsDeleted))!
+                    .SetValue(asset, true);
+            }
+
+            return asset;
         }
     }
 }

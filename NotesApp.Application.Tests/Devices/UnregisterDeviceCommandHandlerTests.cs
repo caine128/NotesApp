@@ -46,7 +46,7 @@ namespace NotesApp.Application.Tests.Devices
             var deviceId = Guid.NewGuid();
 
             _deviceRepositoryMock
-                .Setup(x => x.GetByIdAsync(deviceId, It.IsAny<CancellationToken>()))
+                .Setup(x => x.GetByIdUntrackedAsync(deviceId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync((UserDevice?)null);
 
             var command = new UnregisterDeviceCommand
@@ -60,7 +60,7 @@ namespace NotesApp.Application.Tests.Devices
             // Assert
             result.IsFailed.Should().BeTrue();
             result.Errors.Should().NotBeEmpty();
-            result.Errors[0].Message.Should().Contain("Device.NotFound");
+            result.Errors[0].Metadata["ErrorCode"].Should().Be("Device.NotFound");
 
             _unitOfWorkMock.Verify(
                 x => x.SaveChangesAsync(It.IsAny<CancellationToken>()),
@@ -88,7 +88,7 @@ namespace NotesApp.Application.Tests.Devices
                 .SetValue(otherUserDevice, deviceId);
 
             _deviceRepositoryMock
-                .Setup(x => x.GetByIdAsync(deviceId, It.IsAny<CancellationToken>()))
+                .Setup(x => x.GetByIdUntrackedAsync(deviceId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(otherUserDevice);
 
             var command = new UnregisterDeviceCommand
@@ -102,7 +102,7 @@ namespace NotesApp.Application.Tests.Devices
             // Assert
             result.IsFailed.Should().BeTrue();
             result.Errors.Should().NotBeEmpty();
-            result.Errors[0].Message.Should().Contain("Device.NotFound");
+            result.Errors[0].Metadata["ErrorCode"].Should().Be("Device.NotFound");
 
             _unitOfWorkMock.Verify(
                 x => x.SaveChangesAsync(It.IsAny<CancellationToken>()),
@@ -129,7 +129,7 @@ namespace NotesApp.Application.Tests.Devices
                 .SetValue(device, deviceId);
 
             _deviceRepositoryMock
-                .Setup(x => x.GetByIdAsync(deviceId, It.IsAny<CancellationToken>()))
+                .Setup(x => x.GetByIdUntrackedAsync(deviceId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(device);
 
             var command = new UnregisterDeviceCommand

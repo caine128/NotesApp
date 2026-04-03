@@ -58,6 +58,7 @@ namespace NotesApp.Application.Tests.Notes
             var note = domainNoteResult.Value!;
             await noteRepository.AddAsync(note, CancellationToken.None);
             await unitOfWork.SaveChangesAsync(CancellationToken.None);
+            context.Entry(note).State = EntityState.Detached;
 
             // CHANGED: Added blockRepository parameter
             var handler = new DeleteNoteCommandHandler(

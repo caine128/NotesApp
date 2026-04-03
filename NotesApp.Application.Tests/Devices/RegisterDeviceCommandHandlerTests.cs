@@ -45,7 +45,7 @@ namespace NotesApp.Application.Tests.Devices
             var sut = CreateSut();
 
             _deviceRepositoryMock
-                .Setup(x => x.GetByTokenAsync("token-123", It.IsAny<CancellationToken>()))
+                .Setup(x => x.GetByTokenUntrackedAsync("token-123", It.IsAny<CancellationToken>()))
                 .ReturnsAsync((UserDevice?)null);
 
             var command = new RegisterDeviceCommand
@@ -93,7 +93,7 @@ namespace NotesApp.Application.Tests.Devices
             var sut = CreateSut();
 
             _deviceRepositoryMock
-                .Setup(x => x.GetByTokenAsync("token-123", It.IsAny<CancellationToken>()))
+                .Setup(x => x.GetByTokenUntrackedAsync("token-123", It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existing);
 
             var command = new RegisterDeviceCommand
@@ -146,7 +146,7 @@ namespace NotesApp.Application.Tests.Devices
             var sut = CreateSut();
 
             _deviceRepositoryMock
-                .Setup(x => x.GetByTokenAsync("token-123", It.IsAny<CancellationToken>()))
+                .Setup(x => x.GetByTokenUntrackedAsync("token-123", It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existing);
 
             var command = new RegisterDeviceCommand
