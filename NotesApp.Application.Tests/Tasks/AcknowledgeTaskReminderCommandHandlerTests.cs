@@ -59,7 +59,7 @@ namespace NotesApp.Application.Tests.Tasks
             var ackAt = _now.AddMinutes(1);
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(task);
 
             var command = new AcknowledgeTaskReminderCommand
@@ -89,7 +89,7 @@ namespace NotesApp.Application.Tests.Tasks
             var taskId = task.Id;
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(task);
 
             var command = new AcknowledgeTaskReminderCommand

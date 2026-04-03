@@ -68,7 +68,7 @@ namespace NotesApp.Application.Tests.Sync
             var taskId = task.Id;
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(task);
 
             var request = new ResolveSyncConflictsRequestDto
@@ -114,7 +114,7 @@ namespace NotesApp.Application.Tests.Sync
             var originalVersion = task.Version;
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(task);
 
             var request = new ResolveSyncConflictsRequestDto
@@ -174,7 +174,7 @@ namespace NotesApp.Application.Tests.Sync
                 .SetValue(task, 5L);
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(task);
 
             var request = new ResolveSyncConflictsRequestDto

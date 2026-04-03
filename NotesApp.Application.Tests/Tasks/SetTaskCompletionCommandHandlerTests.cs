@@ -57,6 +57,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             await context.Tasks.AddAsync(task);
             await context.SaveChangesAsync();
+            context.Entry(task).State = EntityState.Detached;
 
             var handler = new SetTaskCompletionCommandHandler(
                 taskRepository,
@@ -137,6 +138,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             await context.Tasks.AddAsync(task);
             await context.SaveChangesAsync();
+            context.Entry(task).State = EntityState.Detached;
 
             var handler = new SetTaskCompletionCommandHandler(
                 taskRepository,

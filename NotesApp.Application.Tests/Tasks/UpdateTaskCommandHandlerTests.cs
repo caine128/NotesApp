@@ -64,6 +64,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             await context.Tasks.AddAsync(existingTask);
             await context.SaveChangesAsync();
+            context.Entry(existingTask).State = EntityState.Detached;
 
             var newReminder = DateTime.SpecifyKind(DateTime.UtcNow.AddHours(1), DateTimeKind.Utc);
 
