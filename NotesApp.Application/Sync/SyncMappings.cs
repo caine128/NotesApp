@@ -22,6 +22,7 @@ namespace NotesApp.Application.Sync
                 Location = task.Location,
                 TravelTime = task.TravelTime,
                 ReminderAtUtc = task.ReminderAtUtc,
+                CategoryId = task.CategoryId, // REFACTORED: added CategoryId mapping
                 Version = task.Version,
                 CreatedAtUtc = task.CreatedAtUtc,
                 UpdatedAtUtc = task.UpdatedAtUtc
@@ -79,6 +80,22 @@ namespace NotesApp.Application.Sync
             };
         }
 
+        // REFACTORED: added TaskCategory sync mapping for task categories feature
+        /// <summary>
+        /// Maps a <see cref="TaskCategory"/> to its sync pull representation.
+        /// </summary>
+        public static CategorySyncItemDto ToSyncDto(this TaskCategory category)
+        {
+            return new CategorySyncItemDto
+            {
+                Id = category.Id,
+                Name = category.Name,
+                Version = category.Version,
+                CreatedAtUtc = category.CreatedAtUtc,
+                UpdatedAtUtc = category.UpdatedAtUtc
+            };
+        }
+
         public static IReadOnlyList<TaskSyncItemDto> ToSyncTaskDtos(this IEnumerable<TaskItem> tasks)
             => tasks.Select(t => t.ToSyncDto()).ToList();
 
@@ -87,5 +104,9 @@ namespace NotesApp.Application.Sync
 
         public static IReadOnlyList<BlockSyncItemDto> ToSyncBlockDtos(this IEnumerable<Block> blocks)
             => blocks.Select(b => b.ToSyncDto()).ToList();
+
+        // REFACTORED: added category list mapping for sync pull
+        public static IReadOnlyList<CategorySyncItemDto> ToSyncCategoryDtos(this IEnumerable<TaskCategory> categories)
+            => categories.Select(c => c.ToSyncDto()).ToList();
     }
 }

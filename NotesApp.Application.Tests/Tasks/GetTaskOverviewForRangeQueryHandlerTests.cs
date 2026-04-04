@@ -35,21 +35,21 @@ namespace NotesApp.Application.Tests.Tasks
 
             // In-range tasks for current user: 20,21,22
             var t1 = TaskItem.Create(userId, new DateOnly(2025, 2, 20),
-                "T1", null, null, null, null, null, DateTime.UtcNow).Value!;
+                "T1", null, null, null, null, null, null, DateTime.UtcNow).Value!;
             var t2 = TaskItem.Create(userId, new DateOnly(2025, 2, 21),
-                "T2", null, null, null, null, null, DateTime.UtcNow).Value!;
+                "T2", null, null, null, null, null, null, DateTime.UtcNow).Value!;
             var t3 = TaskItem.Create(userId, new DateOnly(2025, 2, 22),
-                "T3", null, null, null, null, null, DateTime.UtcNow).Value!;
+                "T3", null, null, null, null, null, null, DateTime.UtcNow).Value!;
 
             // Out-of-range for current user
             var beforeRange = TaskItem.Create(userId, new DateOnly(2025, 2, 19),
-                "Before", null, null, null, null, null, DateTime.UtcNow).Value!;
+                "Before", null, null, null, null, null, null, DateTime.UtcNow).Value!;
             var afterRange = TaskItem.Create(userId, new DateOnly(2025, 2, 23),
-                "After", null, null, null, null, null, DateTime.UtcNow).Value!;
+                "After", null, null, null, null, null, null, DateTime.UtcNow).Value!;
 
             // In-range but for another user
             var otherInRange = TaskItem.Create(otherUserId, new DateOnly(2025, 2, 21),
-                "Other", null, null, null, null, null, DateTime.UtcNow).Value!;
+                "Other", null, null, null, null, null, null, DateTime.UtcNow).Value!;
 
             await context.Tasks.AddRangeAsync(t1, t2, t3, beforeRange, afterRange, otherInRange);
             await context.SaveChangesAsync();

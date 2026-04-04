@@ -19,7 +19,8 @@ namespace NotesApp.Application.Tasks
               task.TravelTime,
               task.CreatedAtUtc,
               task.UpdatedAtUtc,
-              task.ReminderAtUtc);
+              task.ReminderAtUtc,
+              task.CategoryId); // REFACTORED: added CategoryId
 
         public static TaskSummaryDto ToSummaryDto(this TaskItem task) =>
             new(
@@ -30,8 +31,8 @@ namespace NotesApp.Application.Tasks
                 task.EndTime,
                 task.IsCompleted,
                 task.Location,
-                task.TravelTime
-            );
+                task.TravelTime,
+                task.CategoryId); // REFACTORED: added CategoryId
 
         public static TaskOverviewDto ToOverviewDto(this TaskItem task) =>
             new(

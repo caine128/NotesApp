@@ -27,6 +27,7 @@ namespace NotesApp.Application.Tests.Outbox
                 endTime: null,
                 location: "Office",
                 travelTime: null,
+                categoryId: null,
                 utcNow: now);
 
             createResult.IsSuccess.Should().BeTrue();

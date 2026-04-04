@@ -35,6 +35,7 @@ namespace NotesApp.Application.Tests.Tasks
                                         endTime: null,
                                         location: null,
                                         travelTime: null,
+                                        categoryId: null,
                                         utcNow: DateTime.UtcNow).Value;
 
             var task2 = TaskItem.Create(userId: userId,
@@ -45,6 +46,7 @@ namespace NotesApp.Application.Tests.Tasks
                                         endTime: null,
                                         location: null,
                                         travelTime: null,
+                                        categoryId: null,
                                         utcNow: DateTime.UtcNow).Value;
 
             var taskForOtherUser = TaskItem.Create(userId: otherUserId,
@@ -55,6 +57,7 @@ namespace NotesApp.Application.Tests.Tasks
                                                    endTime: null,
                                                    location: null,
                                                    travelTime: null,
+                                                   categoryId: null,
                                                    utcNow: DateTime.UtcNow).Value;
 
             var taskForOtherDate = TaskItem.Create(userId: userId,
@@ -65,6 +68,7 @@ namespace NotesApp.Application.Tests.Tasks
                                                    endTime: null,
                                                    location: null,
                                                    travelTime: null,
+                                                   categoryId: null,
                                                    utcNow: DateTime.UtcNow).Value;
 
             await context.Tasks.AddRangeAsync(task1, task2, taskForOtherUser, taskForOtherDate);
@@ -95,21 +99,21 @@ namespace NotesApp.Application.Tests.Tasks
 
             // In range: day0, day1, day2 (endExclusive = day3)
             var inRangeTask1 = TaskItem.Create(
-                userId, day0, "In range 1", null, null, null, null, null, DateTime.UtcNow).Value;
+                userId, day0, "In range 1", null, null, null, null, null, null, DateTime.UtcNow).Value;
             var inRangeTask2 = TaskItem.Create(
-                userId, day1, "In range 2", null, null, null, null, null, DateTime.UtcNow).Value;
+                userId, day1, "In range 2", null, null, null, null, null, null, DateTime.UtcNow).Value;
             var inRangeTask3 = TaskItem.Create(
-                userId, day2, "In range 3", null, null, null, null, null, DateTime.UtcNow).Value;
+                userId, day2, "In range 3", null, null, null, null, null, null, DateTime.UtcNow).Value;
 
             // Outside range: endExclusive boundary and before start
             var beforeRange = TaskItem.Create(
-                userId, day0.AddDays(-1), "Before range", null, null, null, null, null, DateTime.UtcNow).Value;
+                userId, day0.AddDays(-1), "Before range", null, null, null, null, null, null, DateTime.UtcNow).Value;
             var atEndExclusive = TaskItem.Create(
-                userId, day3, "At endExclusive", null, null, null, null, null, DateTime.UtcNow).Value;
+                userId, day3, "At endExclusive", null, null, null, null, null, null, DateTime.UtcNow).Value;
 
             // Same range dates but different user
             var otherUserTask = TaskItem.Create(
-                otherUserId, day1, "Other user in range", null, null, null, null, null, DateTime.UtcNow).Value;
+                otherUserId, day1, "Other user in range", null, null, null, null, null, null, DateTime.UtcNow).Value;
 
             await context.Tasks.AddRangeAsync(
                 inRangeTask1, inRangeTask2, inRangeTask3,
@@ -142,6 +146,7 @@ namespace NotesApp.Application.Tests.Tasks
                     userId,
                     new DateOnly(utcNow.Year, utcNow.Month, utcNow.Day),
                     title,
+                    null,
                     null,
                     null,
                     null,

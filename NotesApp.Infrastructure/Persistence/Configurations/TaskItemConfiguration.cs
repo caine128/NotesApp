@@ -101,6 +101,29 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
                               "AND [ReminderAcknowledgedAtUtc] IS NULL " +
                               "AND [ReminderSentAtUtc] IS NULL " +
                               "AND [IsDeleted] = 0");
+
+            // REFACTORED: CategoryId FK + index for task categories feature
+
+            // Nullable FK — a task may have at most one optional category.
+            builder.Property(t => t.CategoryId)
+                   .IsRequired(false);
+
+            // DeleteBehavior.NoAction: no DB-level cascade.
+            // - REST/web-client path: ClearCategoryFromTasksAsync bulk-nullifies CategoryId
+            //   after soft-deleting the category.
+            // - Sync push path: the mobile client sends affected task updates itself;
+            //   the server does not cascade.
+            builder.HasOne<TaskCategory>()
+                   .WithMany()
+                   .HasForeignKey(t => t.CategoryId)
+                   .OnDelete(DeleteBehavior.NoAction)
+                   .IsRequired(false);
+
+            // 5) Filtered composite index for "tasks by category" queries.
+            //    The filter excludes nulls and soft-deleted rows to keep the index small.
+            builder.HasIndex(t => new { t.UserId, t.CategoryId })
+                   .HasFilter("[CategoryId] IS NOT NULL AND [IsDeleted] = 0")
+                   .HasDatabaseName("IX_Tasks_UserCategory");
         }
     }
 }

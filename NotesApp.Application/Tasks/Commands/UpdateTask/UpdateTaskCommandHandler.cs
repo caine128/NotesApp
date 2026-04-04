@@ -25,6 +25,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
         : IRequestHandler<UpdateTaskCommand, Result<TaskDetailDto>>
     {
         private readonly ITaskRepository _taskRepository;
+        private readonly ICategoryRepository _categoryRepository; // REFACTORED: added for CategoryId ownership validation
         private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
@@ -33,6 +34,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
 
         public UpdateTaskCommandHandler(
             ITaskRepository taskRepository,
+            ICategoryRepository categoryRepository,
             IOutboxRepository outboxRepository,
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUserService,
@@ -40,6 +42,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
             ILogger<UpdateTaskCommandHandler> logger)
         {
             _taskRepository = taskRepository;
+            _categoryRepository = categoryRepository;
             _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
@@ -69,6 +72,20 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
 
             var utcNow = _clock.UtcNow;
 
+            // REFACTORED: validate CategoryId ownership before applying domain update.
+            if (command.CategoryId.HasValue)
+            {
+                var category = await _categoryRepository.GetByIdUntrackedAsync(
+                    command.CategoryId.Value, cancellationToken);
+
+                if (category is null || category.UserId != currentUserId)
+                {
+                    return Result.Fail<TaskDetailDto>(
+                        new Error("Category not found or does not belong to you.")
+                            .WithMetadata("ErrorCode", "Categories.NotFound"));
+                }
+            }
+
             // 3) Domain update (title + date + new fields) (entity is NOT tracked, so modifications are in-memory only)
             var updateResult = taskItem.Update(title: command.Title,
                                                date: command.Date,
@@ -77,6 +94,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
                                                endTime: command.EndTime,
                                                location: command.Location,
                                                travelTime: command.TravelTime,
+                                               categoryId: command.CategoryId,
                                                utcNow: utcNow);
             if (updateResult.IsFailure)
             {
@@ -105,6 +123,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
                 taskItem.TravelTime,
                 taskItem.IsCompleted,
                 taskItem.ReminderAtUtc,
+                taskItem.CategoryId,
                 Event = TaskEventType.Updated.ToString(),
                 OccurredAtUtc = utcNow
             });

@@ -49,6 +49,11 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
             RuleFor(x => x.ReminderAtUtc)
                 .Must(r => r == null || r.Value.Kind == DateTimeKind.Utc)
                 .WithMessage("Reminder time must be in UTC (DateTimeKind.Utc) if provided.");
+
+            // CategoryId must be a non-empty GUID when provided.
+            RuleFor(x => x.CategoryId)
+                .Must(id => id == null || id.Value != Guid.Empty)
+                .WithMessage("CategoryId must be a valid non-empty GUID when provided.");
         }
     }
 }

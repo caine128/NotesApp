@@ -48,6 +48,7 @@ namespace NotesApp.Application.Tests.Calendar
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: DateTime.UtcNow).Value;
 
             var t2 = TaskItem.Create(
@@ -59,6 +60,7 @@ namespace NotesApp.Application.Tests.Calendar
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: DateTime.UtcNow).Value;
 
             // Task for other user in same range
@@ -71,6 +73,7 @@ namespace NotesApp.Application.Tests.Calendar
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: DateTime.UtcNow).Value;
 
             // Task at endExclusive boundary (should be excluded)
@@ -83,6 +86,7 @@ namespace NotesApp.Application.Tests.Calendar
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: DateTime.UtcNow).Value;
 
             // --- Seed notes ---

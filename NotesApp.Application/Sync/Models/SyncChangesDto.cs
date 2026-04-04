@@ -17,6 +17,8 @@ namespace NotesApp.Application.Sync.Models
         public SyncNotesChangesDto Notes { get; init; } = new();
         public SyncBlocksChangesDto Blocks { get; init; } = new();
         public SyncAssetsChangesDto Assets { get; init; } = new();
+        // REFACTORED: added category changes bucket
+        public SyncCategoriesChangesDto Categories { get; init; } = new();
 
         /// <summary>
         /// True when the server had more task changes than were included
@@ -33,6 +35,12 @@ namespace NotesApp.Application.Sync.Models
         /// in this response (based on MaxItemsPerEntity).
         /// </summary>
         public bool HasMoreBlocks { get; init; }
+        /// <summary>
+        /// True when the server had more category changes than were included
+        /// in this response (based on DefaultPullMaxCategories).
+        /// </summary>
+        // REFACTORED: added HasMoreCategories pagination flag
+        public bool HasMoreCategories { get; init; }
     }
 
     public sealed record SyncTasksChangesDto
@@ -85,6 +93,12 @@ namespace NotesApp.Application.Sync.Models
         public TimeSpan? TravelTime { get; init; }
 
         public DateTime? ReminderAtUtc { get; init; }
+
+        // REFACTORED: added CategoryId for task categories feature
+        /// <summary>
+        /// Optional category this task belongs to. Null when uncategorised.
+        /// </summary>
+        public Guid? CategoryId { get; init; }
 
         public long Version { get; init; }
 
@@ -188,5 +202,32 @@ namespace NotesApp.Application.Sync.Models
     {
         public Guid Id { get; init; }
         public DateTime DeletedAtUtc { get; init; }
+    }
+
+    // REFACTORED: added category sync DTOs for task categories feature
+
+    /// <summary>
+    /// Category changes bucket returned by the sync pull endpoint.
+    /// Mirrors the structure of other entity change buckets (Tasks, Notes, Blocks).
+    /// </summary>
+    public sealed record SyncCategoriesChangesDto
+    {
+        public IReadOnlyList<CategorySyncItemDto> Created { get; init; } = Array.Empty<CategorySyncItemDto>();
+        public IReadOnlyList<CategorySyncItemDto> Updated { get; init; } = Array.Empty<CategorySyncItemDto>();
+        public IReadOnlyList<DeletedSyncItemDto> Deleted { get; init; } = Array.Empty<DeletedSyncItemDto>();
+    }
+
+    /// <summary>
+    /// Full category representation used in sync payloads.
+    /// Includes Version so clients can detect concurrent renames and
+    /// raise a VersionMismatch conflict on the next push if needed.
+    /// </summary>
+    public sealed record CategorySyncItemDto
+    {
+        public Guid Id { get; init; }
+        public string Name { get; init; } = string.Empty;
+        public long Version { get; init; }
+        public DateTime CreatedAtUtc { get; init; }
+        public DateTime UpdatedAtUtc { get; init; }
     }
 }

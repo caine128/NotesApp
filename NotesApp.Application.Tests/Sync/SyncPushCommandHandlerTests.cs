@@ -23,6 +23,7 @@ namespace NotesApp.Application.Tests.Sync
         private readonly Mock<INoteRepository> _noteRepositoryMock = new();
         private readonly Mock<IBlockRepository> _blockRepositoryMock = new();
         private readonly Mock<IUserDeviceRepository> _deviceRepositoryMock = new();
+        private readonly Mock<ICategoryRepository> _categoryRepositoryMock = new();
         private readonly Mock<IOutboxRepository> _outboxRepositoryMock = new();
         private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
         private readonly Mock<ISystemClock> _clockMock = new();
@@ -63,6 +64,7 @@ namespace NotesApp.Application.Tests.Sync
                 _noteRepositoryMock.Object,
                 _blockRepositoryMock.Object,
                 _deviceRepositoryMock.Object,
+                _categoryRepositoryMock.Object,
                 _outboxRepositoryMock.Object,
                 _unitOfWorkMock.Object,
                 _clockMock.Object,
@@ -1845,6 +1847,7 @@ namespace NotesApp.Application.Tests.Sync
                 new DateOnly(2025, 1, 2),
                 "Test Task",
                 "Description",
+                null,
                 null,
                 null,
                 null,

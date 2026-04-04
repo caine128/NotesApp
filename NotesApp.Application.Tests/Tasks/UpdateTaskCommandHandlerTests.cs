@@ -57,6 +57,7 @@ namespace NotesApp.Application.Tests.Tasks
                 endTime: new TimeOnly(10, 0),
                 location: "Original location",
                 travelTime: TimeSpan.FromMinutes(15),
+                categoryId: null,
                 utcNow: createdAt);
 
             existingTaskResult.IsSuccess.Should().BeTrue();
@@ -70,6 +71,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new UpdateTaskCommandHandler(
                 taskRepository,
+                new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
@@ -164,6 +166,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new UpdateTaskCommandHandler(
                 taskRepository,
+                new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
@@ -220,6 +223,7 @@ namespace NotesApp.Application.Tests.Tasks
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: DateTime.UtcNow);
 
             taskResult.IsSuccess.Should().BeTrue();
@@ -230,6 +234,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new UpdateTaskCommandHandler(
                 taskRepository,
+                new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
@@ -284,6 +289,7 @@ namespace NotesApp.Application.Tests.Tasks
                 endTime: new TimeOnly(10, 0),
                 location: "Loc",
                 travelTime: TimeSpan.FromMinutes(15),
+                categoryId: null,
                 utcNow: DateTime.UtcNow);
 
             taskResult.IsSuccess.Should().BeTrue();
@@ -294,6 +300,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new UpdateTaskCommandHandler(
                 taskRepository,
+                new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
@@ -356,6 +363,7 @@ namespace NotesApp.Application.Tests.Tasks
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: DateTime.UtcNow);
 
             taskResult.IsSuccess.Should().BeTrue();
@@ -369,6 +377,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new UpdateTaskCommandHandler(
                 taskRepository,
+                new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,

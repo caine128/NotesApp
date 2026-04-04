@@ -50,6 +50,7 @@ namespace NotesApp.Application.Tests.Tasks
                 endTime: new TimeOnly(10, 0),
                 location: "Office",
                 travelTime: TimeSpan.FromMinutes(15),
+                categoryId: null,
                 utcNow: DateTime.UtcNow);
 
             createResult.IsSuccess.Should().BeTrue();
@@ -128,6 +129,7 @@ namespace NotesApp.Application.Tests.Tasks
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: DateTime.UtcNow);
 
             createResult.IsSuccess.Should().BeTrue();
@@ -249,6 +251,7 @@ namespace NotesApp.Application.Tests.Tasks
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: DateTime.UtcNow);
 
             createResult.IsSuccess.Should().BeTrue();
@@ -313,6 +316,7 @@ namespace NotesApp.Application.Tests.Tasks
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: DateTime.UtcNow);
 
             createResult.IsSuccess.Should().BeTrue();

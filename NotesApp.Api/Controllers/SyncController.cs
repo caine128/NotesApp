@@ -78,7 +78,8 @@ namespace NotesApp.Api.Controllers
                 ClientSyncTimestampUtc = payload.ClientSyncTimestampUtc,
                 Tasks = payload.Tasks,
                 Notes = payload.Notes,
-                Blocks = payload.Blocks
+                Blocks = payload.Blocks,
+                Categories = payload.Categories // REFACTORED: added category push support
             };
 
             var result = await _mediator.Send(command, cancellationToken);

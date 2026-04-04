@@ -276,10 +276,60 @@ namespace NotesApp.Infrastructure.Migrations
                     b.ToTable("OutboxMessages");
                 });
 
+            modelBuilder.Entity("NotesApp.Domain.Entities.TaskCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("IX_TaskCategories_UserId");
+
+                    b.HasIndex("UserId", "UpdatedAtUtc")
+                        .HasDatabaseName("IX_TaskCategories_UserId_UpdatedAtUtc");
+
+                    b.ToTable("TaskCategories", (string)null);
+                });
+
             modelBuilder.Entity("NotesApp.Domain.Entities.TaskItem", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CategoryId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAtUtc")
@@ -344,7 +394,13 @@ namespace NotesApp.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CategoryId");
+
                     b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "CategoryId")
+                        .HasDatabaseName("IX_Tasks_UserCategory")
+                        .HasFilter("[CategoryId] IS NOT NULL AND [IsDeleted] = 0");
 
                     b.HasIndex("UserId", "Date");
 
@@ -502,6 +558,14 @@ namespace NotesApp.Infrastructure.Migrations
                         .HasForeignKey("NotesApp.Domain.Entities.Asset", "BlockId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("NotesApp.Domain.Entities.TaskItem", b =>
+                {
+                    b.HasOne("NotesApp.Domain.Entities.TaskCategory", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.NoAction);
                 });
 
             modelBuilder.Entity("NotesApp.Domain.Users.UserDevice", b =>

@@ -16,11 +16,14 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 {
     /// <summary>
     /// Handles sync push from client devices:
-    /// - Applies creates/updates/deletes for tasks, notes, and blocks.
+    /// - Applies creates/updates/deletes for tasks, notes, blocks, and categories.
+    /// - Categories are processed BEFORE tasks so within-push CategoryId references resolve.
     /// - Uses Version for optimistic concurrency on updates.
     /// - Always uses "delete wins" semantics for deletes.
     /// - Emits outbox messages for Created / Updated / Deleted events.
-    /// 
+    /// - Category deletes do NOT cascade to tasks server-side; the mobile client sends all
+    ///   affected task updates (CategoryId = null) in the same push payload.
+    ///
     /// Per-item conflicts (version mismatch, not found, etc.) are embedded
     /// directly in each result DTO's Conflict property rather than in a separate list.
     /// </summary>
@@ -32,6 +35,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         private readonly INoteRepository _noteRepository;
         private readonly IBlockRepository _blockRepository;
         private readonly IUserDeviceRepository _deviceRepository;
+        private readonly ICategoryRepository _categoryRepository; // REFACTORED: added for category push processing
         private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISystemClock _clock;
@@ -42,6 +46,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                      INoteRepository noteRepository,
                                      IBlockRepository blockRepository,
                                      IUserDeviceRepository deviceRepository,
+                                     ICategoryRepository categoryRepository,
                                      IOutboxRepository outboxRepository,
                                      IUnitOfWork unitOfWork,
                                      ISystemClock clock,
@@ -52,6 +57,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             _noteRepository = noteRepository;
             _blockRepository = blockRepository;
             _deviceRepository = deviceRepository;
+            _categoryRepository = categoryRepository; // REFACTORED: added for category push processing
             _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _clock = clock;
@@ -91,23 +97,55 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             var blockUpdateResults = new List<BlockUpdatedPushResultDto>();
             var blockDeleteResults = new List<BlockDeletedPushResultDto>();
 
+            // REFACTORED: added category result lists for task categories feature
+            var categoryCreateResults = new List<CategoryCreatedPushResultDto>();
+            var categoryUpdateResults = new List<CategoryUpdatedPushResultDto>();
+            var categoryDeleteResults = new List<CategoryDeletedPushResultDto>();
+
             // Maps client IDs to server IDs for entities created in this push.
             // Used to resolve parent references for blocks.
             var taskClientToServerIds = new Dictionary<Guid, Guid>();
             var noteClientToServerIds = new Dictionary<Guid, Guid>();
 
+            // REFACTORED: categories must be processed BEFORE tasks so that within-push CategoryId
+            // references (task.CategoryId pointing to a category ClientId from the same push) resolve
+            // correctly via categoryClientToServerIds.
+            var categoryClientToServerIds = new Dictionary<Guid, Guid>();
+
+            await ProcessCategoryCreatesAsync(userId,
+                                              request,
+                                              utcNow,
+                                              categoryCreateResults,
+                                              categoryClientToServerIds,
+                                              cancellationToken);
+
+            await ProcessCategoryUpdatesAsync(userId,
+                                              request,
+                                              utcNow,
+                                              categoryUpdateResults,
+                                              cancellationToken);
+
+            await ProcessCategoryDeletesAsync(userId,
+                                              request,
+                                              utcNow,
+                                              categoryDeleteResults,
+                                              cancellationToken);
+
             // Process tasks (collect client->server ID mappings)
+            // Pass categoryClientToServerIds so CategoryId can be resolved for within-push categories.
             await ProcessTaskCreatesAsync(userId,
                                           request,
                                           utcNow,
                                           taskCreateResults,
                                           taskClientToServerIds,
+                                          categoryClientToServerIds, // REFACTORED
                                           cancellationToken);
 
             await ProcessTaskUpdatesAsync(userId,
                                           request,
                                           utcNow,
                                           taskUpdateResults,
+                                          categoryClientToServerIds, // REFACTORED
                                           cancellationToken);
 
             await ProcessTaskDeletesAsync(userId,
@@ -179,6 +217,13 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     Updated = blockUpdateResults,
                     Deleted = blockDeleteResults
                 },
+                // REFACTORED: added category results for task categories feature
+                Categories = new SyncPushCategoriesResultDto
+                {
+                    Created = categoryCreateResults,
+                    Updated = categoryUpdateResults,
+                    Deleted = categoryDeleteResults
+                },
             };
 
             return Result.Ok(resultDto);
@@ -196,10 +241,47 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                    DateTime utcNow,
                                                    List<TaskCreatedPushResultDto> results,
                                                    Dictionary<Guid, Guid> clientToServerIds,
+                                                   Dictionary<Guid, Guid> categoryClientToServerIds, // REFACTORED: within-push category resolution
                                                    CancellationToken cancellationToken)
         {
             foreach (var item in request.Tasks.Created)
             {
+                // REFACTORED: resolve CategoryId — if it's a within-push client Id, map it to the
+                // server Id that ProcessCategoryCreatesAsync stored in categoryClientToServerIds.
+                // Otherwise treat it as a server-side Id and validate ownership below.
+                Guid? resolvedCategoryId = null;
+                if (item.CategoryId.HasValue)
+                {
+                    if (categoryClientToServerIds.TryGetValue(item.CategoryId.Value, out var mappedServerId))
+                    {
+                        resolvedCategoryId = mappedServerId;
+                    }
+                    else
+                    {
+                        // It's a server-side Id — load and check ownership
+                        var category = await _categoryRepository.GetByIdUntrackedAsync(item.CategoryId.Value, cancellationToken);
+                        if (category is null || category.UserId != userId)
+                        {
+                            results.Add(new TaskCreatedPushResultDto
+                            {
+                                ClientId = item.ClientId,
+                                ServerId = Guid.Empty,
+                                Version = 0,
+                                Status = SyncPushCreatedStatus.Failed,
+                                Conflict = new SyncPushConflictDetailDto
+                                {
+                                    ConflictType = SyncConflictType.ValidationFailed,
+                                    Errors = new[] { "Category not found or does not belong to you." }
+                                }
+                            });
+
+                            continue;
+                        }
+
+                        resolvedCategoryId = item.CategoryId.Value;
+                    }
+                }
+
                 var createResult = TaskItem.Create(userId,
                                                    item.Date,
                                                    item.Title,
@@ -208,6 +290,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                    item.EndTime,
                                                    item.Location,
                                                    item.TravelTime,
+                                                   resolvedCategoryId, // REFACTORED: pass resolved CategoryId
                                                    utcNow);
 
                 if (createResult.IsFailure)
@@ -302,6 +385,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                    SyncPushCommand request,
                                                    DateTime utcNow,
                                                    List<TaskUpdatedPushResultDto> results,
+                                                   Dictionary<Guid, Guid> categoryClientToServerIds, // REFACTORED: within-push category resolution
                                                    CancellationToken cancellationToken)
         {
             foreach (var item in request.Tasks.Updated)
@@ -360,6 +444,38 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
+                // REFACTORED: resolve CategoryId for within-push category references
+                Guid? resolvedCategoryId = null;
+                if (item.CategoryId.HasValue)
+                {
+                    if (categoryClientToServerIds.TryGetValue(item.CategoryId.Value, out var mappedServerId))
+                    {
+                        resolvedCategoryId = mappedServerId;
+                    }
+                    else
+                    {
+                        var category = await _categoryRepository.GetByIdUntrackedAsync(item.CategoryId.Value, cancellationToken);
+                        if (category is null || category.UserId != userId)
+                        {
+                            results.Add(new TaskUpdatedPushResultDto
+                            {
+                                Id = item.Id,
+                                NewVersion = null,
+                                Status = SyncPushUpdatedStatus.Failed,
+                                Conflict = new SyncPushConflictDetailDto
+                                {
+                                    ConflictType = SyncConflictType.ValidationFailed,
+                                    Errors = new[] { "Category not found or does not belong to you." }
+                                }
+                            });
+
+                            continue;
+                        }
+
+                        resolvedCategoryId = item.CategoryId.Value;
+                    }
+                }
+
                 // Modify entity in memory (NOT tracked, won't auto-persist)
                 var updateResult = task.Update(item.Title,
                                                item.Date,
@@ -368,6 +484,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                item.EndTime,
                                                item.Location,
                                                item.TravelTime,
+                                               resolvedCategoryId, // REFACTORED: pass resolved CategoryId
                                                utcNow);
 
                 if (updateResult.IsFailure)
@@ -1264,6 +1381,325 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new BlockDeletedPushResultDto
+                {
+                    Id = item.Id,
+                    Status = SyncPushDeletedStatus.Deleted
+                });
+            }
+        }
+
+        // ------------------------
+        // REFACTORED: Category processing (task categories feature)
+        // ------------------------
+
+        /// <summary>
+        /// Processes category creates from the push payload.
+        /// Populates <paramref name="categoryClientToServerIds"/> so subsequent task processing
+        /// can resolve CategoryId references to within-push categories.
+        /// </summary>
+        private async Task ProcessCategoryCreatesAsync(Guid userId,
+                                                       SyncPushCommand request,
+                                                       DateTime utcNow,
+                                                       List<CategoryCreatedPushResultDto> results,
+                                                       Dictionary<Guid, Guid> categoryClientToServerIds,
+                                                       CancellationToken cancellationToken)
+        {
+            foreach (var item in request.Categories.Created)
+            {
+                var createResult = TaskCategory.Create(userId, item.Name, utcNow);
+
+                if (createResult.IsFailure)
+                {
+                    results.Add(new CategoryCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        ServerId = Guid.Empty,
+                        Version = 0,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = createResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var category = createResult.Value;
+
+                var payload = JsonSerializer.Serialize(new
+                {
+                    CategoryId = category.Id,
+                    category.UserId,
+                    category.Name,
+                    category.Version,
+                    Event = TaskCategoryEventType.Created.ToString(),
+                    OccurredAtUtc = utcNow
+                });
+
+                var outboxResult = OutboxMessage.Create<TaskCategory, TaskCategoryEventType>(
+                    category,
+                    TaskCategoryEventType.Created,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new CategoryCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        ServerId = Guid.Empty,
+                        Version = 0,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                await _categoryRepository.AddAsync(category, cancellationToken);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                // Store mapping so task creates/updates in this push can resolve CategoryId
+                categoryClientToServerIds[item.ClientId] = category.Id;
+
+                results.Add(new CategoryCreatedPushResultDto
+                {
+                    ClientId = item.ClientId,
+                    ServerId = category.Id,
+                    Version = category.Version,
+                    Status = SyncPushCreatedStatus.Created
+                });
+            }
+        }
+
+        /// <summary>
+        /// Processes category updates (renames) from the push payload.
+        /// Returns a VersionMismatch conflict when the client's ExpectedVersion doesn't match.
+        /// </summary>
+        private async Task ProcessCategoryUpdatesAsync(Guid userId,
+                                                       SyncPushCommand request,
+                                                       DateTime utcNow,
+                                                       List<CategoryUpdatedPushResultDto> results,
+                                                       CancellationToken cancellationToken)
+        {
+            foreach (var item in request.Categories.Updated)
+            {
+                var category = await _categoryRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+
+                if (category is null || category.UserId != userId)
+                {
+                    results.Add(new CategoryUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = null,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.NotFound
+                        }
+                    });
+
+                    continue;
+                }
+
+                if (category.IsDeleted)
+                {
+                    results.Add(new CategoryUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = null,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.DeletedOnServer
+                        }
+                    });
+
+                    continue;
+                }
+
+                if (category.Version != item.ExpectedVersion)
+                {
+                    results.Add(new CategoryUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = category.Version,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.VersionMismatch,
+                            ClientVersion = item.ExpectedVersion,
+                            ServerVersion = category.Version,
+                            ServerCategory = category.ToSyncDto()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var updateResult = category.Update(item.Name, utcNow);
+
+                if (updateResult.IsFailure)
+                {
+                    results.Add(new CategoryUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = category.Version,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            ClientVersion = item.ExpectedVersion,
+                            ServerVersion = category.Version,
+                            Errors = updateResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var payload = JsonSerializer.Serialize(new
+                {
+                    CategoryId = category.Id,
+                    category.UserId,
+                    category.Name,
+                    category.Version,
+                    Event = TaskCategoryEventType.Updated.ToString(),
+                    OccurredAtUtc = utcNow
+                });
+
+                var outboxResult = OutboxMessage.Create<TaskCategory, TaskCategoryEventType>(
+                    category,
+                    TaskCategoryEventType.Updated,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new CategoryUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = null,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                _categoryRepository.Update(category);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                results.Add(new CategoryUpdatedPushResultDto
+                {
+                    Id = item.Id,
+                    NewVersion = category.Version,
+                    Status = SyncPushUpdatedStatus.Updated
+                });
+            }
+        }
+
+        /// <summary>
+        /// Processes category deletes from the push payload.
+        /// Uses "delete wins" semantics — no cascade to tasks server-side.
+        /// The mobile client is responsible for sending all affected task updates
+        /// (CategoryId = null, incremented version) in the same push payload.
+        /// </summary>
+        private async Task ProcessCategoryDeletesAsync(Guid userId,
+                                                       SyncPushCommand request,
+                                                       DateTime utcNow,
+                                                       List<CategoryDeletedPushResultDto> results,
+                                                       CancellationToken cancellationToken)
+        {
+            foreach (var item in request.Categories.Deleted)
+            {
+                var category = await _categoryRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+
+                if (category is null || category.UserId != userId)
+                {
+                    results.Add(new CategoryDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.NotFound
+                    });
+
+                    continue;
+                }
+
+                if (category.IsDeleted)
+                {
+                    results.Add(new CategoryDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.AlreadyDeleted
+                    });
+
+                    continue;
+                }
+
+                var payload = JsonSerializer.Serialize(new
+                {
+                    CategoryId = category.Id,
+                    category.UserId,
+                    category.Name,
+                    category.Version,
+                    Event = TaskCategoryEventType.Deleted.ToString(),
+                    OccurredAtUtc = utcNow
+                });
+
+                var outboxResult = OutboxMessage.Create<TaskCategory, TaskCategoryEventType>(
+                    category,
+                    TaskCategoryEventType.Deleted,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new CategoryDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var deleteResult = category.SoftDelete(utcNow);
+                if (deleteResult.IsFailure)
+                {
+                    results.Add(new CategoryDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = deleteResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                _categoryRepository.Update(category);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                results.Add(new CategoryDeletedPushResultDto
                 {
                     Id = item.Id,
                     Status = SyncPushDeletedStatus.Deleted

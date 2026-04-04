@@ -119,6 +119,7 @@ namespace NotesApp.Application.Tests.Tasks
                 null,
                 null,
                 null,
+                null,
                 utcNow);
 
             createResult.IsSuccess.Should().BeTrue();
@@ -136,6 +137,7 @@ namespace NotesApp.Application.Tests.Tasks
                 new DateOnly(2025, 1, 2),
                 "Title",
                 "Desc",
+                null,
                 null,
                 null,
                 null,

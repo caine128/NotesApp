@@ -50,5 +50,12 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
         /// Optional reminder time in UTC.
         /// </summary>
         public DateTime? ReminderAtUtc { get; init; }
+
+        /// <summary>
+        /// Optional id of the user-defined category to assign to this task.
+        /// Must be a non-empty GUID when provided, and must belong to the current user.
+        /// Pass null to create an uncategorized task.
+        /// </summary>
+        public Guid? CategoryId { get; init; }
     }
 }

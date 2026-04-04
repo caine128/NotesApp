@@ -11,5 +11,6 @@ namespace NotesApp.Application.Tasks.Models
                                         TimeOnly? EndTime,
                                         bool IsCompleted,
                                         string? Location,
-                                        TimeSpan? TravelTime);
+                                        TimeSpan? TravelTime,
+                                        Guid? CategoryId);
 }

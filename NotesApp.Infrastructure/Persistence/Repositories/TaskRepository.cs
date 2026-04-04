@@ -97,6 +97,28 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
                 .ToListAsync(cancellationToken);
         }
 
+        // REFACTORED: added ClearCategoryFromTasksAsync for task categories feature
+
+        /// <inheritdoc />
+        public async Task ClearCategoryFromTasksAsync(Guid categoryId,
+                                                      Guid userId,
+                                                      DateTime utcNow,
+                                                      CancellationToken cancellationToken = default)
+        {
+            // Bulk UPDATE using ExecuteUpdateAsync — does NOT load entities into memory.
+            // Increments Version so that any stale push attempt from a mobile client
+            // that still holds the old CategoryId receives a VersionMismatch conflict.
+            await _context.Tasks
+                .Where(t => t.UserId == userId
+                            && t.CategoryId == categoryId
+                            && !t.IsDeleted)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(t => t.CategoryId, (Guid?)null)
+                    .SetProperty(t => t.Version, t => t.Version + 1)
+                    .SetProperty(t => t.UpdatedAtUtc, utcNow),
+                    cancellationToken);
+        }
+
         public async Task<List<TaskItem>> GetOverdueRemindersAsync(DateTime utcNow,
                                                                    int maxResults,
                                                                    CancellationToken cancellationToken = default)

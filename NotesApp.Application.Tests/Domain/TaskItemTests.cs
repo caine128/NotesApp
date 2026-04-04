@@ -26,6 +26,7 @@ namespace NotesApp.Application.Tests.Domain
                 endTime: new TimeOnly(10, 0),
                 location: "  Office  ",
                 travelTime: TimeSpan.FromMinutes(15),
+                categoryId: null,
                 utcNow: now);
 
             // Assert
@@ -63,6 +64,7 @@ namespace NotesApp.Application.Tests.Domain
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: now);
 
             // Assert
@@ -84,6 +86,7 @@ namespace NotesApp.Application.Tests.Domain
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: now);
 
             result.IsSuccess.Should().BeTrue();
@@ -106,6 +109,7 @@ namespace NotesApp.Application.Tests.Domain
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: now);
 
             result.IsSuccess.Should().BeTrue();
@@ -123,6 +127,7 @@ namespace NotesApp.Application.Tests.Domain
                 endTime: new TimeOnly(9, 0),
                 location: "Home",
                 travelTime: TimeSpan.FromMinutes(5),
+                categoryId: null,
                 utcNow: now.AddMinutes(1));
 
             updateResult.IsSuccess.Should().BeTrue();
@@ -160,6 +165,7 @@ namespace NotesApp.Application.Tests.Domain
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: now);
 
             result.IsSuccess.Should().BeTrue();
@@ -204,6 +210,7 @@ namespace NotesApp.Application.Tests.Domain
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: now);
 
             result.IsSuccess.Should().BeTrue();
@@ -244,6 +251,7 @@ namespace NotesApp.Application.Tests.Domain
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: now);
 
             result.IsSuccess.Should().BeTrue();
@@ -280,6 +288,7 @@ namespace NotesApp.Application.Tests.Domain
                 endTime: null,
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: now);
 
             result.IsSuccess.Should().BeTrue();

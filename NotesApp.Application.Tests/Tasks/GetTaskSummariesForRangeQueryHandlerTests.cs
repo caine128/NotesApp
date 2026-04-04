@@ -35,23 +35,23 @@ namespace NotesApp.Application.Tests.Tasks
 
             // Tasks for current user in range at different dates and times
             var t1 = TaskItem.Create(userId, new DateOnly(2025, 2, 20),
-                "D20-09", null, new TimeOnly(9, 0), new TimeOnly(10, 0), null, null, DateTime.UtcNow).Value!;
+                "D20-09", null, new TimeOnly(9, 0), new TimeOnly(10, 0), null, null, null, DateTime.UtcNow).Value!;
             var t2 = TaskItem.Create(userId, new DateOnly(2025, 2, 21),
-                "D21-08", null, new TimeOnly(8, 0), new TimeOnly(9, 0), null, null, DateTime.UtcNow).Value!;
+                "D21-08", null, new TimeOnly(8, 0), new TimeOnly(9, 0), null, null, null, DateTime.UtcNow).Value!;
             var t3 = TaskItem.Create(userId, new DateOnly(2025, 2, 21),
-                "D21-10", null, new TimeOnly(10, 0), new TimeOnly(11, 0), null, null, DateTime.UtcNow).Value!;
+                "D21-10", null, new TimeOnly(10, 0), new TimeOnly(11, 0), null, null, null, DateTime.UtcNow).Value!;
             var t4 = TaskItem.Create(userId, new DateOnly(2025, 2, 22),
-                "D22-07", null, new TimeOnly(7, 0), new TimeOnly(8, 0), null, null, DateTime.UtcNow).Value!;
+                "D22-07", null, new TimeOnly(7, 0), new TimeOnly(8, 0), null, null, null, DateTime.UtcNow).Value!;
 
             // Out-of-range tasks for current user
             var beforeRange = TaskItem.Create(userId, new DateOnly(2025, 2, 19),
-                "Before", null, null, null, null, null, DateTime.UtcNow).Value!;
+                "Before", null, null, null, null, null, null, DateTime.UtcNow).Value!;
             var afterRange = TaskItem.Create(userId, new DateOnly(2025, 2, 23),
-                "After", null, null, null, null, null, DateTime.UtcNow).Value!;
+                "After", null, null, null, null, null, null, DateTime.UtcNow).Value!;
 
             // In-range, other user
             var otherUserTask = TaskItem.Create(otherUserId, new DateOnly(2025, 2, 21),
-                "OtherUser", null, new TimeOnly(6, 0), new TimeOnly(7, 0), null, null, DateTime.UtcNow).Value!;
+                "OtherUser", null, new TimeOnly(6, 0), new TimeOnly(7, 0), null, null, null, DateTime.UtcNow).Value!;
 
             await context.Tasks.AddRangeAsync(
                 t1, t2, t3, t4,

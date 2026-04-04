@@ -70,6 +70,15 @@ namespace NotesApp.Domain.Entities
         /// </summary>
         public DateTime? ReminderSentAtUtc { get; private set; }
 
+        /// <summary>
+        /// Optional reference to the user-defined category this task belongs to.
+        /// Null when the task is uncategorized.
+        /// The CategoryId FK is retained even when the referenced category is soft-deleted;
+        /// the server's REST delete path nullifies affected tasks via ClearCategoryFromTasksAsync,
+        /// while the sync push path delegates that responsibility to the mobile client.
+        /// </summary>
+        public Guid? CategoryId { get; private set; }
+
         private TaskItem()
         {
         }
@@ -83,6 +92,7 @@ namespace NotesApp.Domain.Entities
                          TimeOnly? endTime,
                          string? location,
                          TimeSpan? travelTime,
+                         Guid? categoryId,
                          DateTime utcNow)
             : base(id, utcNow)
         {
@@ -94,6 +104,7 @@ namespace NotesApp.Domain.Entities
             EndTime = endTime;
             Location = location;
             TravelTime = travelTime;
+            CategoryId = categoryId;
             IsCompleted = false;
             Version = 1;
         }
@@ -108,6 +119,7 @@ namespace NotesApp.Domain.Entities
                                                    TimeOnly? endTime,
                                                    string? location,
                                                    TimeSpan? travelTime,
+                                                   Guid? categoryId,
                                                    DateTime utcNow)
         {
             var errors = new List<DomainError>();
@@ -154,6 +166,7 @@ namespace NotesApp.Domain.Entities
                                     endTime,
                                     normalizedLocation,
                                     travelTime,
+                                    categoryId,
                                     utcNow);
 
             return DomainResult<TaskItem>.Success(task);
@@ -168,6 +181,7 @@ namespace NotesApp.Domain.Entities
                                     TimeOnly? endTime,
                                     string? location,
                                     TimeSpan? travelTime,
+                                    Guid? categoryId,
                                     DateTime utcNow)
         {
             var errors = new List<DomainError>();
@@ -209,6 +223,7 @@ namespace NotesApp.Domain.Entities
             EndTime = endTime;
             Location = normalizedLocation;
             TravelTime = travelTime;
+            CategoryId = categoryId;
 
             IncrementVersion();
             Touch(utcNow);

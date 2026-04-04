@@ -26,6 +26,7 @@ namespace NotesApp.Application.Tests.Sync
         private readonly Mock<IBlockRepository> _blockRepositoryMock = new();
         private readonly Mock<IAssetRepository> _assetRepositoryMock = new();
         private readonly Mock<IUserDeviceRepository> _deviceRepositoryMock = new();
+        private readonly Mock<ICategoryRepository> _categoryRepositoryMock = new();
         private readonly Mock<ICurrentUserService> _currentUserServiceMock = new();
         private readonly Mock<ILogger<GetSyncChangesQueryHandler>> _loggerMock = new();
 
@@ -52,6 +53,7 @@ namespace NotesApp.Application.Tests.Sync
                 _blockRepositoryMock.Object,
                 _assetRepositoryMock.Object,
                 _deviceRepositoryMock.Object,
+                _categoryRepositoryMock.Object,
                 _currentUserServiceMock.Object,
                 _loggerMock.Object);
         }
@@ -563,6 +565,7 @@ namespace NotesApp.Application.Tests.Sync
                 new DateOnly(2025, 1, 2),
                 "Task",
                 "Desc",
+                null,
                 null,
                 null,
                 null,
