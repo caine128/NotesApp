@@ -38,7 +38,7 @@ namespace NotesApp.Application.Tests.Sync
                 .Setup(s => s.GetUserIdAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(_userId);
 
-            // Setup empty returns for block and asset repositories by default
+            // Setup empty returns for block, asset and category repositories
             _blockRepositoryMock
                 .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
                 .Returns(Task.FromResult<IReadOnlyList<Block>>(new List<Block>()));
@@ -46,6 +46,10 @@ namespace NotesApp.Application.Tests.Sync
             _assetRepositoryMock
                 .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
                 .Returns(Task.FromResult<IReadOnlyList<Asset>>(new List<Asset>()));
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<TaskCategory>());
 
             return new GetSyncChangesQueryHandler(
                 _taskRepositoryMock.Object,
