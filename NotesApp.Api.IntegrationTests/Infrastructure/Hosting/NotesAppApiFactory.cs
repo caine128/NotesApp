@@ -3,13 +3,9 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.VisualStudio.TestPlatform.TestHost;
 using NotesApp.Api.IntegrationTests.Infrastructure.Auth;
 using NotesApp.Api.IntegrationTests.Infrastructure.Storage;
 using NotesApp.Application.Abstractions.Storage;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace NotesApp.Api.IntegrationTests.Infrastructure.Hosting
 {
@@ -19,30 +15,42 @@ namespace NotesApp.Api.IntegrationTests.Infrastructure.Hosting
     /// - Replaces real authentication with TestAuthHandler for tests.
     /// - Replaces real Azure blob storage with FakeBlobStorageService for tests.
     /// - Exposes helpers to create HttpClient instances as specific fake users.
+    ///
+    /// Subclasses can override UseFakeBlobStorage to opt into the real Azure
+    /// blob storage instead (see AzureNotesAppApiFactory).
     /// </summary>
-    public  class NotesAppApiFactory : WebApplicationFactory<Program>
+    public class NotesAppApiFactory : WebApplicationFactory<Program>
     {
-
         private const string RequiredScope =
-    "api://d1047ffd-a054-4a9f-aeb0-198996f0c0c6/notes.readwrite";
+            "api://d1047ffd-a054-4a9f-aeb0-198996f0c0c6/notes.readwrite";
+
+        // REFACTORED: Extracted as a virtual property so subclasses can opt out
+        // of the fake and use the real AzureBlobStorageService instead.
+        protected virtual bool UseFakeBlobStorage => true;
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.ConfigureTestServices(services =>
             {
+                // Always replace authentication with the test scheme.
                 services.AddAuthentication(defaultScheme: TestAuthHandler.SchemeName)
                         .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
                             TestAuthHandler.SchemeName,
-                            options => { /* no special options needed */ });
+                            options => { });
 
-                // Replace real Azure blob storage with an in-memory fake so that
-                // asset upload tests work without Azure credentials.
-                var blobDescriptor = services.SingleOrDefault(
-                    d => d.ServiceType == typeof(IBlobStorageService));
-                if (blobDescriptor != null)
-                    services.Remove(blobDescriptor);
+                // REFACTORED: Only substitute the fake when the subclass hasn't
+                // opted into real Azure storage. This allows AzureNotesAppApiFactory
+                // to use the real AzureBlobStorageService without duplicating
+                // the auth setup.
+                if (UseFakeBlobStorage)
+                {
+                    var blobDescriptor = services.SingleOrDefault(
+                        d => d.ServiceType == typeof(IBlobStorageService));
+                    if (blobDescriptor != null)
+                        services.Remove(blobDescriptor);
 
-                services.AddSingleton<IBlobStorageService, FakeBlobStorageService>();
+                    services.AddSingleton<IBlobStorageService, FakeBlobStorageService>();
+                }
             });
         }
 
