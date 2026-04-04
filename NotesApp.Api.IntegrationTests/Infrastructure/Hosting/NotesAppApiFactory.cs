@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestPlatform.TestHost;
 using NotesApp.Api.IntegrationTests.Infrastructure.Auth;
+using NotesApp.Api.IntegrationTests.Infrastructure.Storage;
+using NotesApp.Application.Abstractions.Storage;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -15,6 +17,7 @@ namespace NotesApp.Api.IntegrationTests.Infrastructure.Hosting
     /// Custom WebApplicationFactory that:
     /// - Starts the real NotesApp.Api application (Program).
     /// - Replaces real authentication with TestAuthHandler for tests.
+    /// - Replaces real Azure blob storage with FakeBlobStorageService for tests.
     /// - Exposes helpers to create HttpClient instances as specific fake users.
     /// </summary>
     public  class NotesAppApiFactory : WebApplicationFactory<Program>
@@ -25,17 +28,21 @@ namespace NotesApp.Api.IntegrationTests.Infrastructure.Hosting
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            // ConfigureTestServices is the recommended way to override services
-            // just for the test host. We override authentication here.
             builder.ConfigureTestServices(services =>
             {
-                // Remove any existing authentication configuration if needed
-                // (usually not required, but safe to ensure our scheme becomes default).
-
                 services.AddAuthentication(defaultScheme: TestAuthHandler.SchemeName)
                         .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
                             TestAuthHandler.SchemeName,
                             options => { /* no special options needed */ });
+
+                // Replace real Azure blob storage with an in-memory fake so that
+                // asset upload tests work without Azure credentials.
+                var blobDescriptor = services.SingleOrDefault(
+                    d => d.ServiceType == typeof(IBlobStorageService));
+                if (blobDescriptor != null)
+                    services.Remove(blobDescriptor);
+
+                services.AddSingleton<IBlobStorageService, FakeBlobStorageService>();
             });
         }
 
