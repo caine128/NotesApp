@@ -504,6 +504,91 @@ namespace NotesApp.Application.Tests.Sync
         }
 
         [Fact]
+        public async Task Handle_initial_sync_includes_categories_as_created()
+        {
+            // Arrange
+            var since = (DateTime?)null;
+            var now = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler(); // Sets default empty returns for block/asset/category
+
+            // Override category repo AFTER CreateHandler
+            var category = CreateCategory(_userId, now, isDeleted: false);
+            _categoryRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<TaskCategory> { category });
+
+            var query = new GetSyncChangesQuery(SinceUtc: null, DeviceId: null, MaxItemsPerEntity: null);
+
+            // Act
+            var result = await handler.Handle(query, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            var dto = result.Value;
+
+            dto.Categories.Created.Should().ContainSingle(c => c.Id == category.Id);
+            dto.Categories.Updated.Should().BeEmpty();
+            dto.Categories.Deleted.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Handle_incremental_sync_categorises_categories_into_created_updated_deleted()
+        {
+            // Arrange
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var createdCategory = CreateCategory(_userId,
+                createdAt: since.AddMinutes(1),
+                updatedAt: since.AddMinutes(1),
+                isDeleted: false);
+
+            var updatedCategory = CreateCategory(_userId,
+                createdAt: since.AddMinutes(-10),
+                updatedAt: since.AddMinutes(2),
+                isDeleted: false);
+
+            var deletedCategory = CreateCategory(_userId,
+                createdAt: since.AddMinutes(-20),
+                updatedAt: since.AddMinutes(3),
+                isDeleted: true);
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<TaskCategory> { createdCategory, updatedCategory, deletedCategory });
+
+            var query = new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: null);
+
+            // Act
+            var result = await handler.Handle(query, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            var dto = result.Value;
+
+            dto.Categories.Created.Should().ContainSingle(c => c.Id == createdCategory.Id);
+            dto.Categories.Updated.Should().ContainSingle(c => c.Id == updatedCategory.Id);
+            dto.Categories.Deleted.Should().ContainSingle(c => c.Id == deletedCategory.Id);
+            dto.Categories.Deleted[0].DeletedAtUtc.Should().Be(deletedCategory.UpdatedAtUtc);
+        }
+
+        [Fact]
         public async Task Handle_with_MaxItemsPerEntity_truncates_blocks_independently()
         {
             // Arrange
@@ -674,6 +759,39 @@ namespace NotesApp.Application.Tests.Sync
             }
 
             return block;
+        }
+
+        private static TaskCategory CreateCategory(
+            Guid userId,
+            DateTime createdAt,
+            bool isDeleted)
+        {
+            return CreateCategory(userId, createdAt, createdAt, isDeleted);
+        }
+
+        private static TaskCategory CreateCategory(
+            Guid userId,
+            DateTime createdAt,
+            DateTime updatedAt,
+            bool isDeleted)
+        {
+            var result = TaskCategory.Create(userId, "Work", createdAt);
+            result.IsSuccess.Should().BeTrue();
+            var category = result.Value!;
+
+            typeof(TaskCategory).GetProperty(nameof(TaskCategory.CreatedAtUtc))!
+                .SetValue(category, createdAt);
+
+            typeof(TaskCategory).GetProperty(nameof(TaskCategory.UpdatedAtUtc))!
+                .SetValue(category, updatedAt);
+
+            if (isDeleted)
+            {
+                typeof(TaskCategory).GetProperty(nameof(TaskCategory.IsDeleted))!
+                    .SetValue(category, true);
+            }
+
+            return category;
         }
 
         private static Asset CreateAsset(

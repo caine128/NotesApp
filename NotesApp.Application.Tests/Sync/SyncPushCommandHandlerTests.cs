@@ -1642,6 +1642,490 @@ namespace NotesApp.Application.Tests.Sync
 
         #endregion
 
+        #region Category Create Tests
+
+        [Fact]
+        public async Task Handle_CategoryCreate_Success_ReturnsCreatedWithServerIdAndVersion()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var clientId = Guid.NewGuid();
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Categories = new SyncPushCategoriesDto
+                {
+                    Created = new[]
+                    {
+                        new CategoryCreatedPushItemDto
+                        {
+                            ClientId = clientId,
+                            Name = "Work"
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var categoryResult = result.Value.Categories.Created.Should().ContainSingle().Subject;
+            categoryResult.ClientId.Should().Be(clientId);
+            categoryResult.ServerId.Should().NotBeEmpty();
+            categoryResult.Version.Should().Be(1);
+            categoryResult.Status.Should().Be(SyncPushCreatedStatus.Created);
+            categoryResult.Conflict.Should().BeNull();
+
+            _categoryRepositoryMock.Verify(
+                r => r.AddAsync(It.IsAny<TaskCategory>(), It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task Handle_CategoryCreate_EmptyName_ReturnsFailedWithValidationConflict()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var clientId = Guid.NewGuid();
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Categories = new SyncPushCategoriesDto
+                {
+                    Created = new[]
+                    {
+                        new CategoryCreatedPushItemDto
+                        {
+                            ClientId = clientId,
+                            Name = "" // empty name fails domain validation
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var categoryResult = result.Value.Categories.Created.Should().ContainSingle().Subject;
+            categoryResult.ClientId.Should().Be(clientId);
+            categoryResult.ServerId.Should().Be(Guid.Empty);
+            categoryResult.Status.Should().Be(SyncPushCreatedStatus.Failed);
+            categoryResult.Conflict.Should().NotBeNull();
+            categoryResult.Conflict!.ConflictType.Should().Be(SyncConflictType.ValidationFailed);
+
+            _categoryRepositoryMock.Verify(
+                r => r.AddAsync(It.IsAny<TaskCategory>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        #endregion
+
+        #region Category Update Tests
+
+        [Fact]
+        public async Task Handle_CategoryUpdate_Success_ReturnsUpdatedWithNewVersion()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var categoryId = Guid.NewGuid();
+
+            var existingCategory = CreateCategory(_userId, _now);
+            SetEntityId(existingCategory, categoryId);
+            SetEntityVersion(existingCategory, 1L);
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(existingCategory);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Categories = new SyncPushCategoriesDto
+                {
+                    Updated = new[]
+                    {
+                        new CategoryUpdatedPushItemDto
+                        {
+                            Id = categoryId,
+                            ExpectedVersion = 1,
+                            Name = "Lifestyle"
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var categoryResult = result.Value.Categories.Updated.Should().ContainSingle().Subject;
+            categoryResult.Id.Should().Be(categoryId);
+            categoryResult.NewVersion.Should().BeGreaterThan(1);
+            categoryResult.Status.Should().Be(SyncPushUpdatedStatus.Updated);
+            categoryResult.Conflict.Should().BeNull();
+
+            _outboxRepositoryMock.Verify(
+                r => r.AddAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task Handle_CategoryUpdate_NotFound_ReturnsFailedWithNotFoundConflict()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var categoryId = Guid.NewGuid();
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((TaskCategory?)null);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Categories = new SyncPushCategoriesDto
+                {
+                    Updated = new[]
+                    {
+                        new CategoryUpdatedPushItemDto
+                        {
+                            Id = categoryId,
+                            ExpectedVersion = 1,
+                            Name = "Lifestyle"
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var categoryResult = result.Value.Categories.Updated.Should().ContainSingle().Subject;
+            categoryResult.Status.Should().Be(SyncPushUpdatedStatus.Failed);
+            categoryResult.Conflict!.ConflictType.Should().Be(SyncConflictType.NotFound);
+        }
+
+        [Fact]
+        public async Task Handle_CategoryUpdate_VersionMismatch_ReturnsFailedWithVersionMismatchConflict()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var categoryId = Guid.NewGuid();
+
+            var serverCategory = CreateCategory(_userId, _now);
+            SetEntityId(serverCategory, categoryId);
+            SetEntityVersion(serverCategory, 5L); // server is at version 5
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(serverCategory);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Categories = new SyncPushCategoriesDto
+                {
+                    Updated = new[]
+                    {
+                        new CategoryUpdatedPushItemDto
+                        {
+                            Id = categoryId,
+                            ExpectedVersion = 2, // client expects version 2 — mismatch
+                            Name = "Lifestyle"
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var categoryResult = result.Value.Categories.Updated.Should().ContainSingle().Subject;
+            categoryResult.Status.Should().Be(SyncPushUpdatedStatus.Failed);
+            categoryResult.Conflict!.ConflictType.Should().Be(SyncConflictType.VersionMismatch);
+            categoryResult.Conflict.ClientVersion.Should().Be(2);
+            categoryResult.Conflict.ServerVersion.Should().Be(5);
+            categoryResult.Conflict.ServerCategory.Should().NotBeNull();
+
+            _outboxRepositoryMock.Verify(
+                r => r.AddAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task Handle_CategoryUpdate_DeletedOnServer_ReturnsFailedWithDeletedOnServerConflict()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var categoryId = Guid.NewGuid();
+
+            var deletedCategory = CreateCategory(_userId, _now);
+            SetEntityId(deletedCategory, categoryId);
+            deletedCategory.SoftDelete(_now);
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(deletedCategory);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Categories = new SyncPushCategoriesDto
+                {
+                    Updated = new[]
+                    {
+                        new CategoryUpdatedPushItemDto
+                        {
+                            Id = categoryId,
+                            ExpectedVersion = 1,
+                            Name = "Lifestyle"
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var categoryResult = result.Value.Categories.Updated.Should().ContainSingle().Subject;
+            categoryResult.Status.Should().Be(SyncPushUpdatedStatus.Failed);
+            categoryResult.Conflict!.ConflictType.Should().Be(SyncConflictType.DeletedOnServer);
+        }
+
+        #endregion
+
+        #region Category Delete Tests
+
+        [Fact]
+        public async Task Handle_CategoryDelete_Success_ReturnsDeleted()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var categoryId = Guid.NewGuid();
+
+            var existingCategory = CreateCategory(_userId, _now);
+            SetEntityId(existingCategory, categoryId);
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(existingCategory);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Categories = new SyncPushCategoriesDto
+                {
+                    Deleted = new[] { new CategoryDeletedPushItemDto { Id = categoryId } }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var categoryResult = result.Value.Categories.Deleted.Should().ContainSingle().Subject;
+            categoryResult.Id.Should().Be(categoryId);
+            categoryResult.Status.Should().Be(SyncPushDeletedStatus.Deleted);
+            categoryResult.Conflict.Should().BeNull();
+        }
+
+        [Fact]
+        public async Task Handle_CategoryDelete_NotFound_ReturnsNotFound()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var categoryId = Guid.NewGuid();
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((TaskCategory?)null);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Categories = new SyncPushCategoriesDto
+                {
+                    Deleted = new[] { new CategoryDeletedPushItemDto { Id = categoryId } }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var categoryResult = result.Value.Categories.Deleted.Should().ContainSingle().Subject;
+            categoryResult.Status.Should().Be(SyncPushDeletedStatus.NotFound);
+            categoryResult.Conflict.Should().BeNull();
+        }
+
+        [Fact]
+        public async Task Handle_CategoryDelete_AlreadyDeleted_ReturnsAlreadyDeleted()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var categoryId = Guid.NewGuid();
+
+            var deletedCategory = CreateCategory(_userId, _now);
+            SetEntityId(deletedCategory, categoryId);
+            deletedCategory.SoftDelete(_now);
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(deletedCategory);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Categories = new SyncPushCategoriesDto
+                {
+                    Deleted = new[] { new CategoryDeletedPushItemDto { Id = categoryId } }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var categoryResult = result.Value.Categories.Deleted.Should().ContainSingle().Subject;
+            categoryResult.Status.Should().Be(SyncPushDeletedStatus.AlreadyDeleted);
+            categoryResult.Conflict.Should().BeNull();
+        }
+
+        [Fact]
+        public async Task Handle_CategoryDelete_DoesNotClearTasksServerSide()
+        {
+            // This test pins the key behavioral difference between the sync and REST delete paths:
+            // - REST DELETE /categories/{id}  → calls ClearCategoryFromTasksAsync (server clears tasks)
+            // - Sync push delete              → does NOT call ClearCategoryFromTasksAsync
+            //                                  (mobile client sends task updates in the same push)
+            var handler = CreateHandler();
+            var categoryId = Guid.NewGuid();
+
+            var existingCategory = CreateCategory(_userId, _now);
+            SetEntityId(existingCategory, categoryId);
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(existingCategory);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Categories = new SyncPushCategoriesDto
+                {
+                    Deleted = new[] { new CategoryDeletedPushItemDto { Id = categoryId } }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            result.Value.Categories.Deleted[0].Status.Should().Be(SyncPushDeletedStatus.Deleted);
+
+            _taskRepositoryMock.Verify(
+                r => r.ClearCategoryFromTasksAsync(
+                    It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        #endregion
+
+        #region Within-Push Category Resolution Tests
+
+        [Fact]
+        public async Task Handle_TaskCreate_WithinPushCategoryClientId_ResolvesFromSamePushCreate()
+        {
+            // A task created in the same push that references a brand-new category by its
+            // client-side Guid should succeed: the handler resolves the client Id via
+            // categoryClientToServerIds populated by ProcessCategoryCreatesAsync.
+            var handler = CreateHandler();
+            var categoryClientId = Guid.NewGuid();
+            var taskClientId = Guid.NewGuid();
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Categories = new SyncPushCategoriesDto
+                {
+                    Created = new[]
+                    {
+                        new CategoryCreatedPushItemDto
+                        {
+                            ClientId = categoryClientId,
+                            Name = "Work"
+                        }
+                    }
+                },
+                Tasks = new SyncPushTasksDto
+                {
+                    Created = new[]
+                    {
+                        new TaskCreatedPushItemDto
+                        {
+                            ClientId = taskClientId,
+                            Date = new DateOnly(2025, 1, 2),
+                            Title = "Task in new category",
+                            CategoryId = categoryClientId // references the within-push category
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var categoryResult = result.Value.Categories.Created.Should().ContainSingle().Subject;
+            categoryResult.Status.Should().Be(SyncPushCreatedStatus.Created);
+
+            var taskResult = result.Value.Tasks.Created.Should().ContainSingle().Subject;
+            taskResult.ClientId.Should().Be(taskClientId);
+            taskResult.Status.Should().Be(SyncPushCreatedStatus.Created);
+            taskResult.Conflict.Should().BeNull(); // no ValidationFailed — category was resolved
+        }
+
+        #endregion
+
         #region Combined Scenarios Tests
 
         [Fact]
@@ -1886,6 +2370,13 @@ namespace NotesApp.Application.Tests.Sync
 
             createResult.IsSuccess.Should().BeTrue();
             return createResult.Value!;
+        }
+
+        private static TaskCategory CreateCategory(Guid userId, DateTime utcNow, string name = "Work")
+        {
+            var result = TaskCategory.Create(userId, name, utcNow);
+            result.IsSuccess.Should().BeTrue();
+            return result.Value!;
         }
 
         private static void SetEntityId<T>(T entity, Guid id) where T : class
