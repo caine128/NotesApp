@@ -41,12 +41,21 @@ namespace NotesApp.Infrastructure.Auth
 
             var debugUserId = values.First();
 
-            // Build a fake identity with some claims
+            // Build a fake identity that mirrors what a real Entra ID token provides.
+            // All claims here must satisfy what CurrentUserService expects:
+            // - NameIdentifier  → externalId
+            // - Email           → required by User.Create() domain validation
+            // - Name            → displayName (optional but useful for readability)
+            // - scp             → required by the "ApiScope" authorization policy
             var claims = new List<Claim>
             {
                 // Subject / unique identifier; could be anything stable
                 new Claim(ClaimTypes.NameIdentifier, debugUserId),
                 new Claim(ClaimTypes.Name, debugUserId),
+                // ADDED: fake email so User.Create() domain validation passes.
+                // Format: {debugUserId}@debug.local makes it obvious in the DB that
+                // this is a dev-only record and not a real user.
+                new Claim(ClaimTypes.Email, $"{debugUserId}@debug.local"),
 
                 // Optional: give a fake "scp" claim so scope policy passes
                 new Claim("scp", "api://d1047ffd-a054-4a9f-aeb0-198996f0c0c6/notes.readwrite")
