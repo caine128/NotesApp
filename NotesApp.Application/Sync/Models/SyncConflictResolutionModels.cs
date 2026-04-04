@@ -54,6 +54,12 @@ namespace NotesApp.Application.Sync.Models
         public string? Location { get; init; }
         public TimeSpan? TravelTime { get; init; }
         public DateTime? ReminderAtUtc { get; init; }
+        // REFACTORED: added CategoryId for task categories feature
+        /// <summary>
+        /// Optional category to assign when the client's version wins the conflict.
+        /// Null means uncategorised.
+        /// </summary>
+        public Guid? CategoryId { get; init; }
     }
 
     /// <summary>

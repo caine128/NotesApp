@@ -15,5 +15,6 @@ namespace NotesApp.Application.Tasks.Models
                                        TimeSpan? TravelTime,
                                        DateTime CreatedAtUtc,
                                        DateTime UpdatedAtUtc,
-                                       DateTime? ReminderAtUtc);
+                                       DateTime? ReminderAtUtc,
+                                       Guid? CategoryId);
 }

@@ -52,6 +52,7 @@ namespace NotesApp.Infrastructure
             services.AddScoped<IOutboxRepository, OutboxRepository>();
             services.AddScoped<IUnitOfWork, UnitOfWork>();
             services.AddScoped<IUserDeviceRepository, UserDeviceRepository>();
+            services.AddScoped<ICategoryRepository, CategoryRepository>(); // REFACTORED: added for task categories feature
             services.AddScoped<IPushNotificationService, LoggingPushNotificationService>();
 
             // 3) System clock (for time abstraction)

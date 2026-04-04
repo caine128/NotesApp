@@ -231,6 +231,7 @@ namespace NotesApp.Application.Tests.Sync
                 null,
                 null,
                 null,
+                null,
                 utcNow);
 
             createResult.IsSuccess.Should().BeTrue();

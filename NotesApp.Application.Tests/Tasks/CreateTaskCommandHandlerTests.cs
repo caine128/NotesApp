@@ -47,6 +47,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new CreateTaskCommandHandler(
                 taskRepository,
+                new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
@@ -131,6 +132,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new CreateTaskCommandHandler(
                 taskRepository,
+                new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
@@ -172,6 +174,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new CreateTaskCommandHandler(
                 taskRepository,
+                new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
@@ -214,6 +217,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new CreateTaskCommandHandler(
                 taskRepository,
+                new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,

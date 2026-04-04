@@ -36,5 +36,13 @@ namespace NotesApp.Application.Sync
         /// in a single /sync/push call.
         /// </summary>
         public const int PushMaxTotalItems = 2000;
+
+        // Categories
+
+        /// <summary>
+        /// Maximum number of category items allowed in each push collection
+        /// (Categories.Created, Categories.Updated, Categories.Deleted).
+        /// </summary>
+        public const int PushMaxCategories = 500;
     }
 }

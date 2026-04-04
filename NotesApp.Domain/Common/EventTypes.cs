@@ -38,4 +38,14 @@ namespace NotesApp.Domain.Common
         Created,
         Deleted
     }
+
+    /// <summary>
+    /// Event types for TaskCategory entity (used in outbox messages).
+    /// </summary>
+    public enum TaskCategoryEventType
+    {
+        Created,
+        Updated,
+        Deleted
+    }
 }

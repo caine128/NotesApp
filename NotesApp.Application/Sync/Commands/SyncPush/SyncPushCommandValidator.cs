@@ -95,6 +95,22 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
                 .WithMessage($"Blocks.Deleted cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
 
+            // ─────────────────────────────────────────────────────────────────
+            // REFACTORED: Per-collection size limits: Categories
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleFor(x => x.Categories.Created)
+                .Must(list => list.Count <= SyncLimits.PushMaxCategories)
+                .WithMessage($"Categories.Created cannot contain more than {SyncLimits.PushMaxCategories} items.");
+
+            RuleFor(x => x.Categories.Updated)
+                .Must(list => list.Count <= SyncLimits.PushMaxCategories)
+                .WithMessage($"Categories.Updated cannot contain more than {SyncLimits.PushMaxCategories} items.");
+
+            RuleFor(x => x.Categories.Deleted)
+                .Must(list => list.Count <= SyncLimits.PushMaxCategories)
+                .WithMessage($"Categories.Deleted cannot contain more than {SyncLimits.PushMaxCategories} items.");
+
 
             // ─────────────────────────────────────────────────────────────────
             // Total items limit (across ALL collections)
@@ -112,7 +128,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                         cmd.Notes.Deleted.Count +
                         cmd.Blocks.Created.Count +
                         cmd.Blocks.Updated.Count +
-                        cmd.Blocks.Deleted.Count;
+                        cmd.Blocks.Deleted.Count +
+                        // REFACTORED: include category counts in total items limit
+                        cmd.Categories.Created.Count +
+                        cmd.Categories.Updated.Count +
+                        cmd.Categories.Deleted.Count;
 
                     return total <= SyncLimits.PushMaxTotalItems;
                 })
@@ -156,6 +176,19 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
             RuleForEach(x => x.Blocks.Deleted)
                 .SetValidator(new BlockDeletedPushItemValidator());
+
+            // ─────────────────────────────────────────────────────────────────
+            // REFACTORED: Individual item validation: Categories
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleForEach(x => x.Categories.Created)
+                .SetValidator(new CategoryCreatedPushItemValidator());
+
+            RuleForEach(x => x.Categories.Updated)
+                .SetValidator(new CategoryUpdatedPushItemValidator());
+
+            RuleForEach(x => x.Categories.Deleted)
+                .SetValidator(new CategoryDeletedPushItemValidator());
         }
 
 
@@ -528,6 +561,71 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                         context.AddFailure(propertyName, error.ErrorMessage);
                     }
                 });
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // REFACTORED: CATEGORY VALIDATORS (task categories feature)
+        // ════════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Validates <see cref="CategoryCreatedPushItemDto"/>:
+        /// - ClientId must be non-empty
+        /// - Name must be non-empty and at most <see cref="TaskCategory.MaxNameLength"/> characters
+        /// </summary>
+        private sealed class CategoryCreatedPushItemValidator : AbstractValidator<CategoryCreatedPushItemDto>
+        {
+            public CategoryCreatedPushItemValidator()
+            {
+                RuleFor(x => x.ClientId)
+                    .NotEmpty()
+                    .WithMessage("ClientId is required for created categories.");
+
+                RuleFor(x => x.Name)
+                    .NotEmpty()
+                    .WithMessage("Category name is required.")
+                    .MaximumLength(TaskCategory.MaxNameLength)
+                    .WithMessage($"Category name cannot exceed {TaskCategory.MaxNameLength} characters.");
+            }
+        }
+
+        /// <summary>
+        /// Validates <see cref="CategoryUpdatedPushItemDto"/>:
+        /// - Id must be non-empty
+        /// - ExpectedVersion must be &gt;= 1
+        /// - Name must be non-empty and at most <see cref="TaskCategory.MaxNameLength"/> characters
+        /// </summary>
+        private sealed class CategoryUpdatedPushItemValidator : AbstractValidator<CategoryUpdatedPushItemDto>
+        {
+            public CategoryUpdatedPushItemValidator()
+            {
+                RuleFor(x => x.Id)
+                    .NotEmpty()
+                    .WithMessage("Id is required for updated categories.");
+
+                RuleFor(x => x.ExpectedVersion)
+                    .GreaterThanOrEqualTo(1)
+                    .WithMessage("ExpectedVersion must be at least 1.");
+
+                RuleFor(x => x.Name)
+                    .NotEmpty()
+                    .WithMessage("Category name is required.")
+                    .MaximumLength(TaskCategory.MaxNameLength)
+                    .WithMessage($"Category name cannot exceed {TaskCategory.MaxNameLength} characters.");
+            }
+        }
+
+        /// <summary>
+        /// Validates <see cref="CategoryDeletedPushItemDto"/>:
+        /// - Id must be non-empty
+        /// </summary>
+        private sealed class CategoryDeletedPushItemValidator : AbstractValidator<CategoryDeletedPushItemDto>
+        {
+            public CategoryDeletedPushItemValidator()
+            {
+                RuleFor(x => x.Id)
+                    .NotEmpty()
+                    .WithMessage("Id is required for deleted categories.");
             }
         }
     }

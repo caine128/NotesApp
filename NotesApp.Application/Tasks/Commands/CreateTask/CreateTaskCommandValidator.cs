@@ -35,6 +35,11 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
             RuleFor(x => x.TravelTime)
                 .Must(t => t == null || t.Value >= TimeSpan.Zero)
                 .WithMessage("TravelTime cannot be negative.");
+
+            // CategoryId must be a non-empty GUID when provided.
+            RuleFor(x => x.CategoryId)
+                .Must(id => id == null || id.Value != Guid.Empty)
+                .WithMessage("CategoryId must be a valid non-empty GUID when provided.");
         }
     }
 }

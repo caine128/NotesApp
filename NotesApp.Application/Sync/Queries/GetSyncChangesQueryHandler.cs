@@ -37,6 +37,7 @@ namespace NotesApp.Application.Sync.Queries
         private readonly IBlockRepository _blockRepository;
         private readonly IAssetRepository _assetRepository;
         private readonly IUserDeviceRepository _deviceRepository;
+        private readonly ICategoryRepository _categoryRepository; // REFACTORED: added for category sync pull
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<GetSyncChangesQueryHandler> _logger;
 
@@ -45,6 +46,7 @@ namespace NotesApp.Application.Sync.Queries
                                           IBlockRepository blockRepository,
                                           IAssetRepository assetRepository,
                                           IUserDeviceRepository deviceRepository,
+                                          ICategoryRepository categoryRepository,
                                           ICurrentUserService currentUserService,
                                           ILogger<GetSyncChangesQueryHandler> logger)
         {
@@ -53,6 +55,7 @@ namespace NotesApp.Application.Sync.Queries
             _blockRepository = blockRepository;
             _assetRepository = assetRepository;
             _deviceRepository = deviceRepository;
+            _categoryRepository = categoryRepository; // REFACTORED: added for category sync pull
             _currentUserService = currentUserService;
             _logger = logger;
         }
@@ -98,6 +101,11 @@ namespace NotesApp.Application.Sync.Queries
                                                                      request.SinceUtc,
                                                                      cancellationToken);
 
+            // REFACTORED: fetch category changes for sync pull
+            var categories = await _categoryRepository.GetChangedSinceAsync(userId,
+                                                                             request.SinceUtc,
+                                                                             cancellationToken);
+
             var serverTimestampUtc = DateTime.UtcNow;
 
             // Categorise entities into buckets
@@ -105,6 +113,7 @@ namespace NotesApp.Application.Sync.Queries
             var notesBuckets = CategoriseNotes(notes, request.SinceUtc);
             var blocksBuckets = CategoriseBlocks(blocks, request.SinceUtc);
             var assetsBuckets = CategoriseAssets(assets, request.SinceUtc);
+            var categoriesBuckets = CategoriseCategories(categories, request.SinceUtc); // REFACTORED: added categories bucket
 
             // Determine effective max items per entity
             var effectiveMax = request.MaxItemsPerEntity ?? SyncLimits.DefaultPullMaxItemsPerEntity;
@@ -125,14 +134,21 @@ namespace NotesApp.Application.Sync.Queries
             var assetCreated = assetsBuckets.Created.ToList();
             var assetDeleted = assetsBuckets.Deleted.ToList();
 
+            // REFACTORED: materialise category lists for pagination
+            var categoryCreated = categoriesBuckets.Created.ToList();
+            var categoryUpdated = categoriesBuckets.Updated.ToList();
+            var categoryDeleted = categoriesBuckets.Deleted.ToList();
+
             // Calculate totals for pagination indicators
             var totalTaskChanges = taskCreated.Count + taskUpdated.Count + taskDeleted.Count;
             var totalNoteChanges = noteCreated.Count + noteUpdated.Count + noteDeleted.Count;
             var totalBlockChanges = blockCreated.Count + blockUpdated.Count + blockDeleted.Count;
+            var totalCategoryChanges = categoryCreated.Count + categoryUpdated.Count + categoryDeleted.Count; // REFACTORED
 
             var hasMoreTasks = totalTaskChanges > effectiveMax;
             var hasMoreNotes = totalNoteChanges > effectiveMax;
             var hasMoreBlocks = totalBlockChanges > effectiveMax;
+            var hasMoreCategories = totalCategoryChanges > effectiveMax; // REFACTORED: aligned with convention
 
             static List<T> LimitList<T>(List<T> source, ref int remaining)
             {
@@ -172,6 +188,12 @@ namespace NotesApp.Application.Sync.Queries
             var limitedAssetCreated = assetCreated;
             var limitedAssetDeleted = assetDeleted;
 
+            // REFACTORED: categories use the same effectiveMax as all other entity types
+            var categoryRemaining = effectiveMax;
+            var limitedCategoryCreated = LimitList(categoryCreated, ref categoryRemaining);
+            var limitedCategoryUpdated = LimitList(categoryUpdated, ref categoryRemaining);
+            var limitedCategoryDeleted = LimitList(categoryDeleted, ref categoryRemaining);
+
             var limitedTasksBuckets = new SyncTasksChangesDto
             {
                 Created = limitedTaskCreated,
@@ -199,6 +221,14 @@ namespace NotesApp.Application.Sync.Queries
                 Deleted = limitedAssetDeleted
             };
 
+            // REFACTORED: build limited categories bucket
+            var limitedCategoriesBuckets = new SyncCategoriesChangesDto
+            {
+                Created = limitedCategoryCreated,
+                Updated = limitedCategoryUpdated,
+                Deleted = limitedCategoryDeleted
+            };
+
             var dto = new SyncChangesDto
             {
                 ServerTimestampUtc = serverTimestampUtc,
@@ -206,9 +236,11 @@ namespace NotesApp.Application.Sync.Queries
                 Notes = limitedNotesBuckets,
                 Blocks = limitedBlocksBuckets,
                 Assets = limitedAssetsBuckets,
+                Categories = limitedCategoriesBuckets, // REFACTORED: added categories
                 HasMoreTasks = hasMoreTasks,
                 HasMoreNotes = hasMoreNotes,
-                HasMoreBlocks = hasMoreBlocks
+                HasMoreBlocks = hasMoreBlocks,
+                HasMoreCategories = hasMoreCategories // REFACTORED: added categories pagination flag
             };
 
             return Result.Ok(dto);
@@ -409,6 +441,68 @@ namespace NotesApp.Application.Sync.Queries
             return new SyncAssetsChangesDto
             {
                 Created = createdList,
+                Deleted = deletedList
+            };
+        }
+
+        // REFACTORED: added CategoriseCategories method for task categories feature
+        /// <summary>
+        /// Categorises category changes into created/updated/deleted buckets.
+        /// Mirrors <see cref="CategoriseTasks"/> — uses <c>CreatedAtUtc &gt; sinceUtc</c>
+        /// to distinguish created from updated, and <c>IsDeleted</c> for the deleted bucket.
+        /// Categories are typically small per-user lists, so a separate
+        /// <see cref="SyncLimits.DefaultPullMaxCategories"/> ceiling is applied by the caller.
+        /// </summary>
+        private static SyncCategoriesChangesDto CategoriseCategories(
+            IReadOnlyList<TaskCategory> categories, DateTime? sinceUtc)
+        {
+            if (sinceUtc is null)
+            {
+                var created = categories
+                    .Where(c => !c.IsDeleted)
+                    .OrderBy(c => c.UpdatedAtUtc)
+                    .Select(c => c.ToSyncDto())
+                    .ToList();
+
+                return new SyncCategoriesChangesDto
+                {
+                    Created = created,
+                    Updated = Array.Empty<CategorySyncItemDto>(),
+                    Deleted = Array.Empty<DeletedSyncItemDto>()
+                };
+            }
+
+            var createdList = new List<CategorySyncItemDto>();
+            var updatedList = new List<CategorySyncItemDto>();
+            var deletedList = new List<DeletedSyncItemDto>();
+
+            foreach (var category in categories.OrderBy(c => c.UpdatedAtUtc))
+            {
+                if (category.IsDeleted)
+                {
+                    deletedList.Add(new DeletedSyncItemDto
+                    {
+                        Id = category.Id,
+                        DeletedAtUtc = category.UpdatedAtUtc
+                    });
+
+                    continue;
+                }
+
+                if (category.CreatedAtUtc > sinceUtc.Value)
+                {
+                    createdList.Add(category.ToSyncDto());
+                }
+                else
+                {
+                    updatedList.Add(category.ToSyncDto());
+                }
+            }
+
+            return new SyncCategoriesChangesDto
+            {
+                Created = createdList,
+                Updated = updatedList,
                 Deleted = deletedList
             };
         }

@@ -19,5 +19,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         public SyncPushTasksDto Tasks { get; init; } = new();
         public SyncPushNotesDto Notes { get; init; } = new();
         public SyncPushBlocksDto Blocks { get; init; } = new();
+        // REFACTORED: added category push collections for task categories feature
+        public SyncPushCategoriesDto Categories { get; init; } = new();
     }
 }

@@ -42,6 +42,7 @@ namespace NotesApp.Application.Tests.Calendar
                 endTime: new TimeOnly(10, 0),
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: DateTime.UtcNow).Value;
 
             var otherUserTask = TaskItem.Create(
@@ -53,6 +54,7 @@ namespace NotesApp.Application.Tests.Calendar
                 endTime: new TimeOnly(12, 0),
                 location: null,
                 travelTime: null,
+                categoryId: null,
                 utcNow: DateTime.UtcNow).Value;
 
             // Seed notes for user and other user - CHANGED: content parameter removed

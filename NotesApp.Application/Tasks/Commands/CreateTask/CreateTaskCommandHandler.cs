@@ -16,18 +16,21 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
         : IRequestHandler<CreateTaskCommand, Result<TaskDetailDto>>
     {
         private readonly ITaskRepository _taskRepository;
+        private readonly ICategoryRepository _categoryRepository; // REFACTORED: added for CategoryId ownership validation
         private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
 
         public CreateTaskCommandHandler(ITaskRepository taskRepository,
+            ICategoryRepository categoryRepository,
             IOutboxRepository outboxRepository,
                                         IUnitOfWork unitOfWork,
                                         ICurrentUserService currentUserService,
                                         ISystemClock clock)
         {
             _taskRepository = taskRepository;
+            _categoryRepository = categoryRepository;
             _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
@@ -43,6 +46,20 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
             // 2) Get the current UTC time via your clock abstraction (or DateTime.UtcNow).
             var utcNow = _clock.UtcNow;
 
+            // REFACTORED: validate CategoryId ownership before creating the task entity.
+            if (command.CategoryId.HasValue)
+            {
+                var category = await _categoryRepository.GetByIdUntrackedAsync(
+                    command.CategoryId.Value, cancellationToken);
+
+                if (category is null || category.UserId != userId)
+                {
+                    return Result.Fail<TaskDetailDto>(
+                        new Error("Category not found or does not belong to you.")
+                            .WithMetadata("ErrorCode", "Categories.NotFound"));
+                }
+            }
+
             // 3) Create domain object using the internal user Id.
             var createResult = TaskItem.Create(userId: userId,
                                                date: command.Date,
@@ -52,6 +69,7 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
                                                endTime: command.EndTime,
                                                location: command.Location,
                                                travelTime: command.TravelTime,
+                                               categoryId: command.CategoryId,
                                                utcNow: utcNow);
 
 
@@ -90,6 +108,7 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
                 taskItem.Location,
                 taskItem.TravelTime,
                 taskItem.IsCompleted,
+                taskItem.CategoryId,
                 Event = TaskEventType.Created.ToString(),
                 OccurredAtUtc = utcNow
             });

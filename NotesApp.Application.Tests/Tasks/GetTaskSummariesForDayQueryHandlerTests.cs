@@ -36,17 +36,17 @@ namespace NotesApp.Application.Tests.Tasks
             var date = new DateOnly(2025, 2, 20);
 
             // Tasks for current user on the target date, with different start times
-            var t1 = TaskItem.Create(userId, date, "T1", null, new TimeOnly(9, 0), new TimeOnly(10, 0), null, null, DateTime.UtcNow).Value!;
-            var t2 = TaskItem.Create(userId, date, "T2", null, new TimeOnly(8, 0), new TimeOnly(9, 0), null, null, DateTime.UtcNow).Value!;
-            var t3 = TaskItem.Create(userId, date, "T3", null, new TimeOnly(11, 0), new TimeOnly(12, 0), null, null, DateTime.UtcNow).Value!;
+            var t1 = TaskItem.Create(userId, date, "T1", null, new TimeOnly(9, 0), new TimeOnly(10, 0), null, null, null, DateTime.UtcNow).Value!;
+            var t2 = TaskItem.Create(userId, date, "T2", null, new TimeOnly(8, 0), new TimeOnly(9, 0), null, null, null, DateTime.UtcNow).Value!;
+            var t3 = TaskItem.Create(userId, date, "T3", null, new TimeOnly(11, 0), new TimeOnly(12, 0), null, null, null, DateTime.UtcNow).Value!;
 
             // Task for same user but different date
             var otherDate = TaskItem.Create(userId, new DateOnly(2025, 2, 21),
-                "Other date", null, new TimeOnly(7, 0), new TimeOnly(8, 0), null, null, DateTime.UtcNow).Value!;
+                "Other date", null, new TimeOnly(7, 0), new TimeOnly(8, 0), null, null, null, DateTime.UtcNow).Value!;
 
             // Task for other user on the same date
             var otherUserTask = TaskItem.Create(otherUserId, date,
-                "Other user", null, new TimeOnly(6, 0), new TimeOnly(7, 0), null, null, DateTime.UtcNow).Value!;
+                "Other user", null, new TimeOnly(6, 0), new TimeOnly(7, 0), null, null, null, DateTime.UtcNow).Value!;
 
             await context.Tasks.AddRangeAsync(t1, t2, t3, otherDate, otherUserTask);
             await context.SaveChangesAsync();

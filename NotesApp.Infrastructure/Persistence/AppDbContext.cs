@@ -19,6 +19,8 @@ namespace NotesApp.Infrastructure.Persistence
         public DbSet<Asset> Assets => Set<Asset>();
         public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
         public DbSet<UserDevice> UserDevices { get; set; } = null!;
+        // REFACTORED: added TaskCategories for task categories feature
+        public DbSet<TaskCategory> TaskCategories => Set<TaskCategory>();
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);

@@ -47,5 +47,12 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
         /// Optional new reminder time in UTC. Use null to clear any reminder.
         /// </summary>
         public DateTime? ReminderAtUtc { get; init; }
+
+        /// <summary>
+        /// Optional id of the user-defined category to assign to this task.
+        /// Must be a non-empty GUID when provided, and must belong to the current user.
+        /// Pass null to clear the category assignment.
+        /// </summary>
+        public Guid? CategoryId { get; init; }
     }
 }
