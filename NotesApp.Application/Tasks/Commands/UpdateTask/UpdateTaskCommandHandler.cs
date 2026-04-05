@@ -95,6 +95,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
                                                location: command.Location,
                                                travelTime: command.TravelTime,
                                                categoryId: command.CategoryId,
+                                               priority: command.Priority, // REFACTORED: added Priority
                                                utcNow: utcNow);
             if (updateResult.IsFailure)
             {
@@ -124,6 +125,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
                 taskItem.IsCompleted,
                 taskItem.ReminderAtUtc,
                 taskItem.CategoryId,
+                taskItem.Priority, // REFACTORED: added Priority
                 Event = TaskEventType.Updated.ToString(),
                 OccurredAtUtc = utcNow
             });

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NotesApp.Domain.Common;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -16,5 +17,6 @@ namespace NotesApp.Application.Tasks.Models
                                        DateTime CreatedAtUtc,
                                        DateTime UpdatedAtUtc,
                                        DateTime? ReminderAtUtc,
-                                       Guid? CategoryId);
+                                       Guid? CategoryId,
+                                       TaskPriority Priority); // REFACTORED: added Priority for task priority feature
 }

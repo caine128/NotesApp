@@ -291,6 +291,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                    item.Location,
                                                    item.TravelTime,
                                                    resolvedCategoryId, // REFACTORED: pass resolved CategoryId
+                                                   item.Priority, // REFACTORED: pass Priority
                                                    utcNow);
 
                 if (createResult.IsFailure)
@@ -485,6 +486,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                item.Location,
                                                item.TravelTime,
                                                resolvedCategoryId, // REFACTORED: pass resolved CategoryId
+                                               item.Priority, // REFACTORED: pass Priority
                                                utcNow);
 
                 if (updateResult.IsFailure)

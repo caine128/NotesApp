@@ -51,6 +51,7 @@ namespace NotesApp.Application.Tests.Tasks
                 location: "Office",
                 travelTime: TimeSpan.FromMinutes(15),
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: DateTime.UtcNow);
 
             createResult.IsSuccess.Should().BeTrue();
@@ -130,6 +131,7 @@ namespace NotesApp.Application.Tests.Tasks
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: DateTime.UtcNow);
 
             createResult.IsSuccess.Should().BeTrue();
@@ -252,6 +254,7 @@ namespace NotesApp.Application.Tests.Tasks
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: DateTime.UtcNow);
 
             createResult.IsSuccess.Should().BeTrue();
@@ -317,6 +320,7 @@ namespace NotesApp.Application.Tests.Tasks
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: DateTime.UtcNow);
 
             createResult.IsSuccess.Should().BeTrue();

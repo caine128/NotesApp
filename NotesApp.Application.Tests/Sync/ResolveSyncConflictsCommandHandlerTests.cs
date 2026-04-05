@@ -7,6 +7,7 @@ using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Sync.Commands.ResolveConflicts;
 using NotesApp.Application.Sync.Models;
+using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -232,6 +233,7 @@ namespace NotesApp.Application.Tests.Sync
                 null,
                 null,
                 null,
+                TaskPriority.Normal,
                 utcNow);
 
             createResult.IsSuccess.Should().BeTrue();

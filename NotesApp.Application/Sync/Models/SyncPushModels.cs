@@ -59,6 +59,12 @@ namespace NotesApp.Application.Sync.Models
         /// the handler resolves it to the server-side Id via categoryClientToServerIds.
         /// </summary>
         public Guid? CategoryId { get; init; }
+
+        // REFACTORED: added Priority for task priority feature
+        /// <summary>
+        /// Priority level for this task. Defaults to Normal when not specified.
+        /// </summary>
+        public TaskPriority Priority { get; init; } = TaskPriority.Normal;
     }
 
     public sealed record TaskUpdatedPushItemDto
@@ -88,6 +94,12 @@ namespace NotesApp.Application.Sync.Models
         /// the handler resolves it via categoryClientToServerIds.
         /// </summary>
         public Guid? CategoryId { get; init; }
+
+        // REFACTORED: added Priority for task priority feature
+        /// <summary>
+        /// Priority level for this task. Defaults to Normal when not specified.
+        /// </summary>
+        public TaskPriority Priority { get; init; } = TaskPriority.Normal;
     }
 
     public sealed record TaskDeletedPushItemDto

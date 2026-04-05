@@ -4,6 +4,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Calendar.Queries;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Tests.Infrastructure;
+using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using NotesApp.Infrastructure.Persistence.Repositories;
 using System;
@@ -49,6 +50,7 @@ namespace NotesApp.Application.Tests.Calendar
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: DateTime.UtcNow).Value;
 
             var t2 = TaskItem.Create(
@@ -61,6 +63,7 @@ namespace NotesApp.Application.Tests.Calendar
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: DateTime.UtcNow).Value;
 
             // Task for other user in same range
@@ -74,6 +77,7 @@ namespace NotesApp.Application.Tests.Calendar
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: DateTime.UtcNow).Value;
 
             // Task at endExclusive boundary (should be excluded)
@@ -87,6 +91,7 @@ namespace NotesApp.Application.Tests.Calendar
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: DateTime.UtcNow).Value;
 
             // --- Seed notes ---

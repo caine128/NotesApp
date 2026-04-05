@@ -1,5 +1,6 @@
 ﻿using FluentAssertions;
 using NotesApp.Application.Common;
+using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -28,6 +29,7 @@ namespace NotesApp.Application.Tests.Outbox
                 location: "Office",
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: now);
 
             createResult.IsSuccess.Should().BeTrue();

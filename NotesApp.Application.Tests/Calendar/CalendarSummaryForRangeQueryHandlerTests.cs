@@ -4,6 +4,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Calendar.Queries;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Tests.Infrastructure;
+using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using NotesApp.Infrastructure.Persistence.Repositories;
 using System;
@@ -39,11 +40,11 @@ namespace NotesApp.Application.Tests.Calendar
 
             // Seed tasks (only for some days, plus other user)
             var t1 = TaskItem.Create(
-                userId, day1, "Task day1", null, null, null, null, null, null, DateTime.UtcNow).Value;
+                userId, day1, "Task day1", null, null, null, null, null, null, TaskPriority.Normal, DateTime.UtcNow).Value;
             var t2 = TaskItem.Create(
-                userId, day2, "Task day2", null, null, null, null, null, null, DateTime.UtcNow).Value;
+                userId, day2, "Task day2", null, null, null, null, null, null, TaskPriority.Normal, DateTime.UtcNow).Value;
             var tOtherUser = TaskItem.Create(
-                otherUserId, day2, "Other user task", null, null, null, null, null, null, DateTime.UtcNow).Value;
+                otherUserId, day2, "Other user task", null, null, null, null, null, null, TaskPriority.Normal, DateTime.UtcNow).Value;
 
             // Seed notes
             var n1 = Note.Create(userId: userId,

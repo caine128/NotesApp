@@ -70,6 +70,7 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
                                                location: command.Location,
                                                travelTime: command.TravelTime,
                                                categoryId: command.CategoryId,
+                                               priority: command.Priority, // REFACTORED: added Priority
                                                utcNow: utcNow);
 
 
@@ -109,6 +110,7 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
                 taskItem.TravelTime,
                 taskItem.IsCompleted,
                 taskItem.CategoryId,
+                taskItem.Priority, // REFACTORED: added Priority
                 Event = TaskEventType.Created.ToString(),
                 OccurredAtUtc = utcNow
             });

@@ -20,7 +20,8 @@ namespace NotesApp.Application.Tasks
               task.CreatedAtUtc,
               task.UpdatedAtUtc,
               task.ReminderAtUtc,
-              task.CategoryId); // REFACTORED: added CategoryId
+              task.CategoryId,
+              task.Priority); // REFACTORED: added Priority
 
         public static TaskSummaryDto ToSummaryDto(this TaskItem task) =>
             new(
@@ -32,7 +33,8 @@ namespace NotesApp.Application.Tasks
                 task.IsCompleted,
                 task.Location,
                 task.TravelTime,
-                task.CategoryId); // REFACTORED: added CategoryId
+                task.CategoryId,
+                task.Priority); // REFACTORED: added Priority
 
         public static TaskOverviewDto ToOverviewDto(this TaskItem task) =>
             new(

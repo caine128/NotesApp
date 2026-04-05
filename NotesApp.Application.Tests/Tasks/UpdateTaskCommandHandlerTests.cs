@@ -58,6 +58,7 @@ namespace NotesApp.Application.Tests.Tasks
                 location: "Original location",
                 travelTime: TimeSpan.FromMinutes(15),
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: createdAt);
 
             existingTaskResult.IsSuccess.Should().BeTrue();
@@ -112,6 +113,7 @@ namespace NotesApp.Application.Tests.Tasks
             dto.Location.Should().Be(command.Location);
             dto.TravelTime.Should().Be(command.TravelTime);
             dto.IsCompleted.Should().BeFalse(); // update should not flip completion
+            dto.Priority.Should().Be(TaskPriority.Normal); // default priority unchanged
             dto.ReminderAtUtc.Should().BeCloseTo(newReminder, TimeSpan.FromSeconds(1));
 
             dto.CreatedAtUtc.Should().BeOnOrBefore(before); // created in the past
@@ -144,6 +146,76 @@ namespace NotesApp.Application.Tests.Tasks
             outbox.Payload.Should().NotBeNullOrWhiteSpace();
             outbox.ProcessedAtUtc.Should().BeNull();
             outbox.AttemptCount.Should().Be(0);
+        }
+
+        [Fact]
+        public async Task Handle_updates_priority_and_persists_change()
+        {
+            // Arrange
+            await using var context = SqlServerAppDbContextFactory.CreateContext();
+
+            ITaskRepository taskRepository = new TaskRepository(context);
+            IOutboxRepository outboxRepository = new OutboxRepository(context);
+            IUnitOfWork unitOfWork = new UnitOfWork(context);
+            ISystemClock clock = new SystemClock();
+
+            var userId = Guid.NewGuid();
+
+            var currentUserServiceMock = new Mock<ICurrentUserService>();
+            currentUserServiceMock
+                .Setup(s => s.GetUserIdAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(userId);
+
+            var taskResult = TaskItem.Create(
+                userId: userId,
+                date: new DateOnly(2025, 3, 1),
+                title: "Normal task",
+                description: null,
+                startTime: null,
+                endTime: null,
+                location: null,
+                travelTime: null,
+                categoryId: null,
+                priority: TaskPriority.Normal,
+                utcNow: DateTime.UtcNow);
+
+            taskResult.IsSuccess.Should().BeTrue();
+            var task = taskResult.Value!;
+
+            await context.Tasks.AddAsync(task);
+            await context.SaveChangesAsync();
+            context.Entry(task).State = EntityState.Detached;
+
+            var handler = new UpdateTaskCommandHandler(
+                taskRepository,
+                new Mock<ICategoryRepository>().Object,
+                outboxRepository,
+                unitOfWork,
+                currentUserServiceMock.Object,
+                clock,
+                new LoggerFactory().CreateLogger<UpdateTaskCommandHandler>());
+
+            var command = new UpdateTaskCommand
+            {
+                TaskId = task.Id,
+                Date = new DateOnly(2025, 3, 1),
+                Title = "Normal task",
+                Priority = TaskPriority.High
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            result.Value.Priority.Should().Be(TaskPriority.High);
+
+            var persisted = await context.Tasks
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == task.Id, CancellationToken.None);
+
+            persisted.Should().NotBeNull();
+            persisted!.Priority.Should().Be(TaskPriority.High);
         }
 
         [Fact]
@@ -224,6 +296,7 @@ namespace NotesApp.Application.Tests.Tasks
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: DateTime.UtcNow);
 
             taskResult.IsSuccess.Should().BeTrue();
@@ -290,6 +363,7 @@ namespace NotesApp.Application.Tests.Tasks
                 location: "Loc",
                 travelTime: TimeSpan.FromMinutes(15),
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: DateTime.UtcNow);
 
             taskResult.IsSuccess.Should().BeTrue();
@@ -364,6 +438,7 @@ namespace NotesApp.Application.Tests.Tasks
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: DateTime.UtcNow);
 
             taskResult.IsSuccess.Should().BeTrue();
