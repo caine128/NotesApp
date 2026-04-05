@@ -1,8 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using NotesApp.Infrastructure.Persistence;
 using System;
-using System.Collections.Generic;
-using System.Text;
+using System.IO;
 
 namespace NotesApp.Application.Tests.Infrastructure
 {
@@ -33,11 +32,31 @@ namespace NotesApp.Application.Tests.Infrastructure
 
             var context = new AppDbContext(options);
 
-            // Clean database for each test run
+            // Drop the database if it is registered in the LocalDB catalog.
             context.Database.EnsureDeleted();
+
+            // Also delete any orphaned MDF/LDF files left on disk from a previous
+            // run where the LocalDB instance was down when the test process exited.
+            // In that case EnsureDeleted() returns false (DB not in catalog) but
+            // the physical files remain, causing EnsureCreated() to fail on the
+            // next run with "Cannot create file … because it already exists."
+            DeleteOrphanedDbFiles();
+
             context.Database.EnsureCreated();
 
             return context;
+        }
+
+        private static void DeleteOrphanedDbFiles()
+        {
+            // MSSQLLocalDB stores database files in the current user's profile directory.
+            var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            foreach (var fileName in new[] { "NotesApp_Tests.mdf", "NotesApp_Tests_log.ldf" })
+            {
+                var path = Path.Combine(userProfile, fileName);
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
         }
     }
 }
