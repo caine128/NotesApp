@@ -21,6 +21,8 @@ namespace NotesApp.Infrastructure.Persistence
         public DbSet<UserDevice> UserDevices { get; set; } = null!;
         // REFACTORED: added TaskCategories for task categories feature
         public DbSet<TaskCategory> TaskCategories => Set<TaskCategory>();
+        // REFACTORED: added Subtasks for subtasks feature
+        public DbSet<Subtask> Subtasks => Set<Subtask>();
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);

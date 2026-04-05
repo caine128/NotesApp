@@ -19,6 +19,8 @@ namespace NotesApp.Application.Sync.Models
         public SyncAssetsChangesDto Assets { get; init; } = new();
         // REFACTORED: added category changes bucket
         public SyncCategoriesChangesDto Categories { get; init; } = new();
+        // REFACTORED: added subtask changes bucket for subtasks feature
+        public SyncSubtasksChangesDto Subtasks { get; init; } = new();
 
         /// <summary>
         /// True when the server had more task changes than were included
@@ -41,6 +43,12 @@ namespace NotesApp.Application.Sync.Models
         /// </summary>
         // REFACTORED: added HasMoreCategories pagination flag
         public bool HasMoreCategories { get; init; }
+        // REFACTORED: added HasMoreSubtasks pagination flag for subtasks feature
+        /// <summary>
+        /// True when the server had more subtask changes than were included
+        /// in this response (based on MaxItemsPerEntity).
+        /// </summary>
+        public bool HasMoreSubtasks { get; init; }
     }
 
     public sealed record SyncTasksChangesDto
@@ -232,6 +240,36 @@ namespace NotesApp.Application.Sync.Models
     {
         public Guid Id { get; init; }
         public string Name { get; init; } = string.Empty;
+        public long Version { get; init; }
+        public DateTime CreatedAtUtc { get; init; }
+        public DateTime UpdatedAtUtc { get; init; }
+    }
+
+    // REFACTORED: added subtask sync DTOs for subtasks feature
+
+    /// <summary>
+    /// Subtask changes bucket returned by the sync pull endpoint.
+    /// Mirrors the structure of other entity change buckets (Tasks, Notes, Blocks, Categories).
+    /// </summary>
+    public sealed record SyncSubtasksChangesDto
+    {
+        public IReadOnlyList<SubtaskSyncItemDto> Created { get; init; } = Array.Empty<SubtaskSyncItemDto>();
+        public IReadOnlyList<SubtaskSyncItemDto> Updated { get; init; } = Array.Empty<SubtaskSyncItemDto>();
+        public IReadOnlyList<DeletedSyncItemDto> Deleted { get; init; } = Array.Empty<DeletedSyncItemDto>();
+    }
+
+    /// <summary>
+    /// Full subtask representation used in sync payloads.
+    /// Includes Version so clients can detect concurrent edits and
+    /// raise a VersionMismatch conflict on the next push if needed.
+    /// </summary>
+    public sealed record SubtaskSyncItemDto
+    {
+        public Guid Id { get; init; }
+        public Guid TaskId { get; init; }
+        public string Text { get; init; } = string.Empty;
+        public bool IsCompleted { get; init; }
+        public string Position { get; init; } = string.Empty;
         public long Version { get; init; }
         public DateTime CreatedAtUtc { get; init; }
         public DateTime UpdatedAtUtc { get; init; }

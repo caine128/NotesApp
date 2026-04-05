@@ -79,6 +79,7 @@ namespace NotesApp.Application.Tests.Sync
                 new BlockRepository(context),
                 new UserDeviceRepository(context),
                 new CategoryRepository(context),
+                new SubtaskRepository(context),
                 new OutboxRepository(context),
                 new UnitOfWork(context),
                 clock.Object,

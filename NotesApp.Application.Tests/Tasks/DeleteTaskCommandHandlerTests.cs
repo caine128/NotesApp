@@ -63,6 +63,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new DeleteTaskCommandHandler(
                 taskRepository,
+                new SubtaskRepository(context),
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
@@ -122,6 +123,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new DeleteTaskCommandHandler(
                 taskRepository,
+                new SubtaskRepository(context),
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
@@ -189,6 +191,7 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new DeleteTaskCommandHandler(
                 taskRepository,
+                new SubtaskRepository(context),
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,

@@ -48,4 +48,15 @@ namespace NotesApp.Domain.Common
         Updated,
         Deleted
     }
+
+    /// <summary>
+    /// Event types for Subtask entity (used in outbox messages).
+    /// </summary>
+    // REFACTORED: added SubtaskEventType for subtasks feature
+    public enum SubtaskEventType
+    {
+        Created,
+        Updated,
+        Deleted
+    }
 }

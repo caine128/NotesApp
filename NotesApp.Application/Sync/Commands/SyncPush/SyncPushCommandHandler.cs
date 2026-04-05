@@ -36,6 +36,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         private readonly IBlockRepository _blockRepository;
         private readonly IUserDeviceRepository _deviceRepository;
         private readonly ICategoryRepository _categoryRepository; // REFACTORED: added for category push processing
+        private readonly ISubtaskRepository _subtaskRepository; // REFACTORED: added for subtask push processing
         private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISystemClock _clock;
@@ -47,6 +48,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                      IBlockRepository blockRepository,
                                      IUserDeviceRepository deviceRepository,
                                      ICategoryRepository categoryRepository,
+                                     ISubtaskRepository subtaskRepository,
                                      IOutboxRepository outboxRepository,
                                      IUnitOfWork unitOfWork,
                                      ISystemClock clock,
@@ -58,6 +60,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             _blockRepository = blockRepository;
             _deviceRepository = deviceRepository;
             _categoryRepository = categoryRepository; // REFACTORED: added for category push processing
+            _subtaskRepository = subtaskRepository; // REFACTORED: added for subtask push processing
             _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _clock = clock;
@@ -101,6 +104,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             var categoryCreateResults = new List<CategoryCreatedPushResultDto>();
             var categoryUpdateResults = new List<CategoryUpdatedPushResultDto>();
             var categoryDeleteResults = new List<CategoryDeletedPushResultDto>();
+
+            // REFACTORED: added subtask result lists for subtasks feature
+            var subtaskCreateResults = new List<SubtaskCreatedPushResultDto>();
+            var subtaskUpdateResults = new List<SubtaskUpdatedPushResultDto>();
+            var subtaskDeleteResults = new List<SubtaskDeletedPushResultDto>();
 
             // Maps client IDs to server IDs for entities created in this push.
             // Used to resolve parent references for blocks.
@@ -174,6 +182,26 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                           noteDeleteResults,
                                           cancellationToken);
 
+            // REFACTORED: process subtasks after tasks so taskClientToServerIds is fully populated (subtasks feature)
+            await ProcessSubtaskCreatesAsync(userId,
+                                             request,
+                                             utcNow,
+                                             subtaskCreateResults,
+                                             taskClientToServerIds,
+                                             cancellationToken);
+
+            await ProcessSubtaskUpdatesAsync(userId,
+                                             request,
+                                             utcNow,
+                                             subtaskUpdateResults,
+                                             cancellationToken);
+
+            await ProcessSubtaskDeletesAsync(userId,
+                                             request,
+                                             utcNow,
+                                             subtaskDeleteResults,
+                                             cancellationToken);
+
             // Process blocks (after tasks/notes so parent ID mappings are available)
             await ProcessBlockCreatesAsync(userId,
                                            request,
@@ -223,6 +251,13 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     Created = categoryCreateResults,
                     Updated = categoryUpdateResults,
                     Deleted = categoryDeleteResults
+                },
+                // REFACTORED: added subtask results for subtasks feature
+                Subtasks = new SyncPushSubtasksResultDto
+                {
+                    Created = subtaskCreateResults,
+                    Updated = subtaskUpdateResults,
+                    Deleted = subtaskDeleteResults
                 },
             };
 
@@ -643,6 +678,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 // SUCCESS: Attach modified entity and add outbox
                 _taskRepository.Update(task);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                // The client is responsible for sending explicit SubtaskDeleted items
+                // in the same push payload alongside the TaskDeleted item.
+                // ProcessSubtaskDeletesAsync (which runs after this method) will handle them.
+                // No server-side sweep is performed here.
 
                 results.Add(new TaskDeletedPushResultDto
                 {
@@ -1741,6 +1781,394 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             return noteClientToServerIds.TryGetValue(parentClientId.Value, out var serverId)
                 ? serverId
                 : null;
+        }
+
+
+        // ------------------------
+        // REFACTORED: Subtask processing (subtasks feature)
+        // Subtasks are processed after tasks so that within-push task references
+        // (SubtaskCreatedPushItemDto.TaskClientId) can be resolved via taskClientToServerIds.
+        // ------------------------
+
+        private async Task ProcessSubtaskCreatesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<SubtaskCreatedPushResultDto> results,
+            Dictionary<Guid, Guid> taskClientToServerIds,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.Subtasks.Created)
+            {
+                // Resolve the parent TaskId.
+                // Priority: try within-push mapping (TaskClientId) first; fall back to direct server ID.
+                Guid? resolvedTaskId = null;
+
+                if (item.TaskClientId.HasValue && item.TaskClientId.Value != Guid.Empty)
+                {
+                    // Parent was created in the same push — look it up in the mappings dictionary.
+                    if (taskClientToServerIds.TryGetValue(item.TaskClientId.Value, out var mappedTaskId))
+                    {
+                        resolvedTaskId = mappedTaskId;
+                    }
+                }
+                else if (item.TaskId.HasValue && item.TaskId.Value != Guid.Empty)
+                {
+                    // Parent is a pre-existing server-side task — validate ownership.
+                    var parentTask = await _taskRepository.GetByIdUntrackedAsync(item.TaskId.Value, cancellationToken);
+                    if (parentTask is not null && parentTask.UserId == userId && !parentTask.IsDeleted)
+                    {
+                        resolvedTaskId = item.TaskId.Value;
+                    }
+                }
+
+                if (resolvedTaskId is null)
+                {
+                    results.Add(new SubtaskCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ParentNotFound,
+                            Errors = ["Parent task not found or does not belong to the current user."]
+                        }
+                    });
+
+                    continue;
+                }
+
+                var createResult = Subtask.Create(userId, resolvedTaskId.Value, item.Text, item.Position, utcNow);
+
+                if (createResult.IsFailure)
+                {
+                    results.Add(new SubtaskCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = createResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var subtask = createResult.Value!;
+
+                // Apply IsCompleted if set at creation
+                if (item.IsCompleted)
+                {
+                    subtask.SetCompleted(true, utcNow);
+                }
+
+                // Create outbox message BEFORE persisting
+                var payload = JsonSerializer.Serialize(new
+                {
+                    SubtaskId = subtask.Id,
+                    subtask.UserId,
+                    subtask.TaskId,
+                    subtask.Text,
+                    subtask.Version,
+                    Event = SubtaskEventType.Created.ToString(),
+                    OccurredAtUtc = utcNow,
+                    OriginDeviceId = request.DeviceId
+                });
+
+                var outboxResult = OutboxMessage.Create<Subtask, SubtaskEventType>(
+                    subtask,
+                    SubtaskEventType.Created,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new SubtaskCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                await _subtaskRepository.AddAsync(subtask, cancellationToken);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                results.Add(new SubtaskCreatedPushResultDto
+                {
+                    ClientId = item.ClientId,
+                    ServerId = subtask.Id,
+                    Version = subtask.Version,
+                    Status = SyncPushCreatedStatus.Created
+                });
+            }
+        }
+
+        private async Task ProcessSubtaskUpdatesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<SubtaskUpdatedPushResultDto> results,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.Subtasks.Updated)
+            {
+                var subtask = await _subtaskRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+
+                if (subtask is null || subtask.UserId != userId)
+                {
+                    results.Add(new SubtaskUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.NotFound
+                        }
+                    });
+
+                    continue;
+                }
+
+                if (subtask.IsDeleted)
+                {
+                    results.Add(new SubtaskUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.DeletedOnServer
+                        }
+                    });
+
+                    continue;
+                }
+
+                if (subtask.Version != item.ExpectedVersion)
+                {
+                    results.Add(new SubtaskUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.VersionMismatch,
+                            ClientVersion = item.ExpectedVersion,
+                            ServerVersion = subtask.Version,
+                            ServerSubtask = subtask.ToSyncDto()
+                        }
+                    });
+
+                    continue;
+                }
+
+                // Apply only the fields the client sent (null = no change)
+                var hasChanges = false;
+
+                if (item.Text is not null)
+                {
+                    var textResult = subtask.UpdateText(item.Text, utcNow);
+                    if (textResult.IsFailure)
+                    {
+                        results.Add(new SubtaskUpdatedPushResultDto
+                        {
+                            Id = item.Id,
+                            Status = SyncPushUpdatedStatus.Failed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.ValidationFailed,
+                                Errors = textResult.Errors.Select(e => e.Message).ToArray()
+                            }
+                        });
+
+                        continue;
+                    }
+
+                    hasChanges = true;
+                }
+
+                if (item.IsCompleted.HasValue)
+                {
+                    subtask.SetCompleted(item.IsCompleted.Value, utcNow);
+                    hasChanges = true;
+                }
+
+                if (item.Position is not null)
+                {
+                    var posResult = subtask.UpdatePosition(item.Position, utcNow);
+                    if (posResult.IsFailure)
+                    {
+                        results.Add(new SubtaskUpdatedPushResultDto
+                        {
+                            Id = item.Id,
+                            Status = SyncPushUpdatedStatus.Failed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.ValidationFailed,
+                                Errors = posResult.Errors.Select(e => e.Message).ToArray()
+                            }
+                        });
+
+                        continue;
+                    }
+
+                    hasChanges = true;
+                }
+
+                if (hasChanges)
+                {
+                    var payload = JsonSerializer.Serialize(new
+                    {
+                        SubtaskId = subtask.Id,
+                        subtask.UserId,
+                        subtask.TaskId,
+                        subtask.Text,
+                        subtask.Version,
+                        Event = SubtaskEventType.Updated.ToString(),
+                        OccurredAtUtc = utcNow,
+                        OriginDeviceId = request.DeviceId
+                    });
+
+                    var outboxResult = OutboxMessage.Create<Subtask, SubtaskEventType>(
+                        subtask,
+                        SubtaskEventType.Updated,
+                        payload,
+                        utcNow);
+
+                    if (outboxResult.IsFailure)
+                    {
+                        results.Add(new SubtaskUpdatedPushResultDto
+                        {
+                            Id = item.Id,
+                            Status = SyncPushUpdatedStatus.Failed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.OutboxFailed,
+                                Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                            }
+                        });
+
+                        continue;
+                    }
+
+                    _subtaskRepository.Update(subtask);
+                    await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                }
+
+                results.Add(new SubtaskUpdatedPushResultDto
+                {
+                    Id = item.Id,
+                    NewVersion = subtask.Version,
+                    Status = SyncPushUpdatedStatus.Updated
+                });
+            }
+        }
+
+        private async Task ProcessSubtaskDeletesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<SubtaskDeletedPushResultDto> results,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.Subtasks.Deleted)
+            {
+                var subtask = await _subtaskRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+
+                if (subtask is null || subtask.UserId != userId)
+                {
+                    results.Add(new SubtaskDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.NotFound
+                    });
+
+                    continue;
+                }
+
+                if (subtask.IsDeleted)
+                {
+                    // Idempotent: already deleted is acceptable
+                    results.Add(new SubtaskDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.AlreadyDeleted
+                    });
+
+                    continue;
+                }
+
+                // Create outbox message BEFORE modifying the entity
+                var payload = JsonSerializer.Serialize(new
+                {
+                    SubtaskId = subtask.Id,
+                    subtask.UserId,
+                    subtask.TaskId,
+                    subtask.Text,
+                    subtask.Version,
+                    Event = SubtaskEventType.Deleted.ToString(),
+                    OccurredAtUtc = utcNow,
+                    OriginDeviceId = request.DeviceId
+                });
+
+                var outboxResult = OutboxMessage.Create<Subtask, SubtaskEventType>(
+                    subtask,
+                    SubtaskEventType.Deleted,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new SubtaskDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                // Outbox created successfully — now safe to soft-delete
+                var deleteResult = subtask.SoftDelete(utcNow);
+                if (deleteResult.IsFailure)
+                {
+                    results.Add(new SubtaskDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = deleteResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                _subtaskRepository.Update(subtask);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                results.Add(new SubtaskDeletedPushResultDto
+                {
+                    Id = item.Id,
+                    Status = SyncPushDeletedStatus.Deleted
+                });
+            }
         }
     }
 }

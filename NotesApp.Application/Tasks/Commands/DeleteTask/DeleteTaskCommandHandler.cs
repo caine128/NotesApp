@@ -31,6 +31,8 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
         : IRequestHandler<DeleteTaskCommand, Result>
     {
         private readonly ITaskRepository _taskRepository;
+        // REFACTORED: added subtask repository for subtasks cascade-delete
+        private readonly ISubtaskRepository _subtaskRepository;
         private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
@@ -39,6 +41,7 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
 
         public DeleteTaskCommandHandler(
             ITaskRepository taskRepository,
+            ISubtaskRepository subtaskRepository,
             IOutboxRepository outboxRepository,
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUserService,
@@ -46,6 +49,7 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
             ILogger<DeleteTaskCommandHandler> logger)
         {
             _taskRepository = taskRepository;
+            _subtaskRepository = subtaskRepository;
             _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
@@ -111,6 +115,12 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
             //    Update() attaches the untracked entity and marks it as Modified
             _taskRepository.Update(taskItem);
             await _outboxRepository.AddAsync(outboxResult.Value!, cancellationToken);
+
+            // REFACTORED: cascade soft-delete all subtasks atomically (subtasks feature)
+            // Bulk-deletes in the same SaveChangesAsync call so deleted subtasks surface
+            // in the next sync pull via UpdatedAtUtc.
+            await _subtaskRepository.SoftDeleteAllForTaskAsync(taskItem.Id, currentUserId, utcNow, cancellationToken);
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Task {TaskId} soft-deleted for user {UserId}.",

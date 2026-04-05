@@ -38,6 +38,7 @@ namespace NotesApp.Application.Sync.Queries
         private readonly IAssetRepository _assetRepository;
         private readonly IUserDeviceRepository _deviceRepository;
         private readonly ICategoryRepository _categoryRepository; // REFACTORED: added for category sync pull
+        private readonly ISubtaskRepository _subtaskRepository; // REFACTORED: added for subtask sync pull
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<GetSyncChangesQueryHandler> _logger;
 
@@ -47,6 +48,7 @@ namespace NotesApp.Application.Sync.Queries
                                           IAssetRepository assetRepository,
                                           IUserDeviceRepository deviceRepository,
                                           ICategoryRepository categoryRepository,
+                                          ISubtaskRepository subtaskRepository,
                                           ICurrentUserService currentUserService,
                                           ILogger<GetSyncChangesQueryHandler> logger)
         {
@@ -56,6 +58,7 @@ namespace NotesApp.Application.Sync.Queries
             _assetRepository = assetRepository;
             _deviceRepository = deviceRepository;
             _categoryRepository = categoryRepository; // REFACTORED: added for category sync pull
+            _subtaskRepository = subtaskRepository; // REFACTORED: added for subtask sync pull
             _currentUserService = currentUserService;
             _logger = logger;
         }
@@ -106,6 +109,11 @@ namespace NotesApp.Application.Sync.Queries
                                                                              request.SinceUtc,
                                                                              cancellationToken);
 
+            // REFACTORED: fetch subtask changes for sync pull
+            var subtasks = await _subtaskRepository.GetChangedSinceAsync(userId,
+                                                                          request.SinceUtc,
+                                                                          cancellationToken);
+
             var serverTimestampUtc = DateTime.UtcNow;
 
             // Categorise entities into buckets
@@ -114,6 +122,7 @@ namespace NotesApp.Application.Sync.Queries
             var blocksBuckets = CategoriseBlocks(blocks, request.SinceUtc);
             var assetsBuckets = CategoriseAssets(assets, request.SinceUtc);
             var categoriesBuckets = CategoriseCategories(categories, request.SinceUtc); // REFACTORED: added categories bucket
+            var subtasksBuckets = CategoriseSubtasks(subtasks, request.SinceUtc); // REFACTORED: added subtasks bucket
 
             // Determine effective max items per entity
             var effectiveMax = request.MaxItemsPerEntity ?? SyncLimits.DefaultPullMaxItemsPerEntity;
@@ -139,16 +148,23 @@ namespace NotesApp.Application.Sync.Queries
             var categoryUpdated = categoriesBuckets.Updated.ToList();
             var categoryDeleted = categoriesBuckets.Deleted.ToList();
 
+            // REFACTORED: materialise subtask lists for pagination
+            var subtaskCreated = subtasksBuckets.Created.ToList();
+            var subtaskUpdated = subtasksBuckets.Updated.ToList();
+            var subtaskDeleted = subtasksBuckets.Deleted.ToList();
+
             // Calculate totals for pagination indicators
             var totalTaskChanges = taskCreated.Count + taskUpdated.Count + taskDeleted.Count;
             var totalNoteChanges = noteCreated.Count + noteUpdated.Count + noteDeleted.Count;
             var totalBlockChanges = blockCreated.Count + blockUpdated.Count + blockDeleted.Count;
             var totalCategoryChanges = categoryCreated.Count + categoryUpdated.Count + categoryDeleted.Count; // REFACTORED
+            var totalSubtaskChanges = subtaskCreated.Count + subtaskUpdated.Count + subtaskDeleted.Count; // REFACTORED
 
             var hasMoreTasks = totalTaskChanges > effectiveMax;
             var hasMoreNotes = totalNoteChanges > effectiveMax;
             var hasMoreBlocks = totalBlockChanges > effectiveMax;
             var hasMoreCategories = totalCategoryChanges > effectiveMax; // REFACTORED: aligned with convention
+            var hasMoreSubtasks = totalSubtaskChanges > effectiveMax; // REFACTORED: subtasks pagination flag
 
             static List<T> LimitList<T>(List<T> source, ref int remaining)
             {
@@ -194,6 +210,12 @@ namespace NotesApp.Application.Sync.Queries
             var limitedCategoryUpdated = LimitList(categoryUpdated, ref categoryRemaining);
             var limitedCategoryDeleted = LimitList(categoryDeleted, ref categoryRemaining);
 
+            // REFACTORED: subtasks use the same effectiveMax as all other entity types
+            var subtaskRemaining = effectiveMax;
+            var limitedSubtaskCreated = LimitList(subtaskCreated, ref subtaskRemaining);
+            var limitedSubtaskUpdated = LimitList(subtaskUpdated, ref subtaskRemaining);
+            var limitedSubtaskDeleted = LimitList(subtaskDeleted, ref subtaskRemaining);
+
             var limitedTasksBuckets = new SyncTasksChangesDto
             {
                 Created = limitedTaskCreated,
@@ -229,6 +251,14 @@ namespace NotesApp.Application.Sync.Queries
                 Deleted = limitedCategoryDeleted
             };
 
+            // REFACTORED: build limited subtasks bucket
+            var limitedSubtasksBuckets = new SyncSubtasksChangesDto
+            {
+                Created = limitedSubtaskCreated,
+                Updated = limitedSubtaskUpdated,
+                Deleted = limitedSubtaskDeleted
+            };
+
             var dto = new SyncChangesDto
             {
                 ServerTimestampUtc = serverTimestampUtc,
@@ -237,10 +267,12 @@ namespace NotesApp.Application.Sync.Queries
                 Blocks = limitedBlocksBuckets,
                 Assets = limitedAssetsBuckets,
                 Categories = limitedCategoriesBuckets, // REFACTORED: added categories
+                Subtasks = limitedSubtasksBuckets, // REFACTORED: added subtasks
                 HasMoreTasks = hasMoreTasks,
                 HasMoreNotes = hasMoreNotes,
                 HasMoreBlocks = hasMoreBlocks,
-                HasMoreCategories = hasMoreCategories // REFACTORED: added categories pagination flag
+                HasMoreCategories = hasMoreCategories, // REFACTORED: added categories pagination flag
+                HasMoreSubtasks = hasMoreSubtasks // REFACTORED: added subtasks pagination flag
             };
 
             return Result.Ok(dto);
@@ -500,6 +532,66 @@ namespace NotesApp.Application.Sync.Queries
             }
 
             return new SyncCategoriesChangesDto
+            {
+                Created = createdList,
+                Updated = updatedList,
+                Deleted = deletedList
+            };
+        }
+
+        // REFACTORED: added CategoriseSubtasks method for subtasks feature
+        /// <summary>
+        /// Categorises subtask changes into created/updated/deleted buckets.
+        /// Mirrors <see cref="CategoriseCategories"/> — uses <c>CreatedAtUtc &gt; sinceUtc</c>
+        /// to distinguish created from updated, and <c>IsDeleted</c> for the deleted bucket.
+        /// </summary>
+        private static SyncSubtasksChangesDto CategoriseSubtasks(
+            IReadOnlyList<Subtask> subtasks, DateTime? sinceUtc)
+        {
+            if (sinceUtc is null)
+            {
+                var created = subtasks
+                    .Where(s => !s.IsDeleted)
+                    .OrderBy(s => s.UpdatedAtUtc)
+                    .Select(s => s.ToSyncDto())
+                    .ToList();
+
+                return new SyncSubtasksChangesDto
+                {
+                    Created = created,
+                    Updated = Array.Empty<SubtaskSyncItemDto>(),
+                    Deleted = Array.Empty<DeletedSyncItemDto>()
+                };
+            }
+
+            var createdList = new List<SubtaskSyncItemDto>();
+            var updatedList = new List<SubtaskSyncItemDto>();
+            var deletedList = new List<DeletedSyncItemDto>();
+
+            foreach (var subtask in subtasks.OrderBy(s => s.UpdatedAtUtc))
+            {
+                if (subtask.IsDeleted)
+                {
+                    deletedList.Add(new DeletedSyncItemDto
+                    {
+                        Id = subtask.Id,
+                        DeletedAtUtc = subtask.UpdatedAtUtc
+                    });
+
+                    continue;
+                }
+
+                if (subtask.CreatedAtUtc > sinceUtc.Value)
+                {
+                    createdList.Add(subtask.ToSyncDto());
+                }
+                else
+                {
+                    updatedList.Add(subtask.ToSyncDto());
+                }
+            }
+
+            return new SyncSubtasksChangesDto
             {
                 Created = createdList,
                 Updated = updatedList,

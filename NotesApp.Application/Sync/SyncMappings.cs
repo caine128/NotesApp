@@ -109,5 +109,28 @@ namespace NotesApp.Application.Sync
         // REFACTORED: added category list mapping for sync pull
         public static IReadOnlyList<CategorySyncItemDto> ToSyncCategoryDtos(this IEnumerable<TaskCategory> categories)
             => categories.Select(c => c.ToSyncDto()).ToList();
+
+        // REFACTORED: added Subtask sync mapping for subtasks feature
+        /// <summary>
+        /// Maps a <see cref="Subtask"/> to its sync pull/conflict representation.
+        /// </summary>
+        public static SubtaskSyncItemDto ToSyncDto(this Subtask subtask)
+        {
+            return new SubtaskSyncItemDto
+            {
+                Id = subtask.Id,
+                TaskId = subtask.TaskId,
+                Text = subtask.Text,
+                IsCompleted = subtask.IsCompleted,
+                Position = subtask.Position,
+                Version = subtask.Version,
+                CreatedAtUtc = subtask.CreatedAtUtc,
+                UpdatedAtUtc = subtask.UpdatedAtUtc
+            };
+        }
+
+        // REFACTORED: added subtask list mapping for sync pull
+        public static IReadOnlyList<SubtaskSyncItemDto> ToSyncSubtaskDtos(this IEnumerable<Subtask> subtasks)
+            => subtasks.Select(s => s.ToSyncDto()).ToList();
     }
 }

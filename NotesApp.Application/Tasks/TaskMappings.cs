@@ -6,7 +6,6 @@ namespace NotesApp.Application.Tasks
 {
     public static class TaskMappings
     {
-
         public static TaskDetailDto ToDetailDto(this TaskItem task) =>
           new(task.Id,
               task.Title,

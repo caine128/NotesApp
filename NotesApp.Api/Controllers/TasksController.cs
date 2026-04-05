@@ -3,6 +3,10 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using NotesApp.Application.Subtasks.Commands.CreateSubtask;
+using NotesApp.Application.Subtasks.Commands.DeleteSubtask;
+using NotesApp.Application.Subtasks.Commands.UpdateSubtask;
+using NotesApp.Application.Subtasks.Models;
 using NotesApp.Application.Tasks;
 using NotesApp.Application.Tasks.Commands.AcknowledgeReminder;
 using NotesApp.Application.Tasks.Commands.CreateTask;
@@ -240,5 +244,88 @@ namespace NotesApp.Api.Controllers
         /// Request payload used to set the completion state of a task.
         /// </summary>
         public sealed record SetTaskCompletionRequest(bool IsCompleted);
+
+        // -----------------------------------------------------------------------
+        // Subtask endpoints (nested under /api/tasks/{taskId}/subtasks)
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Creates a new subtask within the specified task.
+        ///
+        /// The caller must supply a Position using the fractional-index format
+        /// (e.g. "a0", "a1", "a0V") computed with the same algorithm used by the
+        /// mobile client (e.g. @rocicorp/fractional-indexing).
+        /// </summary>
+        [HttpPost("{taskId:guid}/subtasks")]
+        [ProducesResponseType(typeof(SubtaskDto), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<SubtaskDto>> CreateSubtask(
+            [FromRoute] Guid taskId,
+            [FromBody] CreateSubtaskCommand command,
+            CancellationToken cancellationToken)
+        {
+            command.TaskId = taskId;
+
+            var result = await _mediator.Send(command, cancellationToken);
+
+            if (result.IsFailed)
+            {
+                return result.ToActionResult();
+            }
+
+            var dto = result.Value;
+
+            // 201 Created — no dedicated GET-by-subtask-id endpoint; return dto inline.
+            return CreatedAtAction(
+                nameof(GetTaskDetail),
+                new { taskId },
+                dto);
+        }
+
+        /// <summary>
+        /// Updates an existing subtask.
+        /// All body fields are optional — omit (or send null) to leave a field unchanged.
+        /// </summary>
+        [HttpPut("{taskId:guid}/subtasks/{subtaskId:guid}")]
+        [ProducesResponseType(typeof(SubtaskDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<SubtaskDto>> UpdateSubtask(
+            [FromRoute] Guid taskId,
+            [FromRoute] Guid subtaskId,
+            [FromBody] UpdateSubtaskCommand command,
+            CancellationToken cancellationToken)
+        {
+            command.TaskId = taskId;
+            command.SubtaskId = subtaskId;
+
+            return await _mediator
+                .Send(command, cancellationToken)
+                .ToActionResult();
+        }
+
+        /// <summary>
+        /// Soft-deletes a subtask.
+        /// </summary>
+        [HttpDelete("{taskId:guid}/subtasks/{subtaskId:guid}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> DeleteSubtask(
+            [FromRoute] Guid taskId,
+            [FromRoute] Guid subtaskId,
+            CancellationToken cancellationToken)
+        {
+            var command = new DeleteSubtaskCommand { TaskId = taskId, SubtaskId = subtaskId };
+
+            var result = await _mediator.Send(command, cancellationToken);
+
+            if (result.IsFailed)
+            {
+                return result.ToActionResult();
+            }
+
+            return NoContent();
+        }
     }
 }

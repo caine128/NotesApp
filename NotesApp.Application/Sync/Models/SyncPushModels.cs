@@ -24,6 +24,8 @@ namespace NotesApp.Application.Sync.Models
         public SyncPushBlocksDto Blocks { get; init; } = new();
         // REFACTORED: added category push collections for task categories feature
         public SyncPushCategoriesDto Categories { get; init; } = new();
+        // REFACTORED: added subtask push collections for subtasks feature
+        public SyncPushSubtasksDto Subtasks { get; init; } = new();
     }
 
     // ----------------------------
@@ -263,6 +265,8 @@ namespace NotesApp.Application.Sync.Models
         public SyncPushBlocksResultDto Blocks { get; init; } = new();
         // REFACTORED: added category results for task categories feature
         public SyncPushCategoriesResultDto Categories { get; init; } = new();
+        // REFACTORED: added subtask results for subtasks feature
+        public SyncPushSubtasksResultDto Subtasks { get; init; } = new();
     }
 
     public sealed record SyncPushTasksResultDto
@@ -441,6 +445,12 @@ namespace NotesApp.Application.Sync.Models
         /// </summary>
         public CategorySyncItemDto? ServerCategory { get; init; }
 
+        // REFACTORED: added ServerSubtask for subtask version-mismatch conflicts
+        /// <summary>
+        /// Server-side subtask state at conflict time (for version mismatch on subtasks).
+        /// </summary>
+        public SubtaskSyncItemDto? ServerSubtask { get; init; }
+
         /// <summary>
         /// Validation or other error messages.
         /// </summary>
@@ -545,6 +555,133 @@ namespace NotesApp.Application.Sync.Models
     }
 
     public sealed record CategoryDeletedPushResultDto
+    {
+        public Guid Id { get; init; }
+        public SyncPushDeletedStatus Status { get; init; }
+
+        /// <summary>Conflict details when Status indicates a failure. Null for successful operations.</summary>
+        public SyncPushConflictDetailDto? Conflict { get; init; }
+    }
+
+    // ----------------------------
+    // REFACTORED: Subtasks — request DTOs (subtasks feature)
+    // ----------------------------
+
+    /// <summary>
+    /// Subtask push collections from the client device.
+    /// Processed after tasks so that within-push TaskId references resolve correctly.
+    /// </summary>
+    public sealed record SyncPushSubtasksDto
+    {
+        public IReadOnlyList<SubtaskCreatedPushItemDto> Created { get; init; } = [];
+        public IReadOnlyList<SubtaskUpdatedPushItemDto> Updated { get; init; } = [];
+        public IReadOnlyList<SubtaskDeletedPushItemDto> Deleted { get; init; } = [];
+    }
+
+    /// <summary>
+    /// A new subtask the client wants to create on the server.
+    /// The server assigns a stable server-side Id and returns it in the result.
+    /// </summary>
+    public sealed record SubtaskCreatedPushItemDto
+    {
+        /// <summary>
+        /// Client-generated id for correlation. The server maps this to a server-side Id.
+        /// </summary>
+        public Guid ClientId { get; init; }
+
+        /// <summary>
+        /// Server ID of the parent task if it already exists on the server.
+        /// If the parent task was also created in this push, use TaskClientId instead.
+        /// </summary>
+        public Guid? TaskId { get; init; }
+
+        /// <summary>
+        /// Client ID of the parent task if it was created in this same push.
+        /// Server resolves to the server-side Id via taskClientToServerIds.
+        /// </summary>
+        public Guid? TaskClientId { get; init; }
+
+        public string Text { get; init; } = string.Empty;
+        public bool IsCompleted { get; init; }
+
+        /// <summary>
+        /// Fractional-index position string for ordering within the parent task.
+        /// </summary>
+        public string Position { get; init; } = string.Empty;
+    }
+
+    /// <summary>
+    /// An update (text, completion, or reorder) the client wants to apply to an existing subtask.
+    /// Null fields mean "no change" — mirrors the BlockUpdatedPushItemDto pattern.
+    /// </summary>
+    public sealed record SubtaskUpdatedPushItemDto
+    {
+        /// <summary>Server id of the subtask.</summary>
+        public Guid Id { get; init; }
+
+        /// <summary>
+        /// Version the client believes the entity is at.
+        /// Used for optimistic concurrency — mismatch returns a VersionMismatch conflict.
+        /// </summary>
+        public long ExpectedVersion { get; init; }
+
+        /// <summary>New text. Null means no change.</summary>
+        public string? Text { get; init; }
+
+        /// <summary>New completion state. Null means no change.</summary>
+        public bool? IsCompleted { get; init; }
+
+        /// <summary>New fractional-index position. Null means no change.</summary>
+        public string? Position { get; init; }
+    }
+
+    /// <summary>
+    /// A subtask deletion initiated by the mobile client.
+    /// </summary>
+    public sealed record SubtaskDeletedPushItemDto
+    {
+        public Guid Id { get; init; }
+
+        /// <summary>
+        /// Optional version for stronger delete semantics.
+        /// Currently not enforced on delete — "delete wins" semantics apply.
+        /// </summary>
+        public long? ExpectedVersion { get; init; }
+    }
+
+    // ----------------------------
+    // REFACTORED: Subtasks — result DTOs (subtasks feature)
+    // ----------------------------
+
+    public sealed record SyncPushSubtasksResultDto
+    {
+        public IReadOnlyList<SubtaskCreatedPushResultDto> Created { get; init; } = [];
+        public IReadOnlyList<SubtaskUpdatedPushResultDto> Updated { get; init; } = [];
+        public IReadOnlyList<SubtaskDeletedPushResultDto> Deleted { get; init; } = [];
+    }
+
+    public sealed record SubtaskCreatedPushResultDto
+    {
+        public Guid ClientId { get; init; }
+        public Guid ServerId { get; init; }
+        public long Version { get; init; }
+        public SyncPushCreatedStatus Status { get; init; }
+
+        /// <summary>Conflict details when Status is Failed. Null for successful operations.</summary>
+        public SyncPushConflictDetailDto? Conflict { get; init; }
+    }
+
+    public sealed record SubtaskUpdatedPushResultDto
+    {
+        public Guid Id { get; init; }
+        public long? NewVersion { get; init; }
+        public SyncPushUpdatedStatus Status { get; init; }
+
+        /// <summary>Conflict details when Status indicates a failure. Null for successful operations.</summary>
+        public SyncPushConflictDetailDto? Conflict { get; init; }
+    }
+
+    public sealed record SubtaskDeletedPushResultDto
     {
         public Guid Id { get; init; }
         public SyncPushDeletedStatus Status { get; init; }

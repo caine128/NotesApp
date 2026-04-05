@@ -47,6 +47,7 @@ namespace NotesApp.Application.Tests.Sync
                 new AssetRepository(context),
                 new UserDeviceRepository(context),
                 new CategoryRepository(context),
+                new SubtaskRepository(context),
                 currentUserSvc.Object,
                 new Mock<ILogger<GetSyncChangesQueryHandler>>().Object);
         }

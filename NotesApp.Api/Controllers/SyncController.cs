@@ -79,7 +79,8 @@ namespace NotesApp.Api.Controllers
                 Tasks = payload.Tasks,
                 Notes = payload.Notes,
                 Blocks = payload.Blocks,
-                Categories = payload.Categories // REFACTORED: added category push support
+                Categories = payload.Categories, // REFACTORED: added category push support
+                Subtasks = payload.Subtasks // REFACTORED: added subtask push support
             };
 
             var result = await _mediator.Send(command, cancellationToken);
