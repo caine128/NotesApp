@@ -100,6 +100,12 @@ namespace NotesApp.Application.Sync.Models
         /// </summary>
         public Guid? CategoryId { get; init; }
 
+        // REFACTORED: added Priority for task priority feature
+        /// <summary>
+        /// Priority level of the task. Normal when not explicitly set.
+        /// </summary>
+        public TaskPriority Priority { get; init; } = TaskPriority.Normal;
+
         public long Version { get; init; }
 
         public DateTime CreatedAtUtc { get; init; }

@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -101,6 +102,12 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
                               "AND [ReminderAcknowledgedAtUtc] IS NULL " +
                               "AND [ReminderSentAtUtc] IS NULL " +
                               "AND [IsDeleted] = 0");
+
+            // REFACTORED: added Priority for task priority feature
+            builder.Property(t => t.Priority)
+                   .IsRequired()
+                   .HasDefaultValue(TaskPriority.Normal)
+                   .HasSentinel((TaskPriority)0); // 0 is intentionally unmapped; tells EF to always persist explicit values
 
             // REFACTORED: CategoryId FK + index for task categories feature
 

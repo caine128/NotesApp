@@ -216,6 +216,7 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
                                            data.Location,
                                            data.TravelTime,
                                            data.CategoryId, // REFACTORED: added CategoryId for task categories feature
+                                           data.Priority, // REFACTORED: added Priority
                                            utcNow);
 
             if (updateResult.IsFailure)

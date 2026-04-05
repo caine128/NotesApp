@@ -1,4 +1,5 @@
 ﻿using FluentAssertions;
+using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -27,6 +28,7 @@ namespace NotesApp.Application.Tests.Domain
                 location: "  Office  ",
                 travelTime: TimeSpan.FromMinutes(15),
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: now);
 
             // Assert
@@ -42,6 +44,7 @@ namespace NotesApp.Application.Tests.Domain
             task.EndTime.Should().Be(new TimeOnly(10, 0));
             task.TravelTime.Should().Be(TimeSpan.FromMinutes(15));
             task.IsCompleted.Should().BeFalse();
+            task.Priority.Should().Be(TaskPriority.Normal);
             task.Version.Should().Be(1);
             task.IsDeleted.Should().BeFalse();
         }
@@ -65,6 +68,7 @@ namespace NotesApp.Application.Tests.Domain
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: now);
 
             // Assert
@@ -87,6 +91,7 @@ namespace NotesApp.Application.Tests.Domain
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: now);
 
             result.IsSuccess.Should().BeTrue();
@@ -110,6 +115,7 @@ namespace NotesApp.Application.Tests.Domain
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: now);
 
             result.IsSuccess.Should().BeTrue();
@@ -128,6 +134,7 @@ namespace NotesApp.Application.Tests.Domain
                 location: "Home",
                 travelTime: TimeSpan.FromMinutes(5),
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: now.AddMinutes(1));
 
             updateResult.IsSuccess.Should().BeTrue();
@@ -166,6 +173,7 @@ namespace NotesApp.Application.Tests.Domain
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: now);
 
             result.IsSuccess.Should().BeTrue();
@@ -211,6 +219,7 @@ namespace NotesApp.Application.Tests.Domain
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: now);
 
             result.IsSuccess.Should().BeTrue();
@@ -252,6 +261,7 @@ namespace NotesApp.Application.Tests.Domain
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: now);
 
             result.IsSuccess.Should().BeTrue();
@@ -275,6 +285,89 @@ namespace NotesApp.Application.Tests.Domain
         }
 
         [Fact]
+        public void Create_with_high_priority_sets_priority_property()
+        {
+            var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            var result = TaskItem.Create(
+                userId: Guid.NewGuid(),
+                date: new DateOnly(2024, 1, 2),
+                title: "Urgent task",
+                description: null,
+                startTime: null,
+                endTime: null,
+                location: null,
+                travelTime: null,
+                categoryId: null,
+                priority: TaskPriority.High,
+                utcNow: now);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.Priority.Should().Be(TaskPriority.High);
+        }
+
+        [Fact]
+        public void Create_without_explicit_priority_defaults_to_normal()
+        {
+            var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            var result = TaskItem.Create(
+                userId: Guid.NewGuid(),
+                date: new DateOnly(2024, 1, 2),
+                title: "Normal task",
+                description: null,
+                startTime: null,
+                endTime: null,
+                location: null,
+                travelTime: null,
+                categoryId: null,
+                priority: TaskPriority.Normal,
+                utcNow: now);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.Priority.Should().Be(TaskPriority.Normal);
+        }
+
+        [Fact]
+        public void Update_changes_priority_and_increments_version()
+        {
+            var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            var result = TaskItem.Create(
+                userId: Guid.NewGuid(),
+                date: new DateOnly(2024, 1, 2),
+                title: "Task",
+                description: null,
+                startTime: null,
+                endTime: null,
+                location: null,
+                travelTime: null,
+                categoryId: null,
+                priority: TaskPriority.Normal,
+                utcNow: now);
+
+            result.IsSuccess.Should().BeTrue();
+            var task = result.Value;
+            var versionBeforeUpdate = task.Version;
+
+            var updateResult = task.Update(
+                title: "Task",
+                date: new DateOnly(2024, 1, 2),
+                description: null,
+                startTime: null,
+                endTime: null,
+                location: null,
+                travelTime: null,
+                categoryId: null,
+                priority: TaskPriority.High,
+                utcNow: now.AddMinutes(1));
+
+            updateResult.IsSuccess.Should().BeTrue();
+            task.Priority.Should().Be(TaskPriority.High);
+            task.Version.Should().Be(versionBeforeUpdate + 1);
+        }
+
+        [Fact]
         public void SoftDelete_and_RestoreTask_are_idempotent_and_increment_version_once_each()
         {
             var now = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
@@ -289,6 +382,7 @@ namespace NotesApp.Application.Tests.Domain
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: now);
 
             result.IsSuccess.Should().BeTrue();

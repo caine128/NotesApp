@@ -6,6 +6,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Tasks.Commands.AcknowledgeReminder;
+using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -120,6 +121,7 @@ namespace NotesApp.Application.Tests.Tasks
                 null,
                 null,
                 null,
+                TaskPriority.Normal,
                 utcNow);
 
             createResult.IsSuccess.Should().BeTrue();
@@ -142,6 +144,7 @@ namespace NotesApp.Application.Tests.Tasks
                 null,
                 null,
                 null,
+                TaskPriority.Normal,
                 utcNow);
 
             createResult.IsSuccess.Should().BeTrue();

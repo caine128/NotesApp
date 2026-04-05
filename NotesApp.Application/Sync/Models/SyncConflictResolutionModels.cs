@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NotesApp.Domain.Common;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -60,6 +61,12 @@ namespace NotesApp.Application.Sync.Models
         /// Null means uncategorised.
         /// </summary>
         public Guid? CategoryId { get; init; }
+
+        // REFACTORED: added Priority for task priority feature
+        /// <summary>
+        /// Priority level when the client's version wins the conflict. Defaults to Normal.
+        /// </summary>
+        public TaskPriority Priority { get; init; } = TaskPriority.Normal;
     }
 
     /// <summary>

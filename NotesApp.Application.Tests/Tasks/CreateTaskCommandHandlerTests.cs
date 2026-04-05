@@ -87,6 +87,7 @@ namespace NotesApp.Application.Tests.Tasks
             dto.Location.Should().Be(command.Location);
             dto.TravelTime.Should().Be(command.TravelTime);
             dto.IsCompleted.Should().BeFalse();
+            dto.Priority.Should().Be(TaskPriority.Normal); // default when not specified
             dto.ReminderAtUtc.Should().BeCloseTo(reminderAtUtc, TimeSpan.FromSeconds(1));
 
             dto.CreatedAtUtc.Should().BeOnOrAfter(before);
@@ -196,6 +197,54 @@ namespace NotesApp.Application.Tests.Tasks
             tasksInDb.Should().BeEmpty();
         }
 
+
+        [Fact]
+        public async Task Handle_persists_high_priority_when_specified()
+        {
+            // Arrange
+            await using var context = SqlServerAppDbContextFactory.CreateContext();
+
+            ITaskRepository taskRepository = new TaskRepository(context);
+            IOutboxRepository outboxRepository = new OutboxRepository(context);
+            IUnitOfWork unitOfWork = new UnitOfWork(context);
+            ISystemClock clock = new SystemClock();
+
+            var userId = Guid.NewGuid();
+
+            var currentUserServiceMock = new Mock<ICurrentUserService>();
+            currentUserServiceMock
+                .Setup(s => s.GetUserIdAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(userId);
+
+            var handler = new CreateTaskCommandHandler(
+                taskRepository,
+                new Mock<ICategoryRepository>().Object,
+                outboxRepository,
+                unitOfWork,
+                currentUserServiceMock.Object,
+                clock);
+
+            var command = new CreateTaskCommand
+            {
+                Date = new DateOnly(2025, 3, 1),
+                Title = "High priority task",
+                Priority = TaskPriority.High
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            result.Value.Priority.Should().Be(TaskPriority.High);
+
+            var persisted = await context.Tasks
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == result.Value.TaskId, CancellationToken.None);
+
+            persisted.Should().NotBeNull();
+            persisted!.Priority.Should().Be(TaskPriority.High);
+        }
 
         [Fact]
         public async Task Handle_creates_task_and_emits_outbox_message()

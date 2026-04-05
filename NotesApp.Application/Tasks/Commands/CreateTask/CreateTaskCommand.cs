@@ -1,6 +1,7 @@
 ﻿using FluentResults;
 using MediatR;
 using NotesApp.Application.Tasks.Models;
+using NotesApp.Domain.Common;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -57,5 +58,10 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
         /// Pass null to create an uncategorized task.
         /// </summary>
         public Guid? CategoryId { get; init; }
+
+        /// <summary>
+        /// Priority level for this task. Defaults to <see cref="TaskPriority.Normal"/> when not specified.
+        /// </summary>
+        public TaskPriority Priority { get; init; } = TaskPriority.Normal; // REFACTORED: added Priority for task priority feature
     }
 }

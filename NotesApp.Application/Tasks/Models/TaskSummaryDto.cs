@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NotesApp.Domain.Common;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -12,5 +13,6 @@ namespace NotesApp.Application.Tasks.Models
                                         bool IsCompleted,
                                         string? Location,
                                         TimeSpan? TravelTime,
-                                        Guid? CategoryId);
+                                        Guid? CategoryId,
+                                        TaskPriority Priority); // REFACTORED: added Priority for task priority feature
 }

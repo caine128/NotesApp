@@ -659,6 +659,7 @@ namespace NotesApp.Application.Tests.Sync
                 null,
                 null,
                 null,
+                TaskPriority.Normal,
                 createdAt);
 
             result.IsSuccess.Should().BeTrue();

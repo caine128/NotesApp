@@ -79,6 +79,11 @@ namespace NotesApp.Domain.Entities
         /// </summary>
         public Guid? CategoryId { get; private set; }
 
+        /// <summary>
+        /// Priority level of the task. Defaults to <see cref="TaskPriority.Normal"/>.
+        /// </summary>
+        public TaskPriority Priority { get; private set; } = TaskPriority.Normal;
+
         private TaskItem()
         {
         }
@@ -93,6 +98,7 @@ namespace NotesApp.Domain.Entities
                          string? location,
                          TimeSpan? travelTime,
                          Guid? categoryId,
+                         TaskPriority priority,
                          DateTime utcNow)
             : base(id, utcNow)
         {
@@ -105,6 +111,7 @@ namespace NotesApp.Domain.Entities
             Location = location;
             TravelTime = travelTime;
             CategoryId = categoryId;
+            Priority = priority;
             IsCompleted = false;
             Version = 1;
         }
@@ -120,6 +127,7 @@ namespace NotesApp.Domain.Entities
                                                    string? location,
                                                    TimeSpan? travelTime,
                                                    Guid? categoryId,
+                                                   TaskPriority priority,
                                                    DateTime utcNow)
         {
             var errors = new List<DomainError>();
@@ -167,6 +175,7 @@ namespace NotesApp.Domain.Entities
                                     normalizedLocation,
                                     travelTime,
                                     categoryId,
+                                    priority,
                                     utcNow);
 
             return DomainResult<TaskItem>.Success(task);
@@ -182,6 +191,7 @@ namespace NotesApp.Domain.Entities
                                     string? location,
                                     TimeSpan? travelTime,
                                     Guid? categoryId,
+                                    TaskPriority priority,
                                     DateTime utcNow)
         {
             var errors = new List<DomainError>();
@@ -224,6 +234,7 @@ namespace NotesApp.Domain.Entities
             Location = normalizedLocation;
             TravelTime = travelTime;
             CategoryId = categoryId;
+            Priority = priority;
 
             IncrementVersion();
             Touch(utcNow);

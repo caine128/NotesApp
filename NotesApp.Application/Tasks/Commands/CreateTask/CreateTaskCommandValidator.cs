@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using NotesApp.Domain.Common;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -40,6 +41,11 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
             RuleFor(x => x.CategoryId)
                 .Must(id => id == null || id.Value != Guid.Empty)
                 .WithMessage("CategoryId must be a valid non-empty GUID when provided.");
+
+            // Guard against invalid int values sent over the wire (e.g. 0 or 99).
+            RuleFor(x => x.Priority) // REFACTORED: added Priority validation for task priority feature
+                .Must(p => Enum.IsDefined(typeof(TaskPriority), p))
+                .WithMessage("Priority must be Low, Normal, or High.");
         }
     }
 }

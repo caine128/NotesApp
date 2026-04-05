@@ -4,6 +4,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Tasks.Queries;
 using NotesApp.Application.Tests.Infrastructure;
+using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using NotesApp.Infrastructure.Persistence.Repositories;
 using System;
@@ -41,6 +42,7 @@ namespace NotesApp.Application.Tests.Tasks
                 location: "Office",
                 travelTime: TimeSpan.FromMinutes(15),
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: DateTime.UtcNow);
 
             createResult.IsSuccess.Should().BeTrue();
@@ -57,6 +59,7 @@ namespace NotesApp.Application.Tests.Tasks
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: DateTime.UtcNow);
 
             otherResult.IsSuccess.Should().BeTrue();
@@ -132,6 +135,7 @@ namespace NotesApp.Application.Tests.Tasks
                 location: null,
                 travelTime: null,
                 categoryId: null,
+                priority: TaskPriority.Normal,
                 utcNow: DateTime.UtcNow);
 
             otherTaskResult.IsSuccess.Should().BeTrue();
