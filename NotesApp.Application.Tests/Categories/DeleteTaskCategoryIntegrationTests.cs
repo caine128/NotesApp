@@ -6,6 +6,7 @@ using NotesApp.Application.Categories.Commands.DeleteTaskCategory;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Tests.Infrastructure;
+using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using NotesApp.Infrastructure.Persistence;
 using NotesApp.Infrastructure.Persistence.Repositories;
@@ -80,6 +81,7 @@ namespace NotesApp.Application.Tests.Categories
                 "Test task",
                 null, null, null, null, null,
                 categoryId,
+                TaskPriority.Normal,
                 utcNow).Value!;
 
             await context.Tasks.AddAsync(task);
@@ -226,7 +228,7 @@ namespace NotesApp.Application.Tests.Categories
             var deletedTask = TaskItem.Create(
                 userId, new DateOnly(2025, 6, 1), "Deleted task",
                 null, null, null, null, null,
-                category.Id, _now.AddHours(-1)).Value!;
+                category.Id, TaskPriority.Normal, _now.AddHours(-1)).Value!;
 
             typeof(TaskItem).GetProperty(nameof(TaskItem.IsDeleted))!
                 .SetValue(deletedTask, true);
@@ -284,6 +286,7 @@ namespace NotesApp.Application.Tests.Categories
                 userId, new DateOnly(2025, 6, 1), "Residual task",
                 null, null, null, null, null,
                 null, // null so no FK violation at insert time
+                TaskPriority.Normal,
                 _now.AddHours(-1)).Value!;
 
             await context.Tasks.AddAsync(residualTask);

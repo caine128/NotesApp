@@ -107,7 +107,7 @@ namespace NotesApp.Application.Tests.Sync
             var task = TaskItem.Create(
                 userId, new DateOnly(2025, 6, 1), "Test task",
                 null, null, null, null, null,
-                categoryId, utcNow).Value!;
+                categoryId,NotesApp.Domain.Common.TaskPriority.Normal ,utcNow).Value!;
             await context.Tasks.AddAsync(task);
             await context.SaveChangesAsync();
             context.ChangeTracker.Clear();

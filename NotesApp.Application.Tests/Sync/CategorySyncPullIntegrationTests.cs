@@ -8,6 +8,7 @@ using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Sync.Models;
 using NotesApp.Application.Sync.Queries;
 using NotesApp.Application.Tests.Infrastructure;
+using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using NotesApp.Infrastructure.Persistence;
 using NotesApp.Infrastructure.Persistence.Repositories;
@@ -94,7 +95,7 @@ namespace NotesApp.Application.Tests.Sync
             var task = TaskItem.Create(
                 userId, new DateOnly(2025, 6, 1), "Task",
                 null, null, null, null, null,
-                categoryId, utcNow).Value!;
+                categoryId, TaskPriority.Normal, utcNow).Value!;
             await context.Tasks.AddAsync(task);
             await context.SaveChangesAsync();
             context.ChangeTracker.Clear();
