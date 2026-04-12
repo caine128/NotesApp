@@ -21,7 +21,7 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
     /// - Soft-deletes the task through the TaskItem domain method.
     /// - Creates outbox message BEFORE persisting.
     /// - Persists changes only after all validations succeed.
-    /// 
+    ///
     /// Returns:
     /// - Result.Ok()                 -> HTTP 204 No Content
     /// - Result.Fail (Tasks.NotFound)-> HTTP 404 Not Found

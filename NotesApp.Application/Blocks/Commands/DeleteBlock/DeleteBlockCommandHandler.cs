@@ -76,6 +76,21 @@ namespace NotesApp.Application.Blocks.Commands.DeleteBlock
                         .WithMetadata("ErrorCode", "Blocks.NotFound"));
             }
 
+            // 2b) If a NoteId scope was provided, verify the block belongs to that note.
+            //     This prevents deleting a block via a different note's URL.
+            if (command.NoteId != Guid.Empty &&
+                (block.ParentId != command.NoteId || block.ParentType != BlockParentType.Note))
+            {
+                _logger.LogWarning(
+                    "DeleteBlock failed: Block {BlockId} does not belong to note {NoteId}.",
+                    command.BlockId,
+                    command.NoteId);
+
+                return Result.Fail(
+                    new Error("Block not found.")
+                        .WithMetadata("ErrorCode", "Blocks.NotFound"));
+            }
+
             // 3) Domain soft delete (entity is NOT tracked, so modifications are in-memory only)
             var deleteResult = block.SoftDelete(utcNow);
 

@@ -22,7 +22,14 @@ namespace NotesApp.Application.Blocks.Commands.UpdateBlock
         /// <summary>
         /// The id of the block to update.
         /// </summary>
-        public Guid BlockId { get; init; }
+        public Guid BlockId { get; set; }
+
+        /// <summary>
+        /// When set (non-empty), the handler verifies the block belongs to this note.
+        /// Used by the REST endpoint to prevent updating a block via a different note's URL.
+        /// Leave as Guid.Empty when called outside a note-scoped context.
+        /// </summary>
+        public Guid NoteId { get; set; }
 
         /// <summary>
         /// New position (fractional index). Null means no change.
