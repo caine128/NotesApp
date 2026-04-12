@@ -28,6 +28,7 @@ namespace NotesApp.Application.Tests.Sync
         private readonly Mock<IUserDeviceRepository> _deviceRepositoryMock = new();
         private readonly Mock<ICategoryRepository> _categoryRepositoryMock = new();
         private readonly Mock<ISubtaskRepository> _subtaskRepositoryMock = new();
+        private readonly Mock<IAttachmentRepository> _attachmentRepositoryMock = new();
         private readonly Mock<ICurrentUserService> _currentUserServiceMock = new();
         private readonly Mock<ILogger<GetSyncChangesQueryHandler>> _loggerMock = new();
 
@@ -56,6 +57,10 @@ namespace NotesApp.Application.Tests.Sync
                 .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new List<Subtask>());
 
+            _attachmentRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<Attachment>());
+
             return new GetSyncChangesQueryHandler(
                 _taskRepositoryMock.Object,
                 _noteRepositoryMock.Object,
@@ -64,6 +69,7 @@ namespace NotesApp.Application.Tests.Sync
                 _deviceRepositoryMock.Object,
                 _categoryRepositoryMock.Object,
                 _subtaskRepositoryMock.Object,
+                _attachmentRepositoryMock.Object,
                 _currentUserServiceMock.Object,
                 _loggerMock.Object);
         }

@@ -68,7 +68,7 @@ namespace NotesApp.Application.Tests.Tasks
             await context.Tasks.AddRangeAsync(myTask, otherTask);
             await context.SaveChangesAsync();
 
-            var handler = new GetTaskDetailQueryHandler(taskRepository, new SubtaskRepository(context), currentUserMock.Object);
+            var handler = new GetTaskDetailQueryHandler(taskRepository, new SubtaskRepository(context), new AttachmentRepository(context), currentUserMock.Object);
 
             var query = new GetTaskDetailQuery(myTask.Id);
 
@@ -99,7 +99,7 @@ namespace NotesApp.Application.Tests.Tasks
                 .Setup(s => s.GetUserIdAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(userId);
 
-            var handler = new GetTaskDetailQueryHandler(taskRepository, new SubtaskRepository(context), currentUserMock.Object);
+            var handler = new GetTaskDetailQueryHandler(taskRepository, new SubtaskRepository(context), new AttachmentRepository(context), currentUserMock.Object);
 
             var query = new GetTaskDetailQuery(Guid.NewGuid());
 
@@ -144,7 +144,7 @@ namespace NotesApp.Application.Tests.Tasks
             await context.Tasks.AddAsync(otherTask);
             await context.SaveChangesAsync();
 
-            var handler = new GetTaskDetailQueryHandler(taskRepository, new SubtaskRepository(context), currentUserMock.Object);
+            var handler = new GetTaskDetailQueryHandler(taskRepository, new SubtaskRepository(context), new AttachmentRepository(context), currentUserMock.Object);
 
             var query = new GetTaskDetailQuery(otherTask.Id);
 
