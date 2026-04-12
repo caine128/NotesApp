@@ -78,6 +78,21 @@ namespace NotesApp.Application.Blocks.Commands.UpdateBlock
                         .WithMetadata("ErrorCode", "Blocks.Deleted"));
             }
 
+            // 2b) If a NoteId scope was provided, verify the block belongs to that note.
+            //     This prevents updating a block via a different note's URL.
+            if (command.NoteId != Guid.Empty &&
+                (block.ParentId != command.NoteId || block.ParentType != BlockParentType.Note))
+            {
+                _logger.LogWarning(
+                    "UpdateBlock failed: Block {BlockId} does not belong to note {NoteId}.",
+                    command.BlockId,
+                    command.NoteId);
+
+                return Result.Fail<BlockDetailDto>(
+                    new Error("Block not found.")
+                        .WithMetadata("ErrorCode", "Blocks.NotFound"));
+            }
+
             // 3) Track if any changes were made
             var hasChanges = false;
 

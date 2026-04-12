@@ -22,12 +22,12 @@ namespace NotesApp.Application.Blocks.Commands.CreateBlock
         /// <summary>
         /// Server ID of the parent Note or Task.
         /// </summary>
-        public Guid ParentId { get; init; }
+        public Guid ParentId { get; set; }
 
         /// <summary>
         /// Type of parent entity (Note or Task).
         /// </summary>
-        public BlockParentType ParentType { get; init; }
+        public BlockParentType ParentType { get; set; }
 
         /// <summary>
         /// Type of this block (Paragraph, Image, etc.).
