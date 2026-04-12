@@ -256,20 +256,24 @@ namespace NotesApp.Application.Tests.Sync
         }
 
         [Fact]
-        public async Task Handle_TaskDelete_and_explicit_attachment_delete_in_same_push_returns_not_found_on_explicit()
+        public async Task Handle_TaskDelete_and_explicit_attachment_delete_in_same_push_both_succeed()
         {
             // ═══════════════════════════════════════════════════════════════════
             // KEY BEHAVIORAL CONTRACT TEST
             //
-            // When the mobile client sends a TaskDeleted + AttachmentDeleted for the
-            // same task in one push, the handler processes task deletes FIRST (which
-            // cascades to soft-delete all attachments via SoftDeleteAllForTaskAsync).
-            // Then ProcessAttachmentDeletesAsync runs — but GetByIdUntrackedAsync
-            // returns null for the now-deleted attachment (global filter), so the
-            // explicit AttachmentDeleted gets NotFound status.
+            // SyncPushCommandHandler does NOT perform a server-side cascade sweep
+            // when a task is deleted (unlike the REST DeleteTaskCommandHandler which
+            // calls SoftDeleteAllForTaskAsync). The mobile client is responsible for
+            // sending explicit AttachmentDeleted items alongside the TaskDeleted item.
             //
-            // This is safe and idempotent: the attachment IS deleted; the NotFound
-            // status simply tells the client it was already handled by the cascade.
+            // Processing order: task deletes run first, then attachment deletes.
+            // Since the attachment is still visible after the task soft-delete (no
+            // cascade in sync push), the explicit AttachmentDeleted processes normally
+            // and returns Deleted status.
+            //
+            // Both operations succeed independently — the result is the same final
+            // state (task and attachment both soft-deleted), achieved via explicit
+            // client-driven deletes rather than a server cascade.
             // ═══════════════════════════════════════════════════════════════════
             await using var context = SqlServerAppDbContextFactory.CreateContext();
             var (userId, deviceId) = await SeedUserAndDeviceAsync(context, _now);
@@ -298,18 +302,17 @@ namespace NotesApp.Application.Tests.Sync
             result.Value.Tasks.Deleted.Should().ContainSingle(r =>
                 r.Id == task.Id && r.Status == SyncPushDeletedStatus.Deleted);
 
-            // The explicit attachment delete sees NotFound because the task-delete
-            // cascade (SoftDeleteAllForTaskAsync) already deleted it, and the
-            // global query filter now hides it from GetByIdUntrackedAsync.
+            // Attachment delete succeeds independently — no server-side cascade runs,
+            // so the attachment is still visible when ProcessAttachmentDeletesAsync runs.
             result.Value.Attachments.Deleted.Should().ContainSingle(r =>
-                r.Id == attachment.Id && r.Status == SyncPushDeletedStatus.NotFound,
-                "cascade deleted the attachment before explicit delete ran; global filter hides it");
+                r.Id == attachment.Id && r.Status == SyncPushDeletedStatus.Deleted,
+                "sync push has no server cascade; client sends explicit delete which succeeds normally");
 
-            // Attachment is still deleted in DB (cascade succeeded)
+            // Both are soft-deleted in DB
             var dbAttachment = await context.Attachments
                 .IgnoreQueryFilters()
                 .FirstAsync(a => a.Id == attachment.Id);
-            dbAttachment.IsDeleted.Should().BeTrue("cascade delete must have persisted");
+            dbAttachment.IsDeleted.Should().BeTrue();
         }
     }
 }
