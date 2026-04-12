@@ -84,6 +84,14 @@ namespace NotesApp.Domain.Entities
         /// </summary>
         public TaskPriority Priority { get; private set; } = TaskPriority.Normal;
 
+        // REFACTORED: added MeetingLink for meeting-link feature
+        /// <summary>
+        /// Optional join URL or dial-in reference for a meeting associated with this task
+        /// (e.g. Zoom, Teams, Google Meet, phone number). Stored as plain string to support
+        /// non-standard schemes and enterprise meeting codes that are not valid URIs.
+        /// </summary>
+        public string? MeetingLink { get; private set; }
+
         private TaskItem()
         {
         }
@@ -99,6 +107,7 @@ namespace NotesApp.Domain.Entities
                          TimeSpan? travelTime,
                          Guid? categoryId,
                          TaskPriority priority,
+                         string? meetingLink,
                          DateTime utcNow)
             : base(id, utcNow)
         {
@@ -112,6 +121,7 @@ namespace NotesApp.Domain.Entities
             TravelTime = travelTime;
             CategoryId = categoryId;
             Priority = priority;
+            MeetingLink = meetingLink;
             IsCompleted = false;
             Version = 1;
         }
@@ -128,13 +138,15 @@ namespace NotesApp.Domain.Entities
                                                    TimeSpan? travelTime,
                                                    Guid? categoryId,
                                                    TaskPriority priority,
-                                                   DateTime utcNow)
+                                                   DateTime utcNow,
+                                                   string? meetingLink = null) // REFACTORED: added meetingLink for meeting-link feature
         {
             var errors = new List<DomainError>();
 
             var normalizedTitle = title?.Trim() ?? string.Empty;
             var normalizedDescription = description?.Trim();
             var normalizedLocation = string.IsNullOrWhiteSpace(location) ? null : location.Trim();
+            var normalizedMeetingLink = string.IsNullOrWhiteSpace(meetingLink) ? null : meetingLink.Trim(); // REFACTORED: normalize meeting link
 
 
             if (userId == Guid.Empty)
@@ -176,6 +188,7 @@ namespace NotesApp.Domain.Entities
                                     travelTime,
                                     categoryId,
                                     priority,
+                                    normalizedMeetingLink, // REFACTORED: added meetingLink
                                     utcNow);
 
             return DomainResult<TaskItem>.Success(task);
@@ -192,13 +205,15 @@ namespace NotesApp.Domain.Entities
                                     TimeSpan? travelTime,
                                     Guid? categoryId,
                                     TaskPriority priority,
-                                    DateTime utcNow)
+                                    DateTime utcNow,
+                                    string? meetingLink = null) // REFACTORED: added meetingLink for meeting-link feature
         {
             var errors = new List<DomainError>();
 
             var normalizedTitle = title?.Trim() ?? string.Empty;
             var normalizedDescription = description?.Trim();
             var normalizedLocation = string.IsNullOrWhiteSpace(location) ? null : location.Trim();
+            var normalizedMeetingLink = string.IsNullOrWhiteSpace(meetingLink) ? null : meetingLink.Trim(); // REFACTORED: normalize meeting link
 
 
             if (normalizedTitle.Length == 0)
@@ -235,6 +250,7 @@ namespace NotesApp.Domain.Entities
             TravelTime = travelTime;
             CategoryId = categoryId;
             Priority = priority;
+            MeetingLink = normalizedMeetingLink; // REFACTORED: added meetingLink
 
             IncrementVersion();
             Touch(utcNow);

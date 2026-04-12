@@ -484,5 +484,150 @@ namespace NotesApp.Application.Tests.Tasks
             // No outbox message should have been created
             (await context.OutboxMessages.ToListAsync()).Should().BeEmpty();
         }
+
+        // REFACTORED: added MeetingLink tests for meeting-link feature
+
+        [Fact]
+        public async Task Handle_updates_meeting_link_and_persists_change()
+        {
+            // Arrange
+            await using var context = SqlServerAppDbContextFactory.CreateContext();
+
+            ITaskRepository taskRepository = new TaskRepository(context);
+            IOutboxRepository outboxRepository = new OutboxRepository(context);
+            IUnitOfWork unitOfWork = new UnitOfWork(context);
+            ISystemClock clock = new SystemClock();
+
+            var userId = Guid.NewGuid();
+
+            var currentUserServiceMock = new Mock<ICurrentUserService>();
+            currentUserServiceMock
+                .Setup(s => s.GetUserIdAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(userId);
+
+            var taskResult = TaskItem.Create(
+                userId: userId,
+                date: new DateOnly(2025, 4, 1),
+                title: "Standup",
+                description: null,
+                startTime: null,
+                endTime: null,
+                location: null,
+                travelTime: null,
+                categoryId: null,
+                priority: TaskPriority.Normal,
+                utcNow: DateTime.UtcNow);
+
+            taskResult.IsSuccess.Should().BeTrue();
+            var task = taskResult.Value!;
+
+            await context.Tasks.AddAsync(task);
+            await context.SaveChangesAsync();
+            context.Entry(task).State = EntityState.Detached;
+
+            var handler = new UpdateTaskCommandHandler(
+                taskRepository,
+                new Mock<ICategoryRepository>().Object,
+                outboxRepository,
+                unitOfWork,
+                currentUserServiceMock.Object,
+                clock,
+                new LoggerFactory().CreateLogger<UpdateTaskCommandHandler>());
+
+            var command = new UpdateTaskCommand
+            {
+                TaskId = task.Id,
+                Date = task.Date,
+                Title = task.Title,
+                MeetingLink = "https://teams.microsoft.com/l/meetup-join/abc123"
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            result.Value.MeetingLink.Should().Be(command.MeetingLink);
+
+            var persisted = await context.Tasks
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == task.Id, CancellationToken.None);
+
+            persisted.Should().NotBeNull();
+            persisted!.MeetingLink.Should().Be(command.MeetingLink);
+        }
+
+        [Fact]
+        public async Task Handle_clears_meeting_link_when_set_to_null()
+        {
+            // Arrange
+            await using var context = SqlServerAppDbContextFactory.CreateContext();
+
+            ITaskRepository taskRepository = new TaskRepository(context);
+            IOutboxRepository outboxRepository = new OutboxRepository(context);
+            IUnitOfWork unitOfWork = new UnitOfWork(context);
+            ISystemClock clock = new SystemClock();
+
+            var userId = Guid.NewGuid();
+
+            var currentUserServiceMock = new Mock<ICurrentUserService>();
+            currentUserServiceMock
+                .Setup(s => s.GetUserIdAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(userId);
+
+            // Seed a task that already has a meeting link
+            var taskResult = TaskItem.Create(
+                userId: userId,
+                date: new DateOnly(2025, 4, 1),
+                title: "Standup",
+                description: null,
+                startTime: null,
+                endTime: null,
+                location: null,
+                travelTime: null,
+                categoryId: null,
+                priority: TaskPriority.Normal,
+                utcNow: DateTime.UtcNow,
+                meetingLink: "https://zoom.us/j/999");
+
+            taskResult.IsSuccess.Should().BeTrue();
+            var task = taskResult.Value!;
+
+            await context.Tasks.AddAsync(task);
+            await context.SaveChangesAsync();
+            context.Entry(task).State = EntityState.Detached;
+
+            var handler = new UpdateTaskCommandHandler(
+                taskRepository,
+                new Mock<ICategoryRepository>().Object,
+                outboxRepository,
+                unitOfWork,
+                currentUserServiceMock.Object,
+                clock,
+                new LoggerFactory().CreateLogger<UpdateTaskCommandHandler>());
+
+            // Update with MeetingLink = null to clear the link
+            var command = new UpdateTaskCommand
+            {
+                TaskId = task.Id,
+                Date = task.Date,
+                Title = task.Title,
+                MeetingLink = null
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            result.Value.MeetingLink.Should().BeNull();
+
+            var persisted = await context.Tasks
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == task.Id, CancellationToken.None);
+
+            persisted.Should().NotBeNull();
+            persisted!.MeetingLink.Should().BeNull();
+        }
     }
 }

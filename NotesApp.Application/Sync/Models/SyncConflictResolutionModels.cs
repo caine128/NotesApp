@@ -67,6 +67,12 @@ namespace NotesApp.Application.Sync.Models
         /// Priority level when the client's version wins the conflict. Defaults to Normal.
         /// </summary>
         public TaskPriority Priority { get; init; } = TaskPriority.Normal;
+
+        // REFACTORED: added MeetingLink for meeting-link feature
+        /// <summary>
+        /// Optional meeting link when the client's version wins the conflict. Null clears any existing link.
+        /// </summary>
+        public string? MeetingLink { get; init; }
     }
 
     /// <summary>

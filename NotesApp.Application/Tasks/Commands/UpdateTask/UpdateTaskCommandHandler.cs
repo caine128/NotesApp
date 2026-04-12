@@ -96,7 +96,8 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
                                                travelTime: command.TravelTime,
                                                categoryId: command.CategoryId,
                                                priority: command.Priority, // REFACTORED: added Priority
-                                               utcNow: utcNow);
+                                               utcNow: utcNow,
+                                               meetingLink: command.MeetingLink); // REFACTORED: added MeetingLink
             if (updateResult.IsFailure)
             {
                 // Entity modified but NOT tracked - won't persist
@@ -126,6 +127,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
                 taskItem.ReminderAtUtc,
                 taskItem.CategoryId,
                 taskItem.Priority, // REFACTORED: added Priority
+                taskItem.MeetingLink, // REFACTORED: added MeetingLink
                 Event = TaskEventType.Updated.ToString(),
                 OccurredAtUtc = utcNow
             });

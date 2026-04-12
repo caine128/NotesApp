@@ -76,6 +76,12 @@ namespace NotesApp.Application.Sync.Models
         /// Priority level for this task. Defaults to Normal when not specified.
         /// </summary>
         public TaskPriority Priority { get; init; } = TaskPriority.Normal;
+
+        // REFACTORED: added MeetingLink for meeting-link feature
+        /// <summary>
+        /// Optional join URL or dial-in reference for a meeting. Null means no meeting link.
+        /// </summary>
+        public string? MeetingLink { get; init; }
     }
 
     public sealed record TaskUpdatedPushItemDto
@@ -111,6 +117,12 @@ namespace NotesApp.Application.Sync.Models
         /// Priority level for this task. Defaults to Normal when not specified.
         /// </summary>
         public TaskPriority Priority { get; init; } = TaskPriority.Normal;
+
+        // REFACTORED: added MeetingLink for meeting-link feature
+        /// <summary>
+        /// Optional join URL or dial-in reference for a meeting. Null clears any existing link.
+        /// </summary>
+        public string? MeetingLink { get; init; }
     }
 
     public sealed record TaskDeletedPushItemDto

@@ -347,7 +347,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                    item.TravelTime,
                                                    resolvedCategoryId, // REFACTORED: pass resolved CategoryId
                                                    item.Priority, // REFACTORED: pass Priority
-                                                   utcNow);
+                                                   utcNow,
+                                                   item.MeetingLink); // REFACTORED: pass MeetingLink
 
                 if (createResult.IsFailure)
                 {
@@ -542,7 +543,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                item.TravelTime,
                                                resolvedCategoryId, // REFACTORED: pass resolved CategoryId
                                                item.Priority, // REFACTORED: pass Priority
-                                               utcNow);
+                                               utcNow,
+                                               item.MeetingLink); // REFACTORED: pass MeetingLink
 
                 if (updateResult.IsFailure)
                 {

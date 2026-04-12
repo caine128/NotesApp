@@ -542,6 +542,101 @@ namespace NotesApp.Application.Tests.Sync
             taskResult.Conflict.Errors.Should().NotBeEmpty();
         }
 
+        // REFACTORED: added MeetingLink tests for meeting-link feature
+
+        [Fact]
+        public async Task Handle_TaskCreate_WithMeetingLink_PersistsMeetingLink()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var clientId = Guid.NewGuid();
+
+            TaskItem? capturedTask = null;
+            _taskRepositoryMock
+                .Setup(r => r.AddAsync(It.IsAny<TaskItem>(), It.IsAny<CancellationToken>()))
+                .Callback<TaskItem, CancellationToken>((t, _) => capturedTask = t)
+                .Returns(Task.CompletedTask);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Tasks = new SyncPushTasksDto
+                {
+                    Created = new[]
+                    {
+                        new TaskCreatedPushItemDto
+                        {
+                            ClientId = clientId,
+                            Date = new DateOnly(2025, 4, 1),
+                            Title = "Standup",
+                            MeetingLink = "https://zoom.us/j/123456789"
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            result.Value.Tasks.Created.Should().ContainSingle().Which.Status.Should().Be(SyncPushCreatedStatus.Created);
+
+            capturedTask.Should().NotBeNull();
+            capturedTask!.MeetingLink.Should().Be("https://zoom.us/j/123456789");
+        }
+
+        [Fact]
+        public async Task Handle_TaskUpdate_WithMeetingLink_UpdatesMeetingLink()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var taskId = Guid.NewGuid();
+
+            var existingTask = CreateTaskItem(_userId, _now);
+            SetEntityId(existingTask, taskId);
+            SetEntityVersion(existingTask, 1L);
+
+            TaskItem? capturedTask = null;
+            _taskRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(existingTask);
+            _taskRepositoryMock
+                .Setup(r => r.Update(It.IsAny<TaskItem>()))
+                .Callback<TaskItem>(t => capturedTask = t);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Tasks = new SyncPushTasksDto
+                {
+                    Updated = new[]
+                    {
+                        new TaskUpdatedPushItemDto
+                        {
+                            Id = taskId,
+                            ExpectedVersion = 1,
+                            Date = existingTask.Date,
+                            Title = existingTask.Title,
+                            MeetingLink = "https://meet.google.com/abc-defg-hij"
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            result.Value.Tasks.Updated.Should().ContainSingle().Which.Status.Should().Be(SyncPushUpdatedStatus.Updated);
+
+            capturedTask.Should().NotBeNull();
+            capturedTask!.MeetingLink.Should().Be("https://meet.google.com/abc-defg-hij");
+        }
+
         #endregion
 
         #region Task Delete Tests

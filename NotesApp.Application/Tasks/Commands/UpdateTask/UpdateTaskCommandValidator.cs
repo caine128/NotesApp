@@ -60,6 +60,11 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
             RuleFor(x => x.Priority) // REFACTORED: added Priority validation for task priority feature
                 .Must(p => Enum.IsDefined(typeof(TaskPriority), p))
                 .WithMessage("Priority must be Low, Normal, or High.");
+
+            // REFACTORED: added MeetingLink validation for meeting-link feature
+            RuleFor(x => x.MeetingLink)
+                .MaximumLength(2048)
+                .WithMessage("Meeting link cannot exceed 2048 characters.");
         }
     }
 }

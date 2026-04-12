@@ -217,7 +217,8 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
                                            data.TravelTime,
                                            data.CategoryId, // REFACTORED: added CategoryId for task categories feature
                                            data.Priority, // REFACTORED: added Priority
-                                           utcNow);
+                                           utcNow,
+                                           data.MeetingLink); // REFACTORED: added MeetingLink
 
             if (updateResult.IsFailure)
             {

@@ -122,6 +122,12 @@ namespace NotesApp.Application.Sync.Models
         /// </summary>
         public TaskPriority Priority { get; init; } = TaskPriority.Normal;
 
+        // REFACTORED: added MeetingLink for meeting-link feature
+        /// <summary>
+        /// Optional join URL or dial-in reference for a meeting. Null when not set.
+        /// </summary>
+        public string? MeetingLink { get; init; }
+
         public long Version { get; init; }
 
         public DateTime CreatedAtUtc { get; init; }

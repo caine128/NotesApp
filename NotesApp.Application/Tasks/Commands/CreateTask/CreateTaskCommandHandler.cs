@@ -71,7 +71,8 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
                                                travelTime: command.TravelTime,
                                                categoryId: command.CategoryId,
                                                priority: command.Priority, // REFACTORED: added Priority
-                                               utcNow: utcNow);
+                                               utcNow: utcNow,
+                                               meetingLink: command.MeetingLink); // REFACTORED: added MeetingLink
 
 
             if (createResult.IsFailure)
@@ -111,6 +112,7 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
                 taskItem.IsCompleted,
                 taskItem.CategoryId,
                 taskItem.Priority, // REFACTORED: added Priority
+                taskItem.MeetingLink, // REFACTORED: added MeetingLink
                 Event = TaskEventType.Created.ToString(),
                 OccurredAtUtc = utcNow
             });

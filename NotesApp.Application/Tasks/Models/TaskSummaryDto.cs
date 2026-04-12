@@ -14,5 +14,6 @@ namespace NotesApp.Application.Tasks.Models
                                         string? Location,
                                         TimeSpan? TravelTime,
                                         Guid? CategoryId,
-                                        TaskPriority Priority); // REFACTORED: added Priority for task priority feature
+                                        TaskPriority Priority, // REFACTORED: added Priority for task priority feature
+                                        string? MeetingLink); // REFACTORED: added MeetingLink for meeting-link feature
 }

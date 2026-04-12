@@ -60,5 +60,12 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
         /// Priority level for this task. Defaults to <see cref="TaskPriority.Normal"/> when not specified.
         /// </summary>
         public TaskPriority Priority { get; init; } = TaskPriority.Normal; // REFACTORED: added Priority for task priority feature
+
+        // REFACTORED: added MeetingLink for meeting-link feature
+        /// <summary>
+        /// Optional join URL or dial-in reference for a meeting associated with this task.
+        /// Pass null to clear an existing meeting link. Max 2048 characters.
+        /// </summary>
+        public string? MeetingLink { get; init; }
     }
 }

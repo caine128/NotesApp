@@ -24,6 +24,7 @@ namespace NotesApp.Application.Sync
                 ReminderAtUtc = task.ReminderAtUtc,
                 CategoryId = task.CategoryId, // REFACTORED: added CategoryId mapping
                 Priority = task.Priority, // REFACTORED: added Priority mapping
+                MeetingLink = task.MeetingLink, // REFACTORED: added MeetingLink mapping
                 Version = task.Version,
                 CreatedAtUtc = task.CreatedAtUtc,
                 UpdatedAtUtc = task.UpdatedAtUtc
