@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Attachments.Commands.DeleteAttachment;
+using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;

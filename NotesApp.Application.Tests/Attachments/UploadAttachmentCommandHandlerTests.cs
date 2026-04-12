@@ -7,6 +7,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Abstractions.Storage;
 using NotesApp.Application.Attachments.Commands.UploadAttachment;
 using NotesApp.Application.Attachments.Models;
+using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Configuration;
 using NotesApp.Domain.Common;
