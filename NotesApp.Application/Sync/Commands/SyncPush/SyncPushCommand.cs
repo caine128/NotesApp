@@ -23,5 +23,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         public SyncPushCategoriesDto Categories { get; init; } = new();
         // REFACTORED: added subtask push collections for subtasks feature
         public SyncPushSubtasksDto Subtasks { get; init; } = new();
+        // REFACTORED: added attachment push collections for task-attachments feature
+        public SyncPushAttachmentsDto Attachments { get; init; } = new();
     }
 }

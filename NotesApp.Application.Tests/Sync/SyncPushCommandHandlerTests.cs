@@ -25,6 +25,7 @@ namespace NotesApp.Application.Tests.Sync
         private readonly Mock<IUserDeviceRepository> _deviceRepositoryMock = new();
         private readonly Mock<ICategoryRepository> _categoryRepositoryMock = new();
         private readonly Mock<ISubtaskRepository> _subtaskRepositoryMock = new();
+        private readonly Mock<IAttachmentRepository> _attachmentRepositoryMock = new(); // REFACTORED: added for task-attachments feature
         private readonly Mock<IOutboxRepository> _outboxRepositoryMock = new();
         private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
         private readonly Mock<ISystemClock> _clockMock = new();
@@ -67,6 +68,7 @@ namespace NotesApp.Application.Tests.Sync
                 _deviceRepositoryMock.Object,
                 _categoryRepositoryMock.Object,
                 _subtaskRepositoryMock.Object,
+                _attachmentRepositoryMock.Object, // REFACTORED: added for task-attachments feature
                 _outboxRepositoryMock.Object,
                 _unitOfWorkMock.Object,
                 _clockMock.Object,

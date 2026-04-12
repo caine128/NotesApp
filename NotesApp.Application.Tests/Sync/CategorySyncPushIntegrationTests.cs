@@ -80,6 +80,7 @@ namespace NotesApp.Application.Tests.Sync
                 new UserDeviceRepository(context),
                 new CategoryRepository(context),
                 new SubtaskRepository(context),
+                new AttachmentRepository(context), // REFACTORED: added for task-attachments feature
                 new OutboxRepository(context),
                 new UnitOfWork(context),
                 clock.Object,
