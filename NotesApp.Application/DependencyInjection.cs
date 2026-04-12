@@ -34,6 +34,12 @@ namespace NotesApp.Application
                 .ValidateDataAnnotations()
                 .ValidateOnStart();
 
+            // REFACTORED: added AttachmentStorageOptions binding for task-attachments feature
+            services.AddOptions<AttachmentStorageOptions>()
+                .Bind(configuration.GetSection(AttachmentStorageOptions.SectionName))
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
+
             return services;
         }
     }

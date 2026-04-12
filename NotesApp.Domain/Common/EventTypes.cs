@@ -59,4 +59,15 @@ namespace NotesApp.Domain.Common
         Updated,
         Deleted
     }
+
+    /// <summary>
+    /// Event types for Attachment entity (used in outbox messages).
+    /// No Updated value — attachments are immutable after creation.
+    /// </summary>
+    // REFACTORED: added AttachmentEventType for task-attachments feature
+    public enum AttachmentEventType
+    {
+        Created,
+        Deleted
+    }
 }

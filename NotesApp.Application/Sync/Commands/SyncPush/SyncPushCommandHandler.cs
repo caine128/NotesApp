@@ -37,6 +37,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         private readonly IUserDeviceRepository _deviceRepository;
         private readonly ICategoryRepository _categoryRepository; // REFACTORED: added for category push processing
         private readonly ISubtaskRepository _subtaskRepository; // REFACTORED: added for subtask push processing
+        private readonly IAttachmentRepository _attachmentRepository; // REFACTORED: added for task-attachments push processing
         private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISystemClock _clock;
@@ -49,6 +50,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                      IUserDeviceRepository deviceRepository,
                                      ICategoryRepository categoryRepository,
                                      ISubtaskRepository subtaskRepository,
+                                     IAttachmentRepository attachmentRepository,
                                      IOutboxRepository outboxRepository,
                                      IUnitOfWork unitOfWork,
                                      ISystemClock clock,
@@ -61,6 +63,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             _deviceRepository = deviceRepository;
             _categoryRepository = categoryRepository; // REFACTORED: added for category push processing
             _subtaskRepository = subtaskRepository; // REFACTORED: added for subtask push processing
+            _attachmentRepository = attachmentRepository; // REFACTORED: added for task-attachments push processing
             _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _clock = clock;
@@ -109,6 +112,9 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             var subtaskCreateResults = new List<SubtaskCreatedPushResultDto>();
             var subtaskUpdateResults = new List<SubtaskUpdatedPushResultDto>();
             var subtaskDeleteResults = new List<SubtaskDeletedPushResultDto>();
+
+            // REFACTORED: added attachment result list for task-attachments feature
+            var attachmentDeleteResults = new List<AttachmentDeletedPushResultDto>();
 
             // Maps client IDs to server IDs for entities created in this push.
             // Used to resolve parent references for blocks.
@@ -202,6 +208,15 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                              subtaskDeleteResults,
                                              cancellationToken);
 
+            // REFACTORED: process attachment deletes after task deletes so same-push task-delete +
+            // attachment-delete pairs cascade cleanly (explicit attachment deletes become AlreadyDeleted)
+            // task-attachments feature
+            await ProcessAttachmentDeletesAsync(userId,
+                                                request,
+                                                utcNow,
+                                                attachmentDeleteResults,
+                                                cancellationToken);
+
             // Process blocks (after tasks/notes so parent ID mappings are available)
             await ProcessBlockCreatesAsync(userId,
                                            request,
@@ -258,6 +273,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     Created = subtaskCreateResults,
                     Updated = subtaskUpdateResults,
                     Deleted = subtaskDeleteResults
+                },
+                // REFACTORED: added attachment results for task-attachments feature
+                Attachments = new SyncPushAttachmentsResultDto
+                {
+                    Deleted = attachmentDeleteResults
                 },
             };
 
@@ -2164,6 +2184,100 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new SubtaskDeletedPushResultDto
+                {
+                    Id = item.Id,
+                    Status = SyncPushDeletedStatus.Deleted
+                });
+            }
+        }
+
+        // REFACTORED: added ProcessAttachmentDeletesAsync for task-attachments feature
+        /// <summary>
+        /// Processes attachment delete operations from the client push payload.
+        /// Mirrors ProcessSubtaskDeletesAsync — delete-wins semantics, no version check.
+        /// Blob deletion is deferred to the orphan-cleanup background worker.
+        /// </summary>
+        private async Task ProcessAttachmentDeletesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<AttachmentDeletedPushResultDto> results,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.Attachments.Deleted)
+            {
+                var attachment = await _attachmentRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+
+                if (attachment is null || attachment.UserId != userId)
+                {
+                    results.Add(new AttachmentDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.NotFound
+                    });
+
+                    continue;
+                }
+
+                if (attachment.IsDeleted)
+                {
+                    // Idempotent: already deleted is acceptable
+                    results.Add(new AttachmentDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.AlreadyDeleted
+                    });
+
+                    continue;
+                }
+
+                // Create outbox message BEFORE modifying the entity
+                var payload = OutboxPayloadBuilder.BuildAttachmentPayload(attachment, request.DeviceId);
+
+                var outboxResult = OutboxMessage.Create<Attachment, AttachmentEventType>(
+                    attachment,
+                    AttachmentEventType.Deleted,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new AttachmentDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                // Outbox created successfully — now safe to soft-delete
+                var deleteResult = attachment.SoftDelete(utcNow);
+                if (deleteResult.IsFailure)
+                {
+                    results.Add(new AttachmentDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = deleteResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                _attachmentRepository.Update(attachment);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                results.Add(new AttachmentDeletedPushResultDto
                 {
                     Id = item.Id,
                     Status = SyncPushDeletedStatus.Deleted

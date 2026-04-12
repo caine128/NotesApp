@@ -93,5 +93,27 @@ namespace NotesApp.Application.Common
 
             return JsonSerializer.Serialize(payload);
         }
+
+        // REFACTORED: added BuildAttachmentPayload for task-attachments feature
+        /// <summary>
+        /// Builds the standardized JSON payload for attachment-related outbox messages.
+        /// </summary>
+        public static string BuildAttachmentPayload(Attachment attachment, Guid originDeviceId)
+        {
+            var payload = new
+            {
+                AttachmentId = attachment.Id,
+                attachment.UserId,
+                attachment.TaskId,
+                attachment.FileName,
+                attachment.ContentType,
+                attachment.SizeBytes,
+                attachment.BlobPath,
+                attachment.DisplayOrder,
+                OriginDeviceId = originDeviceId
+            };
+
+            return JsonSerializer.Serialize(payload);
+        }
     }
 }

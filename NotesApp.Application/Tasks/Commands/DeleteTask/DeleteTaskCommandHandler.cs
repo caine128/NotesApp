@@ -33,6 +33,8 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
         private readonly ITaskRepository _taskRepository;
         // REFACTORED: added subtask repository for subtasks cascade-delete
         private readonly ISubtaskRepository _subtaskRepository;
+        // REFACTORED: added attachment repository for task-attachments cascade-delete
+        private readonly IAttachmentRepository _attachmentRepository;
         private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
@@ -42,6 +44,7 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
         public DeleteTaskCommandHandler(
             ITaskRepository taskRepository,
             ISubtaskRepository subtaskRepository,
+            IAttachmentRepository attachmentRepository,
             IOutboxRepository outboxRepository,
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUserService,
@@ -50,6 +53,7 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
         {
             _taskRepository = taskRepository;
             _subtaskRepository = subtaskRepository;
+            _attachmentRepository = attachmentRepository;
             _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
@@ -120,6 +124,11 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
             // Bulk-deletes in the same SaveChangesAsync call so deleted subtasks surface
             // in the next sync pull via UpdatedAtUtc.
             await _subtaskRepository.SoftDeleteAllForTaskAsync(taskItem.Id, currentUserId, utcNow, cancellationToken);
+
+            // REFACTORED: cascade soft-delete all attachments atomically (task-attachments feature)
+            // Runs in the same SaveChangesAsync call so deleted attachments surface in the next sync pull.
+            // Blob cleanup is handled separately by the background orphan-cleanup worker.
+            await _attachmentRepository.SoftDeleteAllForTaskAsync(taskItem.Id, currentUserId, utcNow, cancellationToken);
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 

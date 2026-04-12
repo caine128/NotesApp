@@ -39,6 +39,7 @@ namespace NotesApp.Application.Sync.Queries
         private readonly IUserDeviceRepository _deviceRepository;
         private readonly ICategoryRepository _categoryRepository; // REFACTORED: added for category sync pull
         private readonly ISubtaskRepository _subtaskRepository; // REFACTORED: added for subtask sync pull
+        private readonly IAttachmentRepository _attachmentRepository; // REFACTORED: added for task-attachments sync pull
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<GetSyncChangesQueryHandler> _logger;
 
@@ -49,6 +50,7 @@ namespace NotesApp.Application.Sync.Queries
                                           IUserDeviceRepository deviceRepository,
                                           ICategoryRepository categoryRepository,
                                           ISubtaskRepository subtaskRepository,
+                                          IAttachmentRepository attachmentRepository,
                                           ICurrentUserService currentUserService,
                                           ILogger<GetSyncChangesQueryHandler> logger)
         {
@@ -59,6 +61,7 @@ namespace NotesApp.Application.Sync.Queries
             _deviceRepository = deviceRepository;
             _categoryRepository = categoryRepository; // REFACTORED: added for category sync pull
             _subtaskRepository = subtaskRepository; // REFACTORED: added for subtask sync pull
+            _attachmentRepository = attachmentRepository; // REFACTORED: added for task-attachments sync pull
             _currentUserService = currentUserService;
             _logger = logger;
         }
@@ -114,6 +117,11 @@ namespace NotesApp.Application.Sync.Queries
                                                                           request.SinceUtc,
                                                                           cancellationToken);
 
+            // REFACTORED: fetch attachment changes for sync pull (task-attachments feature)
+            var attachments = await _attachmentRepository.GetChangedSinceAsync(userId,
+                                                                                request.SinceUtc,
+                                                                                cancellationToken);
+
             var serverTimestampUtc = DateTime.UtcNow;
 
             // Categorise entities into buckets
@@ -123,6 +131,7 @@ namespace NotesApp.Application.Sync.Queries
             var assetsBuckets = CategoriseAssets(assets, request.SinceUtc);
             var categoriesBuckets = CategoriseCategories(categories, request.SinceUtc); // REFACTORED: added categories bucket
             var subtasksBuckets = CategoriseSubtasks(subtasks, request.SinceUtc); // REFACTORED: added subtasks bucket
+            var attachmentsBuckets = CategoriseAttachments(attachments, request.SinceUtc); // REFACTORED: added attachments bucket
 
             // Determine effective max items per entity
             var effectiveMax = request.MaxItemsPerEntity ?? SyncLimits.DefaultPullMaxItemsPerEntity;
@@ -204,6 +213,13 @@ namespace NotesApp.Application.Sync.Queries
             var limitedAssetCreated = assetCreated;
             var limitedAssetDeleted = assetDeleted;
 
+            // REFACTORED: attachments follow the same no-limit pattern as assets;
+            // volume is bounded by MaxAttachmentsPerTask per task
+            var attachmentCreated = attachmentsBuckets.Created.ToList();
+            var attachmentDeleted = attachmentsBuckets.Deleted.ToList();
+            var limitedAttachmentCreated = attachmentCreated;
+            var limitedAttachmentDeleted = attachmentDeleted;
+
             // REFACTORED: categories use the same effectiveMax as all other entity types
             var categoryRemaining = effectiveMax;
             var limitedCategoryCreated = LimitList(categoryCreated, ref categoryRemaining);
@@ -243,6 +259,13 @@ namespace NotesApp.Application.Sync.Queries
                 Deleted = limitedAssetDeleted
             };
 
+            // REFACTORED: build limited attachments bucket (task-attachments feature)
+            var limitedAttachmentsBuckets = new SyncAttachmentsChangesDto
+            {
+                Created = limitedAttachmentCreated,
+                Deleted = limitedAttachmentDeleted
+            };
+
             // REFACTORED: build limited categories bucket
             var limitedCategoriesBuckets = new SyncCategoriesChangesDto
             {
@@ -268,6 +291,7 @@ namespace NotesApp.Application.Sync.Queries
                 Assets = limitedAssetsBuckets,
                 Categories = limitedCategoriesBuckets, // REFACTORED: added categories
                 Subtasks = limitedSubtasksBuckets, // REFACTORED: added subtasks
+                Attachments = limitedAttachmentsBuckets, // REFACTORED: added attachments
                 HasMoreTasks = hasMoreTasks,
                 HasMoreNotes = hasMoreNotes,
                 HasMoreBlocks = hasMoreBlocks,
@@ -595,6 +619,41 @@ namespace NotesApp.Application.Sync.Queries
             {
                 Created = createdList,
                 Updated = updatedList,
+                Deleted = deletedList
+            };
+        }
+
+        // REFACTORED: added CategoriseAttachments method for task-attachments feature
+        /// <summary>
+        /// Categorises attachment changes into created/deleted buckets.
+        /// Attachments are immutable, so there is no "updated" bucket.
+        /// Mirrors <see cref="CategoriseAssets"/> exactly.
+        /// </summary>
+        private static SyncAttachmentsChangesDto CategoriseAttachments(
+            IReadOnlyList<Attachment> attachments, DateTime? sinceUtc)
+        {
+            var createdList = new List<AttachmentSyncItemDto>();
+            var deletedList = new List<DeletedSyncItemDto>();
+
+            foreach (var attachment in attachments.OrderBy(a => a.UpdatedAtUtc))
+            {
+                if (attachment.IsDeleted)
+                {
+                    deletedList.Add(new DeletedSyncItemDto
+                    {
+                        Id = attachment.Id,
+                        DeletedAtUtc = attachment.UpdatedAtUtc
+                    });
+
+                    continue;
+                }
+
+                createdList.Add(attachment.ToSyncDto());
+            }
+
+            return new SyncAttachmentsChangesDto
+            {
+                Created = createdList,
                 Deleted = deletedList
             };
         }

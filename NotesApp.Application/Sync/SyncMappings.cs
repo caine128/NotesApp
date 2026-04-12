@@ -132,5 +132,25 @@ namespace NotesApp.Application.Sync
         // REFACTORED: added subtask list mapping for sync pull
         public static IReadOnlyList<SubtaskSyncItemDto> ToSyncSubtaskDtos(this IEnumerable<Subtask> subtasks)
             => subtasks.Select(s => s.ToSyncDto()).ToList();
+
+        // REFACTORED: added Attachment sync mapping for task-attachments feature
+        /// <summary>
+        /// Maps an <see cref="Attachment"/> to its sync pull representation.
+        /// Download URLs are not included; use GET /api/attachments/{id}/download-url on demand.
+        /// </summary>
+        public static AttachmentSyncItemDto ToSyncDto(this Attachment attachment)
+        {
+            return new AttachmentSyncItemDto
+            {
+                Id = attachment.Id,
+                TaskId = attachment.TaskId,
+                FileName = attachment.FileName,
+                ContentType = attachment.ContentType,
+                SizeBytes = attachment.SizeBytes,
+                DisplayOrder = attachment.DisplayOrder,
+                CreatedAtUtc = attachment.CreatedAtUtc,
+                UpdatedAtUtc = attachment.UpdatedAtUtc
+            };
+        }
     }
 }

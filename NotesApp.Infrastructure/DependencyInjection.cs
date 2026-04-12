@@ -54,6 +54,7 @@ namespace NotesApp.Infrastructure
             services.AddScoped<IUserDeviceRepository, UserDeviceRepository>();
             services.AddScoped<ICategoryRepository, CategoryRepository>(); // REFACTORED: added for task categories feature
             services.AddScoped<ISubtaskRepository, SubtaskRepository>(); // REFACTORED: added for subtasks feature
+            services.AddScoped<IAttachmentRepository, AttachmentRepository>(); // REFACTORED: added for task-attachments feature
             services.AddScoped<IPushNotificationService, LoggingPushNotificationService>();
 
             // 3) System clock (for time abstraction)

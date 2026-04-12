@@ -22,6 +22,14 @@ namespace NotesApp.Application.Sync.Models
         // REFACTORED: added subtask changes bucket for subtasks feature
         public SyncSubtasksChangesDto Subtasks { get; init; } = new();
 
+        // REFACTORED: added attachment changes bucket for task-attachments feature
+        /// <summary>
+        /// Task attachment changes (created/deleted).
+        /// No Updated bucket — attachments are immutable after creation.
+        /// Download URLs are not included; use GET /api/attachments/{id}/download-url on demand.
+        /// </summary>
+        public SyncAttachmentsChangesDto Attachments { get; init; } = new();
+
         /// <summary>
         /// True when the server had more task changes than were included
         /// in this response (based on MaxItemsPerEntity).
@@ -271,6 +279,34 @@ namespace NotesApp.Application.Sync.Models
         public bool IsCompleted { get; init; }
         public string Position { get; init; } = string.Empty;
         public long Version { get; init; }
+        public DateTime CreatedAtUtc { get; init; }
+        public DateTime UpdatedAtUtc { get; init; }
+    }
+
+    // REFACTORED: added attachment sync DTOs for task-attachments feature
+
+    /// <summary>
+    /// Attachment changes bucket returned by the sync pull endpoint.
+    /// No Updated bucket — task attachments are immutable after creation.
+    /// </summary>
+    public sealed record SyncAttachmentsChangesDto
+    {
+        public IReadOnlyList<AttachmentSyncItemDto> Created { get; init; } = Array.Empty<AttachmentSyncItemDto>();
+        public IReadOnlyList<DeletedSyncItemDto> Deleted { get; init; } = Array.Empty<DeletedSyncItemDto>();
+    }
+
+    /// <summary>
+    /// Full attachment representation used in sync pull payloads.
+    /// Download URLs are NOT included; use GET /api/attachments/{id}/download-url to obtain one on demand.
+    /// </summary>
+    public sealed record AttachmentSyncItemDto
+    {
+        public Guid Id { get; init; }
+        public Guid TaskId { get; init; }
+        public string FileName { get; init; } = string.Empty;
+        public string ContentType { get; init; } = string.Empty;
+        public long SizeBytes { get; init; }
+        public int DisplayOrder { get; init; }
         public DateTime CreatedAtUtc { get; init; }
         public DateTime UpdatedAtUtc { get; init; }
     }

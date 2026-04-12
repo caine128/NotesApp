@@ -26,6 +26,15 @@ namespace NotesApp.Application.Sync.Models
         public SyncPushCategoriesDto Categories { get; init; } = new();
         // REFACTORED: added subtask push collections for subtasks feature
         public SyncPushSubtasksDto Subtasks { get; init; } = new();
+
+        // REFACTORED: added attachment push collections for task-attachments feature
+        /// <summary>
+        /// Attachment deletions from the client device.
+        /// Note: Attachment uploads always go through the REST endpoint
+        /// (POST /api/attachments/{taskId}); the outbox propagates them to sync pull.
+        /// Only deletions are synced via push.
+        /// </summary>
+        public SyncPushAttachmentsDto Attachments { get; init; } = new();
     }
 
     // ----------------------------
@@ -267,6 +276,9 @@ namespace NotesApp.Application.Sync.Models
         public SyncPushCategoriesResultDto Categories { get; init; } = new();
         // REFACTORED: added subtask results for subtasks feature
         public SyncPushSubtasksResultDto Subtasks { get; init; } = new();
+
+        // REFACTORED: added attachment results for task-attachments feature
+        public SyncPushAttachmentsResultDto Attachments { get; init; } = new();
     }
 
     public sealed record SyncPushTasksResultDto
@@ -682,6 +694,48 @@ namespace NotesApp.Application.Sync.Models
     }
 
     public sealed record SubtaskDeletedPushResultDto
+    {
+        public Guid Id { get; init; }
+        public SyncPushDeletedStatus Status { get; init; }
+
+        /// <summary>Conflict details when Status indicates a failure. Null for successful operations.</summary>
+        public SyncPushConflictDetailDto? Conflict { get; init; }
+    }
+
+    // ----------------------------
+    // REFACTORED: Attachments — request and result DTOs (task-attachments feature)
+    // ----------------------------
+
+    /// <summary>
+    /// Attachment push collections from the client device.
+    /// Only deletions are included — uploads always go through the REST endpoint
+    /// (POST /api/attachments/{taskId}); the outbox propagates them to sync pull.
+    /// </summary>
+    public sealed record SyncPushAttachmentsDto
+    {
+        public IReadOnlyList<AttachmentDeletedPushItemDto> Deleted { get; init; } = [];
+    }
+
+    /// <summary>
+    /// An attachment deletion initiated by the mobile client.
+    /// </summary>
+    public sealed record AttachmentDeletedPushItemDto
+    {
+        public Guid Id { get; init; }
+
+        /// <summary>
+        /// Optional version for stronger delete semantics.
+        /// Currently not enforced on delete — "delete wins" semantics apply.
+        /// </summary>
+        public long? ExpectedVersion { get; init; }
+    }
+
+    public sealed record SyncPushAttachmentsResultDto
+    {
+        public IReadOnlyList<AttachmentDeletedPushResultDto> Deleted { get; init; } = [];
+    }
+
+    public sealed record AttachmentDeletedPushResultDto
     {
         public Guid Id { get; init; }
         public SyncPushDeletedStatus Status { get; init; }

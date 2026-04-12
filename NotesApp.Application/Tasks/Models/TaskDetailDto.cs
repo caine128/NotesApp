@@ -1,4 +1,5 @@
-﻿using NotesApp.Application.Subtasks.Models;
+﻿using NotesApp.Application.Attachments.Models;
+using NotesApp.Application.Subtasks.Models;
 using NotesApp.Domain.Common;
 using System;
 using System.Collections.Generic;
@@ -27,5 +28,13 @@ namespace NotesApp.Application.Tasks.Models
         /// Empty when the task has no subtasks.
         /// </summary>
         public IReadOnlyList<SubtaskDto> Subtasks { get; init; } = [];
+
+        // REFACTORED: added attachments list for task-attachments feature
+        /// <summary>
+        /// File attachments belonging to this task, sorted by DisplayOrder (upload order).
+        /// Empty when the task has no attachments.
+        /// Use GET /api/attachments/{id}/download-url to obtain a pre-signed URL on demand.
+        /// </summary>
+        public IReadOnlyList<AttachmentDto> Attachments { get; init; } = [];
     }
 }

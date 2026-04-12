@@ -23,6 +23,8 @@ namespace NotesApp.Infrastructure.Persistence
         public DbSet<TaskCategory> TaskCategories => Set<TaskCategory>();
         // REFACTORED: added Subtasks for subtasks feature
         public DbSet<Subtask> Subtasks => Set<Subtask>();
+        // REFACTORED: added Attachments for task-attachments feature
+        public DbSet<Attachment> Attachments => Set<Attachment>();
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
