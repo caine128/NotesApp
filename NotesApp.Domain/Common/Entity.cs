@@ -65,5 +65,13 @@ namespace NotesApp.Domain.Common
         {
             UpdatedAtUtc = utcNow;
         }
+
+        /// <summary>
+        /// Overwrites the in-memory RowVersion with the client-supplied token before the entity
+        /// is attached for persistence. EF Core will then use this value as OriginalValue in the
+        /// generated WHERE clause, enabling stale-page detection.
+        /// Only call this in web edit handlers immediately before Repository.Update().
+        /// </summary>
+        public void ApplyClientRowVersion(byte[] rowVersion) => RowVersion = rowVersion;
     }
 }

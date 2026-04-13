@@ -59,5 +59,10 @@ namespace NotesApp.Application.Blocks.Models
 
         public DateTime CreatedAtUtc { get; init; }
         public DateTime UpdatedAtUtc { get; init; }
+
+        /// <summary>
+        /// EF Core row version token for web optimistic concurrency. Echo back on update/delete.
+        /// </summary>
+        public byte[] RowVersion { get; init; } = []; // REFACTORED: added RowVersion for web concurrency protection
     }
 }

@@ -18,7 +18,8 @@ namespace NotesApp.Application.Categories
                 category.Name,
                 category.Version,
                 category.CreatedAtUtc,
-                category.UpdatedAtUtc);
+                category.UpdatedAtUtc,
+                category.RowVersion); // REFACTORED: added RowVersion for web concurrency protection
 
         /// <summary>
         /// Maps a collection of <see cref="TaskCategory"/> entities to a read-only list of

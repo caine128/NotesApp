@@ -100,6 +100,7 @@ namespace NotesApp.Api.Controllers
         [ProducesResponseType(typeof(TaskCategoryDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)] // REFACTORED: web concurrency protection
         public async Task<ActionResult<TaskCategoryDto>> UpdateCategory(
             [FromRoute] Guid categoryId,
             [FromBody] UpdateTaskCategoryCommand command,
@@ -123,11 +124,13 @@ namespace NotesApp.Api.Controllers
         [HttpDelete("{categoryId:guid}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)] // REFACTORED: web concurrency protection
         public async Task<IActionResult> DeleteCategory(
-            Guid categoryId,
+            [FromRoute] Guid categoryId,
+            [FromBody] DeleteTaskCategoryCommand command,
             CancellationToken cancellationToken)
         {
-            var command = new DeleteTaskCategoryCommand { CategoryId = categoryId };
+            command.CategoryId = categoryId;
 
             var result = await _mediator.Send(command, cancellationToken);
 

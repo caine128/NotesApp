@@ -16,6 +16,7 @@ namespace NotesApp.Application.Notes.Models
                                        string? Summary,
                                        string? Tags,
                                        DateTime CreatedAtUtc,
-                                       DateTime UpdatedAtUtc);
+                                       DateTime UpdatedAtUtc,
+                                       byte[] RowVersion); // REFACTORED: added RowVersion for web concurrency protection
 
 }

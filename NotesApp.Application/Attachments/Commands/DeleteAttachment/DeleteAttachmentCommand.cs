@@ -13,6 +13,10 @@ namespace NotesApp.Application.Attachments.Commands.DeleteAttachment
     /// </summary>
     public sealed class DeleteAttachmentCommand : IRequest<Result>
     {
-        public Guid AttachmentId { get; init; }
+        /// <summary>Set from route by the controller.</summary>
+        public Guid AttachmentId { get; set; }
+
+        // REFACTORED: added RowVersion for web concurrency protection
+        public byte[] RowVersion { get; init; } = [];
     }
 }

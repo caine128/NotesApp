@@ -155,6 +155,7 @@ namespace NotesApp.Application.Blocks.Commands.UpdateBlock
 
             // 8) SUCCESS: Now explicitly attach and persist
             //    Update() attaches the untracked entity and marks it as Modified
+            block.ApplyClientRowVersion(command.RowVersion); // REFACTORED: enable stale-page detection
             _blockRepository.Update(block);
             await _outboxRepository.AddAsync(outboxResult.Value!, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

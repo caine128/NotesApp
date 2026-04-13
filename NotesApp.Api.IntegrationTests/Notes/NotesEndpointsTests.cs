@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NotesApp.Api.IntegrationTests.Infrastructure.Hosting;
+using NotesApp.Api.IntegrationTests.Infrastructure.Http;
 using NotesApp.Application.Notes;
 using NotesApp.Application.Notes.Models;
 using NotesApp.Domain.Common;
@@ -379,12 +380,14 @@ namespace NotesApp.Api.IntegrationTests.Notes
             var newDate = originalDate.AddDays(1);
 
             // CHANGED: Content removed from payload
+            // REFACTORED: include RowVersion from create response for concurrency check
             var updatePayload = new
             {
                 Date = newDate,
                 Title = "Updated title",
                 Summary = "Updated summary",
-                Tags = "tag2,tag3"
+                Tags = "tag2,tag3",
+                RowVersion = created.RowVersion
             };
 
             // Act
@@ -430,13 +433,15 @@ namespace NotesApp.Api.IntegrationTests.Notes
 
             var noteId = created!.NoteId;
 
-            // Title empty -> validator should fail
+            // Title empty -> validator should fail; include valid RowVersion so title rule triggers
+            // REFACTORED: include RowVersion for concurrency check
             var invalidUpdatePayload = new
             {
                 Date = date,
                 Title = "   ",
                 Summary = (string?)null,
-                Tags = (string?)null
+                Tags = (string?)null,
+                RowVersion = created!.RowVersion
             };
 
             // Act
@@ -476,12 +481,14 @@ namespace NotesApp.Api.IntegrationTests.Notes
             var noteId = created!.NoteId;
 
             // CHANGED: Content removed from payload
+            // REFACTORED: placeholder RowVersion — ownership check runs before concurrency check
             var attackerUpdatePayload = new
             {
                 Date = date,
                 Title = "Attacker edit",
                 Summary = (string?)null,
-                Tags = (string?)null
+                Tags = (string?)null,
+                RowVersion = HttpClientExtensions.PlaceholderRowVersion
             };
 
             // Act
@@ -519,8 +526,10 @@ namespace NotesApp.Api.IntegrationTests.Notes
 
             var noteId = created!.NoteId;
 
-            // Act: DELETE /api/notes/{id}
-            var deleteResponse = await client.DeleteAsync($"/api/notes/{noteId}");
+            // Act: DELETE /api/notes/{id} — REFACTORED: RowVersion required in body for concurrency check
+            var deleteResponse = await client.DeleteAsJsonAsync(
+                $"/api/notes/{noteId}",
+                new { RowVersion = created.RowVersion });
 
             // Assert: 204 NoContent
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -546,8 +555,10 @@ namespace NotesApp.Api.IntegrationTests.Notes
             // Arrange
             var nonExistingNoteId = Guid.NewGuid();
 
-            // Act
-            var response = await client.DeleteAsync($"/api/notes/{nonExistingNoteId}");
+            // Act — REFACTORED: must supply RowVersion body; placeholder since entity doesn't exist (404 before concurrency check)
+            var response = await client.DeleteAsJsonAsync(
+                $"/api/notes/{nonExistingNoteId}",
+                new { RowVersion = HttpClientExtensions.PlaceholderRowVersion });
 
             // Assert: DeleteNoteCommand uses "Notes.NotFound" metadata -> 404
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -582,8 +593,10 @@ namespace NotesApp.Api.IntegrationTests.Notes
 
             var noteId = created!.NoteId;
 
-            // Act: attacker tries to delete
-            var attackerResponse = await attackerClient.DeleteAsync($"/api/notes/{noteId}");
+            // Act: attacker tries to delete — REFACTORED: placeholder RowVersion (ownership check runs first)
+            var attackerResponse = await attackerClient.DeleteAsJsonAsync(
+                $"/api/notes/{noteId}",
+                new { RowVersion = HttpClientExtensions.PlaceholderRowVersion });
 
             // Assert
             attackerResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -682,8 +695,10 @@ namespace NotesApp.Api.IntegrationTests.Notes
             var created = await CreateSimpleNoteAsync(clientForUser, date, "Note to delete");
             var noteId = created.NoteId;
 
-            // 2) Delete the note
-            var deleteResponse = await clientForUser.DeleteAsync($"/api/notes/{noteId}");
+            // 2) Delete the note — REFACTORED: must supply RowVersion body for concurrency check
+            var deleteResponse = await clientForUser.DeleteAsJsonAsync(
+                $"/api/notes/{noteId}",
+                new { RowVersion = created.RowVersion });
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
             // 3) Assert outbox message

@@ -70,7 +70,7 @@ namespace NotesApp.Application.Tests.Notes
                 clock,
                 loggerMock.Object);
 
-            var command = new DeleteNoteCommand(note.Id);
+            var command = new DeleteNoteCommand { NoteId = note.Id, RowVersion = note.RowVersion };
 
             // Act
             var result = await handler.Handle(command, CancellationToken.None);
@@ -126,8 +126,7 @@ namespace NotesApp.Application.Tests.Notes
                 clock,
                 logger);
 
-            var command = new DeleteNoteCommand(Guid.NewGuid());
-
+            var command = new DeleteNoteCommand { NoteId = Guid.NewGuid(), RowVersion = [1, 0, 0, 0, 0, 0, 0, 0] };
 
             // Act
             var result = await handler.Handle(command, CancellationToken.None);
@@ -189,8 +188,7 @@ namespace NotesApp.Application.Tests.Notes
                 clock,
                 logger);
 
-            var command = new DeleteNoteCommand(otherNote.Id);
-
+            var command = new DeleteNoteCommand { NoteId = otherNote.Id, RowVersion = [1, 0, 0, 0, 0, 0, 0, 0] };
 
             // Act
             var result = await handler.Handle(command, CancellationToken.None);
@@ -256,7 +254,7 @@ namespace NotesApp.Application.Tests.Notes
                 clock,
                 logger);
 
-            var command = new DeleteNoteCommand(note.Id);
+            var command = new DeleteNoteCommand { NoteId = note.Id, RowVersion = [1, 0, 0, 0, 0, 0, 0, 0] };
 
             // Act
             var result = await handler.Handle(command, CancellationToken.None);

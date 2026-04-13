@@ -162,6 +162,7 @@ namespace NotesApp.Application.Notes.Commands.DeleteNote
 
             // 6) SUCCESS: Now explicitly attach and persist all entities
             //    Update() attaches the untracked entity and marks it as Modified
+            note.ApplyClientRowVersion(request.RowVersion); // REFACTORED: enable stale-page detection
             _noteRepository.Update(note);
             await _outboxRepository.AddAsync(noteOutboxResult.Value!, cancellationToken);
 

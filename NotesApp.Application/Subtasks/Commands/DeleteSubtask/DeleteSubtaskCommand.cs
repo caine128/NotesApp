@@ -17,5 +17,8 @@ namespace NotesApp.Application.Subtasks.Commands.DeleteSubtask
 
         /// <summary>Subtask ID — set from the route by the controller.</summary>
         public Guid SubtaskId { get; set; }
+
+        // REFACTORED: added RowVersion for web concurrency protection
+        public byte[] RowVersion { get; init; } = [];
     }
 }

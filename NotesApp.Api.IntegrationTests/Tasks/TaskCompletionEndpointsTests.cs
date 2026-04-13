@@ -1,5 +1,6 @@
-﻿using FluentAssertions;
+using FluentAssertions;
 using NotesApp.Api.IntegrationTests.Infrastructure.Hosting;
+using NotesApp.Api.IntegrationTests.Infrastructure.Http;
 using NotesApp.Application.Tasks;
 using NotesApp.Application.Tasks.Models;
 using System;
@@ -50,8 +51,8 @@ namespace NotesApp.Api.IntegrationTests.Tasks
 
             var taskId = created!.TaskId;
 
-            // Act 1: Mark as completed
-            var completionPayload = new { IsCompleted = true };
+            // Act 1: Mark as completed — REFACTORED: RowVersion required for concurrency check
+            var completionPayload = new { IsCompleted = true, RowVersion = created.RowVersion };
 
             var completionResponse =
                 await client.PatchAsJsonAsync($"/api/tasks/{taskId}/completion", completionPayload);
@@ -104,22 +105,28 @@ namespace NotesApp.Api.IntegrationTests.Tasks
 
             var taskId = created!.TaskId;
 
-            // First set completed
-            var completePayload = new { IsCompleted = true };
-            var completeResponse =
-                await client.PatchAsJsonAsync($"/api/tasks/{taskId}/completion", completePayload);
-
+            // First: mark completed — REFACTORED: supply RowVersion from create response
+            var completeResponse = await client.PatchAsJsonAsync(
+                $"/api/tasks/{taskId}/completion",
+                new { IsCompleted = true, RowVersion = created.RowVersion });
             completeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-            // Act: mark pending twice
-            var pendingPayload = new { IsCompleted = false };
+            var completedDto = await completeResponse.Content.ReadFromJsonAsync<TaskDetailDto>();
+            completedDto.Should().NotBeNull();
 
-            var pendingResponse1 =
-                await client.PatchAsJsonAsync($"/api/tasks/{taskId}/completion", pendingPayload);
+            // Act: mark pending — REFACTORED: supply RowVersion from previous response
+            var pendingResponse1 = await client.PatchAsJsonAsync(
+                $"/api/tasks/{taskId}/completion",
+                new { IsCompleted = false, RowVersion = completedDto!.RowVersion });
             pendingResponse1.StatusCode.Should().Be(HttpStatusCode.OK);
 
-            var pendingResponse2 =
-                await client.PatchAsJsonAsync($"/api/tasks/{taskId}/completion", pendingPayload);
+            var pendingDto1 = await pendingResponse1.Content.ReadFromJsonAsync<TaskDetailDto>();
+            pendingDto1.Should().NotBeNull();
+
+            // Act: mark pending again (idempotent) — REFACTORED: supply fresh RowVersion
+            var pendingResponse2 = await client.PatchAsJsonAsync(
+                $"/api/tasks/{taskId}/completion",
+                new { IsCompleted = false, RowVersion = pendingDto1!.RowVersion });
             pendingResponse2.StatusCode.Should().Be(HttpStatusCode.OK);
 
             var detail = await pendingResponse2.Content.ReadFromJsonAsync<TaskDetailDto>();
@@ -147,9 +154,11 @@ namespace NotesApp.Api.IntegrationTests.Tasks
             var client = _factory.CreateClientAsUser(userId);
             var nonExistentTaskId = Guid.NewGuid();
 
+            // REFACTORED: placeholder RowVersion — entity doesn't exist so handler returns 404 before concurrency check
             var payload = new
             {
-                IsCompleted = true
+                IsCompleted = true,
+                RowVersion = HttpClientExtensions.PlaceholderRowVersion
             };
 
             // Act
@@ -194,8 +203,12 @@ namespace NotesApp.Api.IntegrationTests.Tasks
 
             var taskId = created!.TaskId;
 
-            // Act: attacker tries to set completion
-            var completionPayload = new { IsCompleted = true };
+            // Act: attacker tries to set completion — REFACTORED: placeholder RowVersion (ownership check runs first)
+            var completionPayload = new
+            {
+                IsCompleted = true,
+                RowVersion = HttpClientExtensions.PlaceholderRowVersion
+            };
 
             var attackerResponse =
                 await attackerClient.PatchAsJsonAsync($"/api/tasks/{taskId}/completion", completionPayload);

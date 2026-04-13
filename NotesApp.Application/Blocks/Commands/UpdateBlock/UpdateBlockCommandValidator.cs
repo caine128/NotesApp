@@ -31,6 +31,11 @@ namespace NotesApp.Application.Blocks.Commands.UpdateBlock
 
             // TextContent has no length limit in the domain
             // Type-based validation (text vs asset) is done in the handler
+
+            // REFACTORED: RowVersion required for web concurrency protection
+            RuleFor(x => x.RowVersion)
+                .NotEmpty().WithMessage("RowVersion is required.")
+                .Must(rv => rv.Length == 8).WithMessage("RowVersion must be 8 bytes.");
         }
     }
 }

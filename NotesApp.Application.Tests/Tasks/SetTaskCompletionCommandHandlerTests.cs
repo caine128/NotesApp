@@ -69,9 +69,12 @@ namespace NotesApp.Application.Tests.Tasks
                 clock,
                 logger);
 
-            var command = new SetTaskCompletionCommand(
-                TaskId: task.Id,
-                IsCompleted: true);
+            var command = new SetTaskCompletionCommand
+            {
+                TaskId = task.Id,
+                IsCompleted = true,
+                RowVersion = task.RowVersion
+            };
 
             // Act
             var result = await handler.Handle(command, CancellationToken.None);
@@ -152,9 +155,12 @@ namespace NotesApp.Application.Tests.Tasks
                 clock,
                 logger);
 
-            var command = new SetTaskCompletionCommand(
-                TaskId: task.Id,
-                IsCompleted: false);
+            var command = new SetTaskCompletionCommand
+            {
+                TaskId = task.Id,
+                IsCompleted = false,
+                RowVersion = task.RowVersion
+            };
 
             // Act
             var result = await handler.Handle(command, CancellationToken.None);
@@ -206,9 +212,12 @@ namespace NotesApp.Application.Tests.Tasks
                 clock,
                 logger);
 
-            var command = new SetTaskCompletionCommand(
-                TaskId: Guid.NewGuid(),
-                IsCompleted: true);
+            var command = new SetTaskCompletionCommand
+            {
+                TaskId = Guid.NewGuid(),
+                IsCompleted = true,
+                RowVersion = [1, 0, 0, 0, 0, 0, 0, 0]
+            };
 
             // Act
             var result = await handler.Handle(command, CancellationToken.None);
@@ -271,9 +280,12 @@ namespace NotesApp.Application.Tests.Tasks
                 clock,
                 logger);
 
-            var command = new SetTaskCompletionCommand(
-                TaskId: otherTask.Id,
-                IsCompleted: true);
+            var command = new SetTaskCompletionCommand
+            {
+                TaskId = otherTask.Id,
+                IsCompleted = true,
+                RowVersion = [1, 0, 0, 0, 0, 0, 0, 0]
+            };
 
             // Act
             var result = await handler.Handle(command, CancellationToken.None);
@@ -340,9 +352,12 @@ namespace NotesApp.Application.Tests.Tasks
                 clock,
                 logger);
 
-            var command = new SetTaskCompletionCommand(
-                TaskId: task.Id,
-                IsCompleted: true);
+            var command = new SetTaskCompletionCommand
+            {
+                TaskId = task.Id,
+                IsCompleted = true,
+                RowVersion = [1, 0, 0, 0, 0, 0, 0, 0]
+            };
 
             // Act
             var result = await handler.Handle(command, CancellationToken.None);

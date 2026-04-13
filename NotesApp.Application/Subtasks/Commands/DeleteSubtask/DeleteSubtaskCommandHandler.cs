@@ -102,6 +102,7 @@ namespace NotesApp.Application.Subtasks.Commands.DeleteSubtask
             }
 
             // SUCCESS: attach untracked entity and persist.
+            subtask.ApplyClientRowVersion(command.RowVersion); // REFACTORED: enable stale-page detection
             _subtaskRepository.Update(subtask);
             await _outboxRepository.AddAsync(outboxResult.Value!, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

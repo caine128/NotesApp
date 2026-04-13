@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using NotesApp.Application.Exceptions;
 
 namespace NotesApp.Api.Infrastructure.Errors
@@ -31,6 +32,7 @@ namespace NotesApp.Api.Infrastructure.Errors
             var statusCode = exception switch
             {
                 ApplicationValidationException => StatusCodes.Status400BadRequest,
+                DbUpdateConcurrencyException   => StatusCodes.Status409Conflict, // REFACTORED: web concurrency protection
                 // TODO :  NotFoundException => StatusCodes.Status404NotFound,
                 _ => StatusCodes.Status500InternalServerError
             };
@@ -38,16 +40,22 @@ namespace NotesApp.Api.Infrastructure.Errors
             var title = statusCode switch
             {
                 StatusCodes.Status400BadRequest => "Validation error",
-                StatusCodes.Status404NotFound => "Resource not found",
+                StatusCodes.Status404NotFound   => "Resource not found",
+                StatusCodes.Status409Conflict   => "Conflict", // REFACTORED: web concurrency protection
                 StatusCodes.Status500InternalServerError => "An error occurred while processing your request.",
                 _ => "An error occurred."
             };
+
+            // REFACTORED: avoid leaking EF internals in the 409 detail message
+            var detail = exception is DbUpdateConcurrencyException
+                ? "The resource was modified by another request. Reload and retry."
+                : exception.Message;
 
             // Basic ProblemDetails; AddProblemDetails() will fill in type/status/etc.
             var problemDetails = new ProblemDetails
             {
                 Title = title,
-                Detail = exception.Message, // consider hiding details in production
+                Detail = detail,
                 Status = statusCode,
                 Instance = httpContext.Request.Path
             };

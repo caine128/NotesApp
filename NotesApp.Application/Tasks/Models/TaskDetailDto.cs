@@ -21,7 +21,8 @@ namespace NotesApp.Application.Tasks.Models
                                        DateTime? ReminderAtUtc,
                                        Guid? CategoryId,
                                        TaskPriority Priority, // REFACTORED: added Priority for task priority feature
-                                       string? MeetingLink) // REFACTORED: added MeetingLink for meeting-link feature
+                                       string? MeetingLink, // REFACTORED: added MeetingLink for meeting-link feature
+                                       byte[] RowVersion) // REFACTORED: added RowVersion for web concurrency protection
     {
         // REFACTORED: added subtasks list for subtasks feature
         /// <summary>

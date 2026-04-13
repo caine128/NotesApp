@@ -414,7 +414,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 RuleFor(x => x).Custom((dto, context) =>
                 {
-                    var command = new DeleteNoteCommand(dto.Id);
+                    var command = new DeleteNoteCommand { NoteId = dto.Id };
 
                     var result = innerValidator.Validate(command);
 

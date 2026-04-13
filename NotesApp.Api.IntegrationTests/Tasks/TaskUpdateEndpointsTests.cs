@@ -1,5 +1,6 @@
-﻿using FluentAssertions;
+using FluentAssertions;
 using NotesApp.Api.IntegrationTests.Infrastructure.Hosting;
+using NotesApp.Api.IntegrationTests.Infrastructure.Http;
 using NotesApp.Application.Tasks;
 using NotesApp.Application.Tasks.Models;
 using System;
@@ -52,7 +53,7 @@ namespace NotesApp.Api.IntegrationTests.Tasks
 
             var taskId = created!.TaskId;
 
-            // Prepare update payload
+            // Prepare update payload — include RowVersion from create response
             var newDate = originalDate.AddDays(1);
 
             var updatePayload = new
@@ -64,7 +65,8 @@ namespace NotesApp.Api.IntegrationTests.Tasks
                 EndTime = new TimeOnly(16, 0),
                 Location = "New location",
                 TravelTime = TimeSpan.FromMinutes(25),
-                ReminderAtUtc = DateTime.UtcNow.AddHours(2)
+                ReminderAtUtc = DateTime.UtcNow.AddHours(2),
+                RowVersion = created.RowVersion // REFACTORED: supply RowVersion for concurrency check
             };
 
             // Act: PUT /api/tasks/{id}
@@ -119,7 +121,8 @@ namespace NotesApp.Api.IntegrationTests.Tasks
                 EndTime = (TimeOnly?)null,
                 Location = (string?)null,
                 TravelTime = (TimeSpan?)null,
-                ReminderAtUtc = (DateTime?)null
+                ReminderAtUtc = (DateTime?)null,
+                RowVersion = HttpClientExtensions.PlaceholderRowVersion // REFACTORED: placeholder for non-existent entity
             };
 
             // Act
@@ -171,7 +174,8 @@ namespace NotesApp.Api.IntegrationTests.Tasks
                 EndTime = (TimeOnly?)null,
                 Location = (string?)null,
                 TravelTime = (TimeSpan?)null,
-                ReminderAtUtc = (DateTime?)null
+                ReminderAtUtc = (DateTime?)null,
+                RowVersion = created.RowVersion // REFACTORED: supply valid RowVersion so title validation triggers
             };
 
             var updateResponse = await client.PutAsJsonAsync($"/api/tasks/{taskId}", invalidUpdatePayload);
@@ -223,7 +227,8 @@ namespace NotesApp.Api.IntegrationTests.Tasks
                 EndTime = (TimeOnly?)null,
                 Location = (string?)null,
                 TravelTime = (TimeSpan?)null,
-                ReminderAtUtc = (DateTime?)null
+                ReminderAtUtc = (DateTime?)null,
+                RowVersion = HttpClientExtensions.PlaceholderRowVersion // REFACTORED: placeholder (ownership check runs first)
             };
 
             var attackerUpdateResponse =

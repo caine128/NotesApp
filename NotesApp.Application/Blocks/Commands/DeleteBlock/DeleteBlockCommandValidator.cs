@@ -15,6 +15,11 @@ namespace NotesApp.Application.Blocks.Commands.DeleteBlock
             RuleFor(x => x.BlockId)
                 .NotEmpty()
                 .WithMessage("BlockId is required.");
+
+            // REFACTORED: RowVersion required for web concurrency protection
+            RuleFor(x => x.RowVersion)
+                .NotEmpty().WithMessage("RowVersion is required.")
+                .Must(rv => rv.Length == 8).WithMessage("RowVersion must be 8 bytes.");
         }
     }
 }

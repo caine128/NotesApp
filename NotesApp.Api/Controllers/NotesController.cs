@@ -125,6 +125,7 @@ namespace NotesApp.Api.Controllers
         [ProducesResponseType(typeof(NoteDetailDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)] // REFACTORED: web concurrency protection
         public async Task<ActionResult<NoteDetailDto>> UpdateNote(Guid noteId,
                                                                   [FromBody] UpdateNoteCommand command,
                                                                   CancellationToken cancellationToken)
@@ -140,10 +141,12 @@ namespace NotesApp.Api.Controllers
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> DeleteNote(Guid noteId,
+        [ProducesResponseType(StatusCodes.Status409Conflict)] // REFACTORED: web concurrency protection
+        public async Task<IActionResult> DeleteNote([FromRoute] Guid noteId,
+                                                    [FromBody] DeleteNoteCommand command,
                                                     CancellationToken cancellationToken)
         {
-            var command = new DeleteNoteCommand(noteId);
+            command.NoteId = noteId;
 
             var result = await _mediator.Send(command, cancellationToken);
 
@@ -199,6 +202,7 @@ namespace NotesApp.Api.Controllers
         [ProducesResponseType(typeof(BlockDetailDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)] // REFACTORED: web concurrency protection
         public async Task<ActionResult<BlockDetailDto>> UpdateBlock(
             [FromRoute] Guid noteId,
             [FromRoute] Guid blockId,
@@ -219,12 +223,15 @@ namespace NotesApp.Api.Controllers
         [HttpDelete("{noteId:guid}/blocks/{blockId:guid}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)] // REFACTORED: web concurrency protection
         public async Task<IActionResult> DeleteBlock(
             [FromRoute] Guid noteId,
             [FromRoute] Guid blockId,
+            [FromBody] DeleteBlockCommand command,
             CancellationToken cancellationToken)
         {
-            var command = new DeleteBlockCommand { BlockId = blockId, NoteId = noteId };
+            command.NoteId  = noteId;
+            command.BlockId = blockId;
 
             var result = await _mediator.Send(command, cancellationToken);
 

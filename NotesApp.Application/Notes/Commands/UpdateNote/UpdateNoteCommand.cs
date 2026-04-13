@@ -25,5 +25,8 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
         /// Optional user-provided tags (comma or space separated).
         /// </summary>
         public string? Tags { get; init; }
+
+        // REFACTORED: added RowVersion for web concurrency protection
+        public byte[] RowVersion { get; init; } = [];
     }
 }

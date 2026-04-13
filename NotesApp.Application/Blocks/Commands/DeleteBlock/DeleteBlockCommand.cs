@@ -24,5 +24,8 @@ namespace NotesApp.Application.Blocks.Commands.DeleteBlock
         /// Leave as Guid.Empty when called outside a note-scoped context.
         /// </summary>
         public Guid NoteId { get; set; }
+
+        // REFACTORED: added RowVersion for web concurrency protection
+        public byte[] RowVersion { get; init; } = [];
     }
 }

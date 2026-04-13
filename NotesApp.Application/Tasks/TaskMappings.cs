@@ -21,7 +21,8 @@ namespace NotesApp.Application.Tasks
               task.ReminderAtUtc,
               task.CategoryId,
               task.Priority, // REFACTORED: added Priority
-              task.MeetingLink); // REFACTORED: added MeetingLink
+              task.MeetingLink, // REFACTORED: added MeetingLink
+              task.RowVersion); // REFACTORED: added RowVersion for web concurrency protection
 
         public static TaskSummaryDto ToSummaryDto(this TaskItem task) =>
             new(

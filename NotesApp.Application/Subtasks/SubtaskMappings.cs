@@ -19,6 +19,7 @@ namespace NotesApp.Application.Subtasks
                 subtask.Position,
                 subtask.Version,
                 subtask.CreatedAtUtc,
-                subtask.UpdatedAtUtc);
+                subtask.UpdatedAtUtc,
+                subtask.RowVersion); // REFACTORED: added RowVersion for web concurrency protection
     }
 }

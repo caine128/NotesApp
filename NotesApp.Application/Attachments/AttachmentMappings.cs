@@ -19,6 +19,7 @@ namespace NotesApp.Application.Attachments
                 attachment.SizeBytes,
                 attachment.DisplayOrder,
                 attachment.CreatedAtUtc,
-                attachment.UpdatedAtUtc);
+                attachment.UpdatedAtUtc,
+                attachment.RowVersion); // REFACTORED: added RowVersion for web concurrency protection
     }
 }

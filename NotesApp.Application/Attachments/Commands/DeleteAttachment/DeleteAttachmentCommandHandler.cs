@@ -100,6 +100,7 @@ namespace NotesApp.Application.Attachments.Commands.DeleteAttachment
             }
 
             // SUCCESS: Now explicitly attach and persist
+            attachment.ApplyClientRowVersion(command.RowVersion); // REFACTORED: enable stale-page detection
             _attachmentRepository.Update(attachment);
             await _outboxRepository.AddAsync(outboxResult.Value!, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

@@ -17,7 +17,10 @@ namespace NotesApp.Application.Categories.Commands.DeleteTaskCategory
     /// </summary>
     public sealed class DeleteTaskCategoryCommand : IRequest<Result>
     {
-        /// <summary>The server-side id of the category to delete.</summary>
-        public Guid CategoryId { get; init; }
+        /// <summary>The server-side id of the category to delete. Set from route by the controller.</summary>
+        public Guid CategoryId { get; set; }
+
+        // REFACTORED: added RowVersion for web concurrency protection
+        public byte[] RowVersion { get; init; } = [];
     }
 }

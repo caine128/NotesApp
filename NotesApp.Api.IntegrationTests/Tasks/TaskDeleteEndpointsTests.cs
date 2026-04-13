@@ -1,5 +1,6 @@
-﻿using FluentAssertions;
+using FluentAssertions;
 using NotesApp.Api.IntegrationTests.Infrastructure.Hosting;
+using NotesApp.Api.IntegrationTests.Infrastructure.Http;
 using NotesApp.Application.Tasks;
 using NotesApp.Application.Tasks.Models;
 using NotesApp.Domain.Entities;
@@ -51,8 +52,10 @@ namespace NotesApp.Api.IntegrationTests.Tasks
 
             var taskId = created!.TaskId;
 
-            // Act: DELETE /api/tasks/{id}
-            var deleteResponse = await client.DeleteAsync($"/api/tasks/{taskId}");
+            // Act: DELETE /api/tasks/{id} with RowVersion in body — REFACTORED: required for concurrency check
+            var deleteResponse = await client.DeleteAsJsonAsync(
+                $"/api/tasks/{taskId}",
+                new { RowVersion = created.RowVersion });
 
             // Assert: 204 NoContent (final behaviour of delete endpoint)
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -81,8 +84,10 @@ namespace NotesApp.Api.IntegrationTests.Tasks
 
             var nonExistingTaskId = Guid.NewGuid();
 
-            // Act
-            var response = await client.DeleteAsync($"/api/tasks/{nonExistingTaskId}");
+            // Act — REFACTORED: must supply RowVersion body; placeholder because entity doesn't exist (404 before concurrency check)
+            var response = await client.DeleteAsJsonAsync(
+                $"/api/tasks/{nonExistingTaskId}",
+                new { RowVersion = HttpClientExtensions.PlaceholderRowVersion });
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -120,8 +125,10 @@ namespace NotesApp.Api.IntegrationTests.Tasks
 
             var taskId = created!.TaskId;
 
-            // Act: attacker tries to delete owner's task
-            var attackerDeleteResponse = await attackerClient.DeleteAsync($"/api/tasks/{taskId}");
+            // Act: attacker tries to delete owner's task — REFACTORED: must supply body; placeholder (ownership check runs first)
+            var attackerDeleteResponse = await attackerClient.DeleteAsJsonAsync(
+                $"/api/tasks/{taskId}",
+                new { RowVersion = HttpClientExtensions.PlaceholderRowVersion });
 
             // Assert: 404 NotFound (task is not visible for this user)
             attackerDeleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);

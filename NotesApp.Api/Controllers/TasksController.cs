@@ -68,6 +68,7 @@ namespace NotesApp.Api.Controllers
         [ProducesResponseType(typeof(TaskDetailDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)] // REFACTORED: web concurrency protection
         public async Task<ActionResult<TaskDetailDto>> UpdateTask([FromRoute] Guid taskId,
                                                             [FromBody] UpdateTaskCommand command,
                                                             CancellationToken cancellationToken)
@@ -168,13 +169,12 @@ namespace NotesApp.Api.Controllers
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> DeleteTask(Guid taskId,
+        [ProducesResponseType(StatusCodes.Status409Conflict)] // REFACTORED: web concurrency protection
+        public async Task<IActionResult> DeleteTask([FromRoute] Guid taskId,
+                                                    [FromBody] DeleteTaskCommand command,
                                                     CancellationToken cancellationToken)
         {
-            var command = new DeleteTaskCommand
-            {
-                TaskId = taskId
-            };
+            command.TaskId = taskId;
 
             var result = await _mediator.Send(command, cancellationToken);
 
@@ -199,11 +199,12 @@ namespace NotesApp.Api.Controllers
         [ProducesResponseType(typeof(TaskDetailDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<ActionResult<TaskDetailDto>> SetTaskCompletion(Guid taskId,
-                                                                   [FromBody] SetTaskCompletionRequest request,
-                                                                   CancellationToken cancellationToken)
+        [ProducesResponseType(StatusCodes.Status409Conflict)] // REFACTORED: web concurrency protection
+        public async Task<ActionResult<TaskDetailDto>> SetTaskCompletion([FromRoute] Guid taskId,
+                                                                         [FromBody] SetTaskCompletionCommand command,
+                                                                         CancellationToken cancellationToken)
         {
-            var command = new SetTaskCompletionCommand(taskId, request.IsCompleted);
+            command.TaskId = taskId;
 
             return await _mediator
                 .Send(command, cancellationToken)
@@ -239,11 +240,6 @@ namespace NotesApp.Api.Controllers
             // Successful acknowledgment => 204 NoContent (no body needed)
             return NoContent();
         }
-
-        /// <summary>
-        /// Request payload used to set the completion state of a task.
-        /// </summary>
-        public sealed record SetTaskCompletionRequest(bool IsCompleted);
 
         // -----------------------------------------------------------------------
         // Subtask endpoints (nested under /api/tasks/{taskId}/subtasks)
@@ -291,6 +287,7 @@ namespace NotesApp.Api.Controllers
         [ProducesResponseType(typeof(SubtaskDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)] // REFACTORED: web concurrency protection
         public async Task<ActionResult<SubtaskDto>> UpdateSubtask(
             [FromRoute] Guid taskId,
             [FromRoute] Guid subtaskId,
@@ -311,12 +308,15 @@ namespace NotesApp.Api.Controllers
         [HttpDelete("{taskId:guid}/subtasks/{subtaskId:guid}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)] // REFACTORED: web concurrency protection
         public async Task<IActionResult> DeleteSubtask(
             [FromRoute] Guid taskId,
             [FromRoute] Guid subtaskId,
+            [FromBody] DeleteSubtaskCommand command,
             CancellationToken cancellationToken)
         {
-            var command = new DeleteSubtaskCommand { TaskId = taskId, SubtaskId = subtaskId };
+            command.TaskId = taskId;
+            command.SubtaskId = subtaskId;
 
             var result = await _mediator.Send(command, cancellationToken);
 

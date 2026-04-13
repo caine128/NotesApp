@@ -135,10 +135,14 @@ namespace NotesApp.Api.Controllers
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)] // REFACTORED: web concurrency protection
         public async Task<IActionResult> Delete([FromRoute] Guid id,
+                                                [FromBody] DeleteAttachmentCommand command,
                                                 CancellationToken cancellationToken)
         {
-            var result = await _mediator.Send(new DeleteAttachmentCommand { AttachmentId = id }, cancellationToken);
+            command.AttachmentId = id;
+
+            var result = await _mediator.Send(command, cancellationToken);
             if (result.IsFailed)
                 return result.ToActionResult();
 

@@ -13,5 +13,6 @@ namespace NotesApp.Application.Subtasks.Models
         string Position,
         long Version,
         DateTime CreatedAtUtc,
-        DateTime UpdatedAtUtc);
+        DateTime UpdatedAtUtc,
+        byte[] RowVersion); // REFACTORED: added RowVersion for web concurrency protection
 }

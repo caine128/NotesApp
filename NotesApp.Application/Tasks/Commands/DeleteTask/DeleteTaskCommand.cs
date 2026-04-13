@@ -14,8 +14,11 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
     public sealed class DeleteTaskCommand : IRequest<Result>
     {
         /// <summary>
-        /// The identifier of the task to delete.
+        /// The identifier of the task to delete. Set from route by the controller.
         /// </summary>
-        public Guid TaskId { get; init; }
+        public Guid TaskId { get; set; }
+
+        // REFACTORED: added RowVersion for web concurrency protection
+        public byte[] RowVersion { get; init; } = [];
     }
 }

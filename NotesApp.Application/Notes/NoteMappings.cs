@@ -19,7 +19,8 @@ namespace NotesApp.Application.Notes
               note.Summary,
               note.Tags,
               note.CreatedAtUtc,
-              note.UpdatedAtUtc);
+              note.UpdatedAtUtc,
+              note.RowVersion); // REFACTORED: added RowVersion for web concurrency protection
 
         public static NoteSummaryDto ToSummaryDto(this Note note) =>
             new(

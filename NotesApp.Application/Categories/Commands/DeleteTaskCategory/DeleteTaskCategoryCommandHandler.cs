@@ -147,6 +147,7 @@ namespace NotesApp.Application.Categories.Commands.DeleteTaskCategory
             // 6) Persist the soft-delete and outbox atomically.
             //    Runs AFTER the task clear so failure here leaves tasks already clean.
             //    The next retry will find 0 tasks to clear (no-op) and then save successfully.
+            category.ApplyClientRowVersion(command.RowVersion); // REFACTORED: enable stale-page detection
             _categoryRepository.Update(category);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

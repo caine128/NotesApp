@@ -117,6 +117,7 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
 
             // 5) SUCCESS: Now explicitly attach and persist
             //    Update() attaches the untracked entity and marks it as Modified
+            taskItem.ApplyClientRowVersion(command.RowVersion); // REFACTORED: enable stale-page detection
             _taskRepository.Update(taskItem);
             await _outboxRepository.AddAsync(outboxResult.Value!, cancellationToken);
 

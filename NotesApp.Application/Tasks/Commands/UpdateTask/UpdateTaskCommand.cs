@@ -67,5 +67,8 @@ namespace NotesApp.Application.Tasks.Commands.UpdateTask
         /// Pass null to clear an existing meeting link. Max 2048 characters.
         /// </summary>
         public string? MeetingLink { get; init; }
+
+        // REFACTORED: added RowVersion for web concurrency protection
+        public byte[] RowVersion { get; init; } = [];
     }
 }

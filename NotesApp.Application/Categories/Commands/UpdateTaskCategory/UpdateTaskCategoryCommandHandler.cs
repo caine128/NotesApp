@@ -106,6 +106,7 @@ namespace NotesApp.Application.Categories.Commands.UpdateTaskCategory
             }
 
             // 5) SUCCESS: explicitly attach (was loaded untracked) and persist atomically.
+            category.ApplyClientRowVersion(command.RowVersion); // REFACTORED: enable stale-page detection
             _categoryRepository.Update(category);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

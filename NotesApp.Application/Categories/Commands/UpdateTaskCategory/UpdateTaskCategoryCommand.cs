@@ -16,5 +16,8 @@ namespace NotesApp.Application.Categories.Commands.UpdateTaskCategory
 
         /// <summary>The new display name for the category.</summary>
         public string Name { get; init; } = string.Empty;
+
+        // REFACTORED: added RowVersion for web concurrency protection
+        public byte[] RowVersion { get; init; } = [];
     }
 }

@@ -32,7 +32,8 @@ namespace NotesApp.Application.Blocks
                 UploadStatus = block.UploadStatus,
                 Version = block.Version,
                 CreatedAtUtc = block.CreatedAtUtc,
-                UpdatedAtUtc = block.UpdatedAtUtc
+                UpdatedAtUtc = block.UpdatedAtUtc,
+                RowVersion = block.RowVersion // REFACTORED: added RowVersion for web concurrency protection
             };
         }
 

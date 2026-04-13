@@ -32,5 +32,8 @@ namespace NotesApp.Application.Subtasks.Commands.UpdateSubtask
 
         /// <summary>New fractional-index position. Null = no change. Non-null must be non-empty.</summary>
         public string? Position { get; init; }
+
+        // REFACTORED: added RowVersion for web concurrency protection
+        public byte[] RowVersion { get; init; } = [];
     }
 }

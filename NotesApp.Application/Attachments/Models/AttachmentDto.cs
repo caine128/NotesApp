@@ -19,5 +19,6 @@ namespace NotesApp.Application.Attachments.Models
         long SizeBytes,
         int DisplayOrder,
         DateTime CreatedAtUtc,
-        DateTime UpdatedAtUtc);
+        DateTime UpdatedAtUtc,
+        byte[] RowVersion); // REFACTORED: added RowVersion for web concurrency protection
 }

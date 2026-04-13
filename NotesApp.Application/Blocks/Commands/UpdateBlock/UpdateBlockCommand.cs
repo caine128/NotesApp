@@ -41,5 +41,8 @@ namespace NotesApp.Application.Blocks.Commands.UpdateBlock
         /// For text blocks, empty string is valid (clears content).
         /// </summary>
         public string? TextContent { get; init; }
+
+        // REFACTORED: added RowVersion for web concurrency protection
+        public byte[] RowVersion { get; init; } = [];
     }
 }
