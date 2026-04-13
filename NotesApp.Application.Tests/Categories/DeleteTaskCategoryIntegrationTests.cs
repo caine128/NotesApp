@@ -105,7 +105,7 @@ namespace NotesApp.Application.Tests.Categories
 
             var handler = CreateHandler(context, userId);
             var result = await handler.Handle(
-                new DeleteTaskCategoryCommand { CategoryId = category.Id },
+                new DeleteTaskCategoryCommand { CategoryId = category.Id, RowVersion = category.RowVersion },
                 CancellationToken.None);
 
             result.IsSuccess.Should().BeTrue();
@@ -134,7 +134,7 @@ namespace NotesApp.Application.Tests.Categories
 
             var handler = CreateHandler(context, userId);
             await handler.Handle(
-                new DeleteTaskCategoryCommand { CategoryId = category.Id },
+                new DeleteTaskCategoryCommand { CategoryId = category.Id, RowVersion = category.RowVersion },
                 CancellationToken.None);
 
             // ClearCategoryFromTasksAsync does: Version = Version + 1.
@@ -154,7 +154,7 @@ namespace NotesApp.Application.Tests.Categories
 
             var handler = CreateHandler(context, userId);
             await handler.Handle(
-                new DeleteTaskCategoryCommand { CategoryId = category.Id },
+                new DeleteTaskCategoryCommand { CategoryId = category.Id, RowVersion = category.RowVersion },
                 CancellationToken.None);
 
             var dbTask = await context.Tasks.FirstAsync(t => t.Id == task.Id);
@@ -183,7 +183,7 @@ namespace NotesApp.Application.Tests.Categories
 
             var handler = CreateHandler(context, userId);
             await handler.Handle(
-                new DeleteTaskCategoryCommand { CategoryId = category.Id },
+                new DeleteTaskCategoryCommand { CategoryId = category.Id, RowVersion = category.RowVersion },
                 CancellationToken.None);
 
             var dbOtherTask = await context.Tasks.FirstAsync(t => t.Id == otherTask.Id);
@@ -206,7 +206,7 @@ namespace NotesApp.Application.Tests.Categories
 
             var handler = CreateHandler(context, userId);
             await handler.Handle(
-                new DeleteTaskCategoryCommand { CategoryId = categoryToDelete.Id },
+                new DeleteTaskCategoryCommand { CategoryId = categoryToDelete.Id, RowVersion = categoryToDelete.RowVersion },
                 CancellationToken.None);
 
             var dbTask = await context.Tasks.FirstAsync(t => t.Id == unrelatedTask.Id);
@@ -241,7 +241,7 @@ namespace NotesApp.Application.Tests.Categories
 
             var handler = CreateHandler(context, userId);
             await handler.Handle(
-                new DeleteTaskCategoryCommand { CategoryId = category.Id },
+                new DeleteTaskCategoryCommand { CategoryId = category.Id, RowVersion = category.RowVersion },
                 CancellationToken.None);
 
             // Reload with IgnoreQueryFilters since the task is soft-deleted.
@@ -364,7 +364,7 @@ namespace NotesApp.Application.Tests.Categories
 
             var handler = CreateHandler(context, userId);
             var result = await handler.Handle(
-                new DeleteTaskCategoryCommand { CategoryId = category.Id },
+                new DeleteTaskCategoryCommand { CategoryId = category.Id, RowVersion = category.RowVersion },
                 CancellationToken.None);
 
             result.IsSuccess.Should().BeTrue();

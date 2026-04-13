@@ -282,7 +282,7 @@ namespace NotesApp.Application.Tests.Sync
             // 2. Call the REST delete handler at deleteTime.
             var deleteHandler = CreateDeleteHandler(context, userId, deleteTime);
             var deleteResult = await deleteHandler.Handle(
-                new DeleteTaskCategoryCommand { CategoryId = category.Id },
+                new DeleteTaskCategoryCommand { CategoryId = category.Id, RowVersion = category.RowVersion },
                 CancellationToken.None);
             deleteResult.IsSuccess.Should().BeTrue();
 

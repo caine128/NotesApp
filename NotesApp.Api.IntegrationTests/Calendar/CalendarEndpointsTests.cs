@@ -1,7 +1,9 @@
 ﻿using FluentAssertions;
 using NotesApp.Api.IntegrationTests.Infrastructure.Hosting;
+using NotesApp.Api.IntegrationTests.Infrastructure.Http;
 using NotesApp.Application.Calendar;
 using NotesApp.Application.Calendar.Models;
+using NotesApp.Application.Tasks.Models;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -148,7 +150,9 @@ namespace NotesApp.Api.IntegrationTests.Calendar
             await CreateTaskAsync(client, day4, "D4 Task 1");
 
             // Soft delete one task on day 2
-            await client.DeleteAsync($"api/tasks/{day2TaskToDelete}");
+            await client.DeleteAsJsonAsync(
+                $"api/tasks/{day2TaskToDelete.TaskId}",
+                new { RowVersion = day2TaskToDelete.RowVersion });
 
             // Act
             var response = await client.GetAsync(
@@ -278,7 +282,7 @@ namespace NotesApp.Api.IntegrationTests.Calendar
         /// Creates a task via the Tasks API and returns its TaskId.
         /// The payload mirrors CreateTaskCommand properties we actually use in tests.
         /// </summary>
-        private static async Task<Guid> CreateTaskAsync(
+        private static async Task<TaskDetailDto> CreateTaskAsync(
             HttpClient client,
             DateOnly date,
             string title)
@@ -298,21 +302,7 @@ namespace NotesApp.Api.IntegrationTests.Calendar
             var response = await client.PostAsJsonAsync("api/tasks", payload);
             response.EnsureSuccessStatusCode();
 
-            // We keep this generic and just pull out the TaskId from the JSON,
-            // so we don't depend on the exact DTO type exposed by the API.
-            var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-            if (json.TryGetProperty("taskId", out var idProperty))
-            {
-                return idProperty.GetGuid();
-            }
-
-            // Fallback for older/newer naming if needed in the future
-            if (json.TryGetProperty("id", out var altId))
-            {
-                return altId.GetGuid();
-            }
-
-            throw new InvalidOperationException("Could not find TaskId in task creation response.");
+            return (await response.Content.ReadFromJsonAsync<TaskDetailDto>())!;
         }
 
         /// <summary>

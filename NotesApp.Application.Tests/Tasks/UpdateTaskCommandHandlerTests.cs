@@ -89,7 +89,8 @@ namespace NotesApp.Application.Tests.Tasks
                 EndTime = new TimeOnly(11, 0),
                 Location = "Updated location",
                 TravelTime = TimeSpan.FromMinutes(30),
-                ReminderAtUtc = newReminder
+                ReminderAtUtc = newReminder,
+                RowVersion = existingTask.RowVersion
             };
 
             var before = DateTime.UtcNow;
@@ -200,7 +201,8 @@ namespace NotesApp.Application.Tests.Tasks
                 TaskId = task.Id,
                 Date = new DateOnly(2025, 3, 1),
                 Title = "Normal task",
-                Priority = TaskPriority.High
+                Priority = TaskPriority.High,
+                RowVersion = task.RowVersion
             };
 
             // Act
@@ -539,7 +541,8 @@ namespace NotesApp.Application.Tests.Tasks
                 TaskId = task.Id,
                 Date = task.Date,
                 Title = task.Title,
-                MeetingLink = "https://teams.microsoft.com/l/meetup-join/abc123"
+                MeetingLink = "https://teams.microsoft.com/l/meetup-join/abc123",
+                RowVersion = task.RowVersion
             };
 
             // Act
@@ -612,7 +615,8 @@ namespace NotesApp.Application.Tests.Tasks
                 TaskId = task.Id,
                 Date = task.Date,
                 Title = task.Title,
-                MeetingLink = null
+                MeetingLink = null,
+                RowVersion = task.RowVersion
             };
 
             // Act

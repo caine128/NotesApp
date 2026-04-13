@@ -73,7 +73,8 @@ namespace NotesApp.Application.Tests.Tasks
 
             var command = new DeleteTaskCommand
             {
-                TaskId = task.Id
+                TaskId = task.Id,
+                RowVersion = task.RowVersion
             };
 
             // Act
