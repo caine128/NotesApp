@@ -29,12 +29,14 @@ namespace NotesApp.Application.Tasks.Queries
             // Throws if user is not authenticated; handled by global middleware
             var userId = await _currentUserService.GetUserIdAsync(cancellationToken);
 
-            var tasks = await _taskRepository.GetForDateRangeAsync(userId,
-                                                                   request.Start,
-                                                                   request.EndExclusive,
-                                                                   cancellationToken);
+            // REFACTORED: use GetOccurrencesForDateRangeAsync which returns both materialized
+            // TaskItems and projected virtual recurring occurrences merged into TaskOccurrenceResult.
+            var occurrences = await _taskRepository.GetOccurrencesForDateRangeAsync(userId,
+                                                                                     request.Start,
+                                                                                     request.EndExclusive,
+                                                                                     cancellationToken);
 
-            var summaries = tasks
+            var summaries = occurrences
                  .OrderBy(t => t.Date)
                  .ThenBy(t => t.StartTime)
                  .ToSummaryDtoList();

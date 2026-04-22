@@ -271,6 +271,8 @@ namespace NotesApp.Application.Tests.Attachments
             var a2 = await SeedAttachmentAsync(context, userId, task.Id, 2, "b.pdf", _now);
 
             await repo.SoftDeleteAllForTaskAsync(task.Id, userId, _now.AddMinutes(5), CancellationToken.None);
+            // SoftDeleteAllForTaskAsync uses the change-tracker pattern — caller must SaveChangesAsync.
+            await context.SaveChangesAsync();
             context.ChangeTracker.Clear();
 
             var all = await context.Attachments
@@ -297,6 +299,8 @@ namespace NotesApp.Application.Tests.Attachments
             await SeedAttachmentAsync(context, userId, task1.Id, 1, "mine.pdf", _now);
 
             await repo.SoftDeleteAllForTaskAsync(task1.Id, userId, _now.AddMinutes(5), CancellationToken.None);
+            // SoftDeleteAllForTaskAsync uses the change-tracker pattern — caller must SaveChangesAsync.
+            await context.SaveChangesAsync();
             context.ChangeTracker.Clear();
 
             var untouched = await context.Attachments

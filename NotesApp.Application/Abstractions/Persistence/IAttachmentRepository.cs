@@ -51,17 +51,17 @@ namespace NotesApp.Application.Abstractions.Persistence
 
         /// <summary>
         /// Bulk soft-deletes all non-deleted attachments belonging to the given task.
+        /// Uses the change-tracker pattern: loads entities and calls domain <c>SoftDelete()</c>
+        /// on each — the caller's <c>SaveChangesAsync()</c> commits atomically.
         /// Sets UpdatedAtUtc so that cascade-deleted attachments surface in the next sync pull.
         ///
         /// Called from:
         /// - <c>DeleteTaskCommandHandler</c> (REST delete path).
-        /// - <c>SyncPushCommandHandler.ProcessTaskDeletesAsync</c> (sync push safety sweep).
         /// </summary>
-        Task SoftDeleteAllForTaskAsync(
-            Guid taskId,
-            Guid userId,
-            DateTime utcNow,
-            CancellationToken cancellationToken = default);
+        Task SoftDeleteAllForTaskAsync(Guid taskId,
+                                       Guid userId,
+                                       DateTime utcNow,
+                                       CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Returns non-deleted attachments whose parent task is soft-deleted.

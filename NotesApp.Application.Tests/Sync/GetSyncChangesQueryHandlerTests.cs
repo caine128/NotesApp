@@ -29,6 +29,11 @@ namespace NotesApp.Application.Tests.Sync
         private readonly Mock<ICategoryRepository> _categoryRepositoryMock = new();
         private readonly Mock<ISubtaskRepository> _subtaskRepositoryMock = new();
         private readonly Mock<IAttachmentRepository> _attachmentRepositoryMock = new();
+        // REFACTORED: added recurring-task repository mocks for recurring-tasks feature
+        private readonly Mock<IRecurringTaskRootRepository> _recurringRootRepositoryMock = new();
+        private readonly Mock<IRecurringTaskSeriesRepository> _recurringSeriesRepositoryMock = new();
+        private readonly Mock<IRecurringTaskSubtaskRepository> _recurringSeriesSubtaskRepositoryMock = new();
+        private readonly Mock<IRecurringTaskExceptionRepository> _recurringExceptionRepositoryMock = new();
         private readonly Mock<ICurrentUserService> _currentUserServiceMock = new();
         private readonly Mock<ILogger<GetSyncChangesQueryHandler>> _loggerMock = new();
 
@@ -61,6 +66,23 @@ namespace NotesApp.Application.Tests.Sync
                 .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new List<Attachment>());
 
+            // REFACTORED: set up recurring-task repo mocks to return empty collections
+            _recurringRootRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskRoot>());
+
+            _recurringSeriesRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskSeries>());
+
+            _recurringSeriesSubtaskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskSubtask>());
+
+            _recurringExceptionRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskException>());
+
             return new GetSyncChangesQueryHandler(
                 _taskRepositoryMock.Object,
                 _noteRepositoryMock.Object,
@@ -70,6 +92,10 @@ namespace NotesApp.Application.Tests.Sync
                 _categoryRepositoryMock.Object,
                 _subtaskRepositoryMock.Object,
                 _attachmentRepositoryMock.Object,
+                _recurringRootRepositoryMock.Object,
+                _recurringSeriesRepositoryMock.Object,
+                _recurringSeriesSubtaskRepositoryMock.Object,
+                _recurringExceptionRepositoryMock.Object,
                 _currentUserServiceMock.Object,
                 _loggerMock.Object);
         }

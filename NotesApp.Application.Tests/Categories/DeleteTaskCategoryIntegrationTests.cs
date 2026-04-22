@@ -1,3 +1,4 @@
+using NotesApp.Application.Abstractions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -48,7 +49,7 @@ namespace NotesApp.Application.Tests.Categories
 
             return new DeleteTaskCategoryCommandHandler(
                 new CategoryRepository(context),
-                new TaskRepository(context),
+                new TaskRepository(context, new Mock<IRecurrenceEngine>().Object),
                 new OutboxRepository(context),
                 new UnitOfWork(context),
                 currentUserSvc.Object,

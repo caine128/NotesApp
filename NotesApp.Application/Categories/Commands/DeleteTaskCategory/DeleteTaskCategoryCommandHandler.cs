@@ -45,14 +45,13 @@ namespace NotesApp.Application.Categories.Commands.DeleteTaskCategory
         private readonly ISystemClock _clock;
         private readonly ILogger<DeleteTaskCategoryCommandHandler> _logger;
 
-        public DeleteTaskCategoryCommandHandler(
-            ICategoryRepository categoryRepository,
-            ITaskRepository taskRepository,
-            IOutboxRepository outboxRepository,
-            IUnitOfWork unitOfWork,
-            ICurrentUserService currentUserService,
-            ISystemClock clock,
-            ILogger<DeleteTaskCategoryCommandHandler> logger)
+        public DeleteTaskCategoryCommandHandler(ICategoryRepository categoryRepository,
+                                                ITaskRepository taskRepository,
+                                                IOutboxRepository outboxRepository,
+                                                IUnitOfWork unitOfWork,
+                                                ICurrentUserService currentUserService,
+                                                ISystemClock clock,
+                                                ILogger<DeleteTaskCategoryCommandHandler> logger)
         {
             _categoryRepository = categoryRepository;
             _taskRepository = taskRepository;
@@ -63,9 +62,8 @@ namespace NotesApp.Application.Categories.Commands.DeleteTaskCategory
             _logger = logger;
         }
 
-        public async Task<Result> Handle(
-            DeleteTaskCategoryCommand command,
-            CancellationToken cancellationToken)
+        public async Task<Result> Handle(DeleteTaskCategoryCommand command,
+                                         CancellationToken cancellationToken)
         {
             // 1) Resolve the current internal user id.
             var currentUserId = await _currentUserService.GetUserIdAsync(cancellationToken);

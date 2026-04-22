@@ -10,9 +10,12 @@ using NotesApp.Application.Subtasks.Models;
 using NotesApp.Application.Tasks;
 using NotesApp.Application.Tasks.Commands.AcknowledgeReminder;
 using NotesApp.Application.Tasks.Commands.CreateTask;
+using NotesApp.Application.Tasks.Commands.DeleteRecurringTaskOccurrence;
 using NotesApp.Application.Tasks.Commands.DeleteTask;
 using NotesApp.Application.Tasks.Commands.SetTaskCompletion;
+using NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence;
 using NotesApp.Application.Tasks.Commands.UpdateTask;
+using NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubtasks;
 using NotesApp.Application.Tasks.Models;
 using NotesApp.Application.Tasks.Queries;
 
@@ -318,6 +321,150 @@ namespace NotesApp.Api.Controllers
             command.TaskId = taskId;
             command.SubtaskId = subtaskId;
 
+            var result = await _mediator.Send(command, cancellationToken);
+
+            if (result.IsFailed)
+            {
+                return result.ToActionResult();
+            }
+
+            return NoContent();
+        }
+
+        // -----------------------------------------------------------------------
+        // Recurring task endpoints
+        // REFACTORED: added for recurring-tasks feature
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Updates a materialized recurring task occurrence.
+        /// Scope controls how many occurrences are affected (Single / ThisAndFollowing / All).
+        /// </summary>
+        /// <param name="taskId">Id of the materialized TaskItem being updated.</param>
+        /// <param name="command">Update payload including Scope, SeriesId, OccurrenceDate and task fields.</param>
+        [HttpPut("{taskId:guid}/recurring")]
+        [ProducesResponseType(typeof(TaskDetailDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<TaskDetailDto>> UpdateRecurringTaskOccurrence(
+            [FromRoute] Guid taskId,
+            [FromBody] UpdateRecurringTaskOccurrenceCommand command,
+            CancellationToken cancellationToken)
+        {
+            // Route taskId is the source of truth for the materialized TaskItemId.
+            command.TaskItemId = taskId;
+
+            return await _mediator
+                .Send(command, cancellationToken)
+                .ToActionResult();
+        }
+
+        /// <summary>
+        /// Updates a virtual (non-materialized) recurring task occurrence.
+        /// Scope controls how many occurrences are affected (Single / ThisAndFollowing / All).
+        /// TaskItemId in the body must be null for virtual occurrences.
+        /// </summary>
+        [HttpPut("virtual-occurrences")]
+        [ProducesResponseType(typeof(TaskDetailDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<TaskDetailDto>> UpdateVirtualOccurrence(
+            [FromBody] UpdateRecurringTaskOccurrenceCommand command,
+            CancellationToken cancellationToken)
+        {
+            return await _mediator
+                .Send(command, cancellationToken)
+                .ToActionResult();
+        }
+
+        /// <summary>
+        /// Deletes a materialized recurring task occurrence.
+        /// Scope controls how many occurrences are deleted (Single / ThisAndFollowing / All).
+        /// </summary>
+        /// <param name="taskId">Id of the materialized TaskItem to delete.</param>
+        /// <param name="command">Delete payload including Scope, SeriesId, and OccurrenceDate.</param>
+        [HttpDelete("{taskId:guid}/recurring")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> DeleteRecurringTaskOccurrence(
+            [FromRoute] Guid taskId,
+            [FromBody] DeleteRecurringTaskOccurrenceCommand command,
+            CancellationToken cancellationToken)
+        {
+            command.TaskItemId = taskId;
+
+            var result = await _mediator.Send(command, cancellationToken);
+
+            if (result.IsFailed)
+            {
+                return result.ToActionResult();
+            }
+
+            return NoContent();
+        }
+
+        /// <summary>
+        /// Deletes a virtual (non-materialized) recurring task occurrence.
+        /// Scope controls how many occurrences are deleted (Single / ThisAndFollowing / All).
+        /// </summary>
+        [HttpDelete("virtual-occurrences")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> DeleteVirtualOccurrence(
+            [FromBody] DeleteRecurringTaskOccurrenceCommand command,
+            CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+
+            if (result.IsFailed)
+            {
+                return result.ToActionResult();
+            }
+
+            return NoContent();
+        }
+
+        /// <summary>
+        /// Returns the full detail of a virtual (non-materialized) recurring occurrence.
+        /// Use this when the client taps on an occurrence with IsVirtualOccurrence = true.
+        /// </summary>
+        /// <param name="seriesId">The series that owns the occurrence.</param>
+        /// <param name="date">The canonical (engine-generated) occurrence date.</param>
+        [HttpGet("virtual-occurrences/detail")]
+        [ProducesResponseType(typeof(TaskDetailDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<TaskDetailDto>> GetVirtualOccurrenceDetail(
+            [FromQuery] Guid seriesId,
+            [FromQuery] DateOnly date,
+            CancellationToken cancellationToken)
+        {
+            var query = new GetVirtualTaskOccurrenceDetailQuery
+            {
+                SeriesId = seriesId,
+                OccurrenceDate = date
+            };
+
+            return await _mediator
+                .Send(query, cancellationToken)
+                .ToActionResult();
+        }
+
+        /// <summary>
+        /// Replaces the complete subtask list for a recurring task occurrence according to the specified scope.
+        /// Works for both materialized and virtual occurrences — provide TaskItemId for materialized, null for virtual.
+        /// The client always sends the full desired state (full replace, not a patch).
+        /// Scope controls how many occurrences are affected (Single / ThisAndFollowing / All).
+        /// </summary>
+        [HttpPut("recurring-occurrences/subtasks")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> UpdateRecurringOccurrenceSubtasks(
+            [FromBody] UpdateRecurringTaskOccurrenceSubtasksCommand command,
+            CancellationToken cancellationToken)
+        {
             var result = await _mediator.Send(command, cancellationToken);
 
             if (result.IsFailed)

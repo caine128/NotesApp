@@ -43,12 +43,15 @@ namespace NotesApp.Application.Tasks.Queries
                                    userId,
                                    request.Date);
 
-            var tasks = await _taskRepository.GetForDayAsync(userId,
-                                                             request.Date,
-                                                             cancellationToken);
+            // REFACTORED: use GetOccurrencesForDayAsync which returns both materialized TaskItems
+            // and projected virtual recurring occurrences merged into TaskOccurrenceResult.
+            var occurrences = await _taskRepository.GetOccurrencesForDayAsync(userId,
+                                                                               request.Date,
+                                                                               cancellationToken);
 
-            // Use the list helper
-            var dtoList = tasks
+            // Use the list helper — already sorted by StartTime inside GetOccurrencesForDayAsync,
+            // but re-sort here for resilience.
+            var dtoList = occurrences
                 .OrderBy(t => t.StartTime)
                 .ToSummaryDtoList();
 

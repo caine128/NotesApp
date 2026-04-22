@@ -1,4 +1,6 @@
+using NotesApp.Application.Abstractions;
 ﻿using FluentAssertions;
+using Moq;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Tests.Infrastructure;
 using NotesApp.Domain.Common;
@@ -21,7 +23,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository repository = new TaskRepository(context);
+            ITaskRepository repository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
 
             var userId = Guid.NewGuid();
             var otherUserId = Guid.NewGuid();
@@ -92,7 +94,7 @@ namespace NotesApp.Application.Tests.Tasks
         {
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository repository = new TaskRepository(context);
+            ITaskRepository repository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
 
             var userId = Guid.NewGuid();
             var otherUserId = Guid.NewGuid();
@@ -136,7 +138,7 @@ namespace NotesApp.Application.Tests.Tasks
         {
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            var repository = new TaskRepository(context);
+            var repository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
 
             var userId = Guid.NewGuid();
             var utcNow = DateTime.UtcNow;

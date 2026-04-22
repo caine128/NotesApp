@@ -42,12 +42,14 @@ namespace NotesApp.Application.Abstractions.Persistence
 
         /// <summary>
         /// Bulk soft-deletes all non-deleted subtasks belonging to the given task.
+        /// Uses the change-tracker pattern: loads entities and calls domain <c>SoftDelete()</c>
+        /// on each — the caller's <c>SaveChangesAsync()</c> commits atomically.
         /// Increments Version and sets UpdatedAtUtc so that cascade-deleted subtasks
         /// surface in the next sync pull.
         ///
         /// Called from:
         /// - <c>DeleteTaskCommandHandler</c> (REST delete path).
-        /// - <c>SyncPushCommandHandler.ProcessTaskDeletesAsync</c> (sync push safety sweep).
+        /// - <c>UpdateRecurringTaskOccurrenceSubtasksCommandHandler</c> (materialized subtask replace).
         /// </summary>
         Task SoftDeleteAllForTaskAsync(
             Guid taskId,

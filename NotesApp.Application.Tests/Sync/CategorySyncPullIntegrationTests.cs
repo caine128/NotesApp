@@ -1,3 +1,4 @@
+using NotesApp.Application.Abstractions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -41,7 +42,7 @@ namespace NotesApp.Application.Tests.Sync
                           .ReturnsAsync(userId);
 
             return new GetSyncChangesQueryHandler(
-                new TaskRepository(context),
+                new TaskRepository(context, new Mock<IRecurrenceEngine>().Object),
                 new NoteRepository(context),
                 new BlockRepository(context),
                 new AssetRepository(context),
@@ -49,6 +50,11 @@ namespace NotesApp.Application.Tests.Sync
                 new CategoryRepository(context),
                 new SubtaskRepository(context),
                 new AttachmentRepository(context),
+                // REFACTORED: added recurring-task repos for recurring-tasks feature
+                new RecurringTaskRootRepository(context),
+                new RecurringTaskSeriesRepository(context),
+                new RecurringTaskSubtaskRepository(context),
+                new RecurringTaskExceptionRepository(context),
                 currentUserSvc.Object,
                 new Mock<ILogger<GetSyncChangesQueryHandler>>().Object);
         }
@@ -67,7 +73,7 @@ namespace NotesApp.Application.Tests.Sync
 
             return new DeleteTaskCategoryCommandHandler(
                 new CategoryRepository(context),
-                new TaskRepository(context),
+                new TaskRepository(context, new Mock<IRecurrenceEngine>().Object),
                 new OutboxRepository(context),
                 new UnitOfWork(context),
                 currentUserSvc.Object,

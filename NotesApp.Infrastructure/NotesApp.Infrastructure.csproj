@@ -14,7 +14,9 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.Azure" Version="1.13.1" />  
+    <PackageReference Include="Microsoft.Extensions.Azure" Version="1.13.1" />
+    <!-- REFACTORED: added Ical.Net for recurring-tasks feature (recurrence engine) -->
+    <PackageReference Include="Ical.Net" Version="5.2.1" />
   </ItemGroup>
 
   <ItemGroup>

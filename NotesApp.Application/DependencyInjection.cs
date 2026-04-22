@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NotesApp.Application.Common.Behaviors;
 using NotesApp.Application.Configuration;
 using NotesApp.Application.Tasks.Commands.CreateTask;
+using NotesApp.Application.Tasks.Services;
 
 
 namespace NotesApp.Application
@@ -39,6 +40,14 @@ namespace NotesApp.Application
                 .Bind(configuration.GetSection(AttachmentStorageOptions.SectionName))
                 .ValidateDataAnnotations()
                 .ValidateOnStart();
+
+            // REFACTORED: added recurring-task options and materializer for recurring-tasks feature
+            services.AddOptions<RecurringTaskOptions>()
+                .Bind(configuration.GetSection(RecurringTaskOptions.SectionName))
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
+
+            services.AddScoped<IRecurringTaskMaterializerService, RecurringTaskMaterializerService>();
 
             return services;
         }

@@ -33,14 +33,17 @@ namespace NotesApp.Application.Tests.Infrastructure
             var context = new AppDbContext(options);
 
             // Drop the database if it is registered in the LocalDB catalog.
-            context.Database.EnsureDeleted();
-
-            // Also delete any orphaned MDF/LDF files left on disk from a previous
-            // run where the LocalDB instance was down when the test process exited.
-            // In that case EnsureDeleted() returns false (DB not in catalog) but
-            // the physical files remain, causing EnsureCreated() to fail on the
-            // next run with "Cannot create file … because it already exists."
-            DeleteOrphanedDbFiles();
+            // EnsureDeleted() returns true  → SQL Server dropped the DB and released the files.
+            // EnsureDeleted() returns false → DB was not in the catalog; physical MDF/LDF files
+            //   may still exist from a previous run that crashed while the instance was down.
+            //   In that case we must delete the files manually before EnsureCreated() runs,
+            //   otherwise SQL Server refuses: "Cannot create file … because it already exists."
+            bool dbExisted = context.Database.EnsureDeleted();
+            if (!dbExisted)
+            {
+                // Only safe to touch the files when SQL Server has no handle on them.
+                DeleteOrphanedDbFiles();
+            }
 
             context.Database.EnsureCreated();
 

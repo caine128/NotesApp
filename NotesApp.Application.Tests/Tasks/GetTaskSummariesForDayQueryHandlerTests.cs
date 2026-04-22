@@ -1,3 +1,4 @@
+using NotesApp.Application.Abstractions;
 ﻿using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -22,7 +23,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
 
             var userId = Guid.NewGuid();
             var otherUserId = Guid.NewGuid();
@@ -75,7 +76,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
 
             var userId = Guid.NewGuid();
 

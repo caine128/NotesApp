@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using NotesApp.Application.Abstractions;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Abstractions.Storage;
 using NotesApp.Application.Common;
@@ -13,6 +14,8 @@ using NotesApp.Infrastructure.Notifications;
 using NotesApp.Infrastructure.Persistence;
 using NotesApp.Infrastructure.Persistence.Repositories;
 using NotesApp.Infrastructure.Storage;
+using NotesApp.Infrastructure.Persistence.Repositories;
+using NotesApp.Infrastructure.Services;
 using NotesApp.Infrastructure.Time;
 using System;
 using System.Collections.Generic;
@@ -56,6 +59,13 @@ namespace NotesApp.Infrastructure
             services.AddScoped<ISubtaskRepository, SubtaskRepository>(); // REFACTORED: added for subtasks feature
             services.AddScoped<IAttachmentRepository, AttachmentRepository>(); // REFACTORED: added for task-attachments feature
             services.AddScoped<IPushNotificationService, LoggingPushNotificationService>();
+
+            // REFACTORED: added for recurring-tasks feature
+            services.AddSingleton<IRecurrenceEngine, RecurrenceEngine>();
+            services.AddScoped<IRecurringTaskRootRepository, RecurringTaskRootRepository>();
+            services.AddScoped<IRecurringTaskSeriesRepository, RecurringTaskSeriesRepository>();
+            services.AddScoped<IRecurringTaskSubtaskRepository, RecurringTaskSubtaskRepository>();
+            services.AddScoped<IRecurringTaskExceptionRepository, RecurringTaskExceptionRepository>();
 
             // 3) System clock (for time abstraction)
             services.AddSingleton<ISystemClock, SystemClock>();

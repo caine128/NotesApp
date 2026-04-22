@@ -4,7 +4,6 @@ using NotesApp.Application.Tasks.Models;
 using NotesApp.Domain.Common;
 using System;
 using System.Collections.Generic;
-using System.Text;
 
 namespace NotesApp.Application.Tasks.Commands.CreateTask
 {
@@ -70,5 +69,14 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
         /// (e.g. Zoom, Teams, Google Meet link, or a phone number). Max 2048 characters.
         /// </summary>
         public string? MeetingLink { get; init; }
+
+        // REFACTORED: added recurrence support for recurring-tasks feature
+
+        /// <summary>
+        /// When set, the task is created as a recurring series.
+        /// The first occurrence is returned in the response (same TaskDetailDto shape).
+        /// When null, existing single-task behavior is preserved.
+        /// </summary>
+        public RecurrenceRuleDto? RecurrenceRule { get; init; }
     }
 }

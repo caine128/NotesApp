@@ -103,19 +103,23 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
         public async Task SoftDeleteAllForTaskAsync(
             Guid taskId, Guid userId, DateTime utcNow, CancellationToken cancellationToken = default)
         {
-            // Bulk update: marks all non-deleted attachments for the task as deleted.
-            // ExecuteUpdateAsync bypasses the global query filter so we can target by taskId/userId
-            // without loading entities into memory, then updates in a single SQL statement.
-            // Attachment has no Version column (immutable entity), so only IsDeleted and UpdatedAtUtc
-            // are set (unlike SoftDeleteAllForTaskAsync in SubtaskRepository which also bumps Version).
-            await _context.Attachments
+            // Change-tracker pattern: load non-deleted attachments, call domain SoftDelete() on each.
+            // The caller's SaveChangesAsync() commits these soft-deletes atomically with any other
+            // staged changes (e.g. TaskItem soft-delete, outbox message).
+            // Does NOT use ExecuteUpdateAsync — that would commit immediately outside the ambient transaction.
+            // Attachment.SoftDelete() is idempotent and sets IsDeleted + UpdatedAtUtc (no Version column —
+            // attachments are immutable after creation).
+            var attachments = await _context.Attachments
                 .IgnoreQueryFilters()
                 .Where(a => a.TaskId == taskId && a.UserId == userId && !a.IsDeleted)
-                .ExecuteUpdateAsync(
-                    setters => setters
-                        .SetProperty(a => a.IsDeleted, true)
-                        .SetProperty(a => a.UpdatedAtUtc, utcNow),
-                    cancellationToken);
+                .ToListAsync(cancellationToken);
+
+            foreach (var attachment in attachments)
+            {
+                // SoftDelete() is idempotent — cannot fail for non-deleted entities (filter above).
+                _ = attachment.SoftDelete(utcNow);
+            }
+            // No SaveChangesAsync here — caller commits everything atomically.
         }
 
         /// <inheritdoc />

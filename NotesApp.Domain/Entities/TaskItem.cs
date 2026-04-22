@@ -92,6 +92,24 @@ namespace NotesApp.Domain.Entities
         /// </summary>
         public string? MeetingLink { get; private set; }
 
+        // REFACTORED: added recurring-task fields for recurring-tasks feature
+
+        /// <summary>
+        /// FK to the RecurringTaskSeries that generated this TaskItem.
+        /// Null for non-recurring tasks.
+        /// Immutable after creation — set once via LinkToSeries().
+        /// </summary>
+        public Guid? RecurringSeriesId { get; private set; }
+
+        /// <summary>
+        /// The recurrence-engine-generated date for this occurrence, before any user-applied date move.
+        /// Null for non-recurring tasks.
+        /// Used to look up the correct RecurringTaskException via (SeriesId, CanonicalOccurrenceDate)
+        /// and to deduplicate virtual occurrences at query time.
+        /// Immutable after creation — set once via LinkToSeries().
+        /// </summary>
+        public DateOnly? CanonicalOccurrenceDate { get; private set; }
+
         private TaskItem()
         {
         }
@@ -417,6 +435,27 @@ namespace NotesApp.Domain.Entities
             IncrementVersion();
             Restore(utcNow);
             return DomainResult.Success();
+        }
+
+        // REFACTORED: added recurring-task methods for recurring-tasks feature
+
+        /// <summary>
+        /// Links this TaskItem to a recurring series and records its canonical occurrence date.
+        /// Must be called exactly once, immediately after creation of a recurring occurrence.
+        /// Throws <see cref="InvalidOperationException"/> if called a second time (immutability guard).
+        /// Only call this method in the materializer service and CreateTask handler when RecurrenceRule is set.
+        /// </summary>
+        public void LinkToSeries(Guid seriesId, DateOnly canonicalDate)
+        {
+            if (RecurringSeriesId.HasValue)
+            {
+                throw new InvalidOperationException(
+                    "Series link already set — cannot be changed. " +
+                    "LinkToSeries() must only be called once, immediately after task creation.");
+            }
+
+            RecurringSeriesId = seriesId;
+            CanonicalOccurrenceDate = canonicalDate;
         }
 
         public string GetDisplayTitle()

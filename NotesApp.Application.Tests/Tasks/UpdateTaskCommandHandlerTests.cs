@@ -1,3 +1,4 @@
+using NotesApp.Application.Abstractions;
 ﻿using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -33,7 +34,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -155,7 +156,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -226,7 +227,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -274,7 +275,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -343,7 +344,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -418,7 +419,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -495,7 +496,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -566,7 +567,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();

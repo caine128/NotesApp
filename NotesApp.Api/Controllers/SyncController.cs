@@ -79,8 +79,14 @@ namespace NotesApp.Api.Controllers
                 Tasks = payload.Tasks,
                 Notes = payload.Notes,
                 Blocks = payload.Blocks,
-                Categories = payload.Categories, // REFACTORED: added category push support
-                Subtasks = payload.Subtasks // REFACTORED: added subtask push support
+                Categories = payload.Categories,           // REFACTORED: added category push support
+                Subtasks = payload.Subtasks,               // REFACTORED: added subtask push support
+                Attachments = payload.Attachments,         // REFACTORED: added attachment push support
+                // REFACTORED: added recurring-task push support for recurring-tasks feature
+                RecurringRoots = payload.RecurringRoots,
+                RecurringSeries = payload.RecurringSeries,
+                RecurringSeriesSubtasks = payload.RecurringSeriesSubtasks,
+                RecurringExceptions = payload.RecurringExceptions,
             };
 
             var result = await _mediator.Send(command, cancellationToken);

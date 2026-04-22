@@ -30,6 +30,12 @@ namespace NotesApp.Application.Sync.Models
         /// </summary>
         public SyncAttachmentsChangesDto Attachments { get; init; } = new();
 
+        // REFACTORED: added recurring-task change buckets for recurring-tasks feature
+        public SyncRecurringRootsChangesDto RecurringRoots { get; init; } = new();
+        public SyncRecurringSeriesChangesDto RecurringSeries { get; init; } = new();
+        public SyncRecurringSeriesSubtasksChangesDto RecurringSeriesSubtasks { get; init; } = new();
+        public SyncRecurringExceptionsChangesDto RecurringExceptions { get; init; } = new();
+
         /// <summary>
         /// True when the server had more task changes than were included
         /// in this response (based on MaxItemsPerEntity).
@@ -57,6 +63,16 @@ namespace NotesApp.Application.Sync.Models
         /// in this response (based on MaxItemsPerEntity).
         /// </summary>
         public bool HasMoreSubtasks { get; init; }
+
+        // REFACTORED: added recurring-task pagination flags for recurring-tasks feature
+        /// <summary>True when the server had more recurring root changes than were included in this response.</summary>
+        public bool HasMoreRecurringRoots { get; init; }
+        /// <summary>True when the server had more recurring series changes than were included in this response.</summary>
+        public bool HasMoreRecurringSeries { get; init; }
+        /// <summary>True when the server had more recurring series subtask changes than were included in this response.</summary>
+        public bool HasMoreRecurringSeriesSubtasks { get; init; }
+        /// <summary>True when the server had more recurring exception changes than were included in this response.</summary>
+        public bool HasMoreRecurringExceptions { get; init; }
     }
 
     public sealed record SyncTasksChangesDto
@@ -127,6 +143,16 @@ namespace NotesApp.Application.Sync.Models
         /// Optional join URL or dial-in reference for a meeting. Null when not set.
         /// </summary>
         public string? MeetingLink { get; init; }
+
+        // REFACTORED: added recurring-task fields for recurring-tasks feature
+        /// <summary>FK to the recurring series this task belongs to. Null for non-recurring tasks.</summary>
+        public Guid? RecurringSeriesId { get; init; }
+
+        /// <summary>
+        /// The recurrence-engine-generated canonical occurrence date.
+        /// Null for non-recurring tasks; matches TaskItem.CanonicalOccurrenceDate.
+        /// </summary>
+        public DateOnly? CanonicalOccurrenceDate { get; init; }
 
         public long Version { get; init; }
 
@@ -313,6 +339,143 @@ namespace NotesApp.Application.Sync.Models
         public string ContentType { get; init; } = string.Empty;
         public long SizeBytes { get; init; }
         public int DisplayOrder { get; init; }
+        public DateTime CreatedAtUtc { get; init; }
+        public DateTime UpdatedAtUtc { get; init; }
+    }
+
+    // REFACTORED: added recurring-task sync DTOs for recurring-tasks feature
+
+    public sealed record SyncRecurringRootsChangesDto
+    {
+        public IReadOnlyList<RecurringRootSyncItemDto> Created { get; init; } = Array.Empty<RecurringRootSyncItemDto>();
+        public IReadOnlyList<RecurringRootSyncItemDto> Updated { get; init; } = Array.Empty<RecurringRootSyncItemDto>();
+        public IReadOnlyList<DeletedSyncItemDto> Deleted { get; init; } = Array.Empty<DeletedSyncItemDto>();
+    }
+
+    /// <summary>Sync representation of a RecurringTaskRoot (the stable identity anchor across series segments).</summary>
+    public sealed record RecurringRootSyncItemDto
+    {
+        public Guid Id { get; init; }
+        public Guid UserId { get; init; }
+        public long Version { get; init; }
+        public DateTime CreatedAtUtc { get; init; }
+        public DateTime UpdatedAtUtc { get; init; }
+    }
+
+    public sealed record SyncRecurringSeriesChangesDto
+    {
+        public IReadOnlyList<RecurringSeriesSyncItemDto> Created { get; init; } = Array.Empty<RecurringSeriesSyncItemDto>();
+        public IReadOnlyList<RecurringSeriesSyncItemDto> Updated { get; init; } = Array.Empty<RecurringSeriesSyncItemDto>();
+        public IReadOnlyList<DeletedSyncItemDto> Deleted { get; init; } = Array.Empty<DeletedSyncItemDto>();
+    }
+
+    /// <summary>
+    /// Sync representation of a RecurringTaskSeries segment.
+    /// RRuleString is sent verbatim so clients can parse it with their own iCal library (e.g. RRule.js).
+    /// </summary>
+    public sealed record RecurringSeriesSyncItemDto
+    {
+        public Guid Id { get; init; }
+        public Guid UserId { get; init; }
+        public Guid RootId { get; init; }
+        /// <summary>RFC 5545 RRULE body (no DTSTART/UNTIL). Clients parse with their own iCal library.</summary>
+        public string RRuleString { get; init; } = string.Empty;
+        public DateOnly StartsOnDate { get; init; }
+        public DateOnly? EndsBeforeDate { get; init; }
+        // Template task fields
+        public string Title { get; init; } = string.Empty;
+        public string? Description { get; init; }
+        public TimeOnly? StartTime { get; init; }
+        public TimeOnly? EndTime { get; init; }
+        public string? Location { get; init; }
+        public TimeSpan? TravelTime { get; init; }
+        public Guid? CategoryId { get; init; }
+        public TaskPriority Priority { get; init; }
+        public string? MeetingLink { get; init; }
+        public int? ReminderOffsetMinutes { get; init; }
+        public DateOnly MaterializedUpToDate { get; init; }
+        public long Version { get; init; }
+        public DateTime CreatedAtUtc { get; init; }
+        public DateTime UpdatedAtUtc { get; init; }
+    }
+
+    public sealed record SyncRecurringSeriesSubtasksChangesDto
+    {
+        public IReadOnlyList<RecurringSubtaskSyncItemDto> Created { get; init; } = Array.Empty<RecurringSubtaskSyncItemDto>();
+        public IReadOnlyList<RecurringSubtaskSyncItemDto> Updated { get; init; } = Array.Empty<RecurringSubtaskSyncItemDto>();
+        public IReadOnlyList<DeletedSyncItemDto> Deleted { get; init; } = Array.Empty<DeletedSyncItemDto>();
+    }
+
+    /// <summary>
+    /// Sync representation for a RecurringTaskSubtask row.
+    /// Covers both series template subtasks (SeriesId set) and exception subtask overrides (ExceptionId set).
+    /// Clients route based on which FK is non-null.
+    /// Also inlined inside RecurringExceptionSyncItemDto.Subtasks for convenience.
+    /// </summary>
+    public sealed record RecurringSubtaskSyncItemDto
+    {
+        public Guid Id { get; init; }
+        public Guid UserId { get; init; }
+        /// <summary>Set when this row is a series template subtask. Null for exception overrides.</summary>
+        public Guid? SeriesId { get; init; }
+        /// <summary>Set when this row is an exception subtask override. Null for series template subtasks.</summary>
+        public Guid? ExceptionId { get; init; }
+        public string Text { get; init; } = string.Empty;
+        public bool IsCompleted { get; init; }
+        public string Position { get; init; } = string.Empty;
+        public long Version { get; init; }
+        public DateTime CreatedAtUtc { get; init; }
+        public DateTime UpdatedAtUtc { get; init; }
+    }
+
+    public sealed record SyncRecurringExceptionsChangesDto
+    {
+        public IReadOnlyList<RecurringExceptionSyncItemDto> Created { get; init; } = Array.Empty<RecurringExceptionSyncItemDto>();
+        public IReadOnlyList<RecurringExceptionSyncItemDto> Updated { get; init; } = Array.Empty<RecurringExceptionSyncItemDto>();
+        public IReadOnlyList<DeletedSyncItemDto> Deleted { get; init; } = Array.Empty<DeletedSyncItemDto>();
+    }
+
+    /// <summary>
+    /// Full exception representation used in sync pull payloads.
+    /// Subtasks: empty list = occurrence inherits the series template subtasks.
+    /// Non-empty list = complete override subtask list for this occurrence.
+    /// </summary>
+    public sealed record RecurringExceptionSyncItemDto
+    {
+        public Guid Id { get; init; }
+        public Guid UserId { get; init; }
+        public Guid SeriesId { get; init; }
+        public DateOnly OccurrenceDate { get; init; }
+        /// <summary>When true, this occurrence is suppressed. All override fields are null.</summary>
+        public bool IsDeletion { get; init; }
+        // Override fields — all nullable; null means "inherit from series template"
+        public string? OverrideTitle { get; init; }
+        public string? OverrideDescription { get; init; }
+        /// <summary>Moved display date for this occurrence. Null = occurrence stays on OccurrenceDate.</summary>
+        public DateOnly? OverrideDate { get; init; }
+        public TimeOnly? OverrideStartTime { get; init; }
+        public TimeOnly? OverrideEndTime { get; init; }
+        public string? OverrideLocation { get; init; }
+        public TimeSpan? OverrideTravelTime { get; init; }
+        public Guid? OverrideCategoryId { get; init; }
+        public TaskPriority? OverridePriority { get; init; }
+        public string? OverrideMeetingLink { get; init; }
+        public DateTime? OverrideReminderAtUtc { get; init; }
+        /// <summary>
+        /// Completion state for this specific occurrence.
+        /// Stored on the exception (not inherited from series template — the series has no completion state).
+        /// False = not completed (default); true = completed.
+        /// Ignored when IsDeletion = true.
+        /// </summary>
+        public bool IsCompleted { get; init; }
+        /// <summary>FK to the materialized TaskItem when this occurrence has been persisted. Null for virtual occurrences.</summary>
+        public Guid? MaterializedTaskItemId { get; init; }
+        /// <summary>
+        /// Exception-specific subtask overrides.
+        /// Empty = inherit series template subtasks; non-empty = complete replacement list for this occurrence.
+        /// </summary>
+        public IReadOnlyList<RecurringSubtaskSyncItemDto> Subtasks { get; init; } = Array.Empty<RecurringSubtaskSyncItemDto>();
+        public long Version { get; init; }
         public DateTime CreatedAtUtc { get; init; }
         public DateTime UpdatedAtUtc { get; init; }
     }

@@ -38,6 +38,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         private readonly ICategoryRepository _categoryRepository; // REFACTORED: added for category push processing
         private readonly ISubtaskRepository _subtaskRepository; // REFACTORED: added for subtask push processing
         private readonly IAttachmentRepository _attachmentRepository; // REFACTORED: added for task-attachments push processing
+        // REFACTORED: added recurring-task repositories for recurring-tasks feature
+        private readonly IRecurringTaskRootRepository _recurringRootRepository;
+        private readonly IRecurringTaskSeriesRepository _recurringSeriesRepository;
+        private readonly IRecurringTaskSubtaskRepository _recurringSeriesSubtaskRepository;
+        private readonly IRecurringTaskExceptionRepository _recurringExceptionRepository;
         private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISystemClock _clock;
@@ -51,6 +56,10 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                      ICategoryRepository categoryRepository,
                                      ISubtaskRepository subtaskRepository,
                                      IAttachmentRepository attachmentRepository,
+                                     IRecurringTaskRootRepository recurringRootRepository,
+                                     IRecurringTaskSeriesRepository recurringSeriesRepository,
+                                     IRecurringTaskSubtaskRepository recurringSeriesSubtaskRepository,
+                                     IRecurringTaskExceptionRepository recurringExceptionRepository,
                                      IOutboxRepository outboxRepository,
                                      IUnitOfWork unitOfWork,
                                      ISystemClock clock,
@@ -64,6 +73,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             _categoryRepository = categoryRepository; // REFACTORED: added for category push processing
             _subtaskRepository = subtaskRepository; // REFACTORED: added for subtask push processing
             _attachmentRepository = attachmentRepository; // REFACTORED: added for task-attachments push processing
+            // REFACTORED: added recurring-task repositories for recurring-tasks feature
+            _recurringRootRepository = recurringRootRepository;
+            _recurringSeriesRepository = recurringSeriesRepository;
+            _recurringSeriesSubtaskRepository = recurringSeriesSubtaskRepository;
+            _recurringExceptionRepository = recurringExceptionRepository;
             _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _clock = clock;
@@ -116,6 +130,19 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             // REFACTORED: added attachment result list for task-attachments feature
             var attachmentDeleteResults = new List<AttachmentDeletedPushResultDto>();
 
+            // REFACTORED: added recurring-task result lists for recurring-tasks feature
+            var recurringRootCreateResults = new List<RecurringRootCreatedPushResultDto>();
+            var recurringRootDeleteResults = new List<RecurringRootDeletedPushResultDto>();
+            var recurringSeriesCreateResults = new List<RecurringSeriesCreatedPushResultDto>();
+            var recurringSeriesUpdateResults = new List<RecurringSeriesUpdatedPushResultDto>();
+            var recurringSeriesDeleteResults = new List<RecurringSeriesDeletedPushResultDto>();
+            var recurringSubtaskCreateResults = new List<RecurringSubtaskCreatedPushResultDto>();
+            var recurringSubtaskUpdateResults = new List<RecurringSubtaskUpdatedPushResultDto>();
+            var recurringSubtaskDeleteResults = new List<RecurringSubtaskDeletedPushResultDto>();
+            var recurringExceptionCreateResults = new List<RecurringExceptionCreatedPushResultDto>();
+            var recurringExceptionUpdateResults = new List<RecurringExceptionUpdatedPushResultDto>();
+            var recurringExceptionDeleteResults = new List<RecurringExceptionDeletedPushResultDto>();
+
             // Maps client IDs to server IDs for entities created in this push.
             // Used to resolve parent references for blocks.
             var taskClientToServerIds = new Dictionary<Guid, Guid>();
@@ -125,6 +152,14 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             // references (task.CategoryId pointing to a category ClientId from the same push) resolve
             // correctly via categoryClientToServerIds.
             var categoryClientToServerIds = new Dictionary<Guid, Guid>();
+
+            // REFACTORED: recurring entity client-to-server ID mappings for recurring-tasks feature.
+            // rootClientToServerIds: allows RecurringSeries.RootClientId to reference a root created
+            //   in the same push.
+            // seriesClientToServerIds: allows RecurringSeriesSubtasks.SeriesClientId and
+            //   Task.RecurringSeriesClientId to reference a series created in the same push.
+            var rootClientToServerIds = new Dictionary<Guid, Guid>();
+            var seriesClientToServerIds = new Dictionary<Guid, Guid>();
 
             await ProcessCategoryCreatesAsync(userId,
                                               request,
@@ -145,14 +180,90 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                               categoryDeleteResults,
                                               cancellationToken);
 
+            // REFACTORED: process recurring entities BEFORE tasks so within-push series references
+            // (Task.RecurringSeriesClientId) can be resolved via seriesClientToServerIds.
+            // Processing order per plan: Categories → RecurringRoots → RecurringSeries →
+            // RecurringSeriesSubtasks → RecurringExceptions → Tasks (recurring-tasks feature).
+            await ProcessRecurringRootCreatesAsync(userId,
+                                                   request,
+                                                   utcNow,
+                                                   recurringRootCreateResults,
+                                                   rootClientToServerIds,
+                                                   cancellationToken);
+
+            await ProcessRecurringRootDeletesAsync(userId,
+                                                   request,
+                                                   utcNow,
+                                                   recurringRootDeleteResults,
+                                                   cancellationToken);
+
+            await ProcessRecurringSeriesCreatesAsync(userId,
+                                                     request,
+                                                     utcNow,
+                                                     recurringSeriesCreateResults,
+                                                     rootClientToServerIds,
+                                                     seriesClientToServerIds,
+                                                     cancellationToken);
+
+            await ProcessRecurringSeriesUpdatesAsync(userId,
+                                                     request,
+                                                     utcNow,
+                                                     recurringSeriesUpdateResults,
+                                                     cancellationToken);
+
+            await ProcessRecurringSeriesDeletesAsync(userId,
+                                                     request,
+                                                     utcNow,
+                                                     recurringSeriesDeleteResults,
+                                                     cancellationToken);
+
+            await ProcessRecurringSubtaskCreatesAsync(userId,
+                                                      request,
+                                                      utcNow,
+                                                      recurringSubtaskCreateResults,
+                                                      seriesClientToServerIds,
+                                                      cancellationToken);
+
+            await ProcessRecurringSubtaskUpdatesAsync(userId,
+                                                      request,
+                                                      utcNow,
+                                                      recurringSubtaskUpdateResults,
+                                                      cancellationToken);
+
+            await ProcessRecurringSubtaskDeletesAsync(userId,
+                                                      request,
+                                                      utcNow,
+                                                      recurringSubtaskDeleteResults,
+                                                      cancellationToken);
+
+            await ProcessRecurringExceptionCreatesAsync(userId,
+                                                        request,
+                                                        utcNow,
+                                                        recurringExceptionCreateResults,
+                                                        cancellationToken);
+
+            await ProcessRecurringExceptionUpdatesAsync(userId,
+                                                        request,
+                                                        utcNow,
+                                                        recurringExceptionUpdateResults,
+                                                        cancellationToken);
+
+            await ProcessRecurringExceptionDeletesAsync(userId,
+                                                        request,
+                                                        utcNow,
+                                                        recurringExceptionDeleteResults,
+                                                        cancellationToken);
+
             // Process tasks (collect client->server ID mappings)
             // Pass categoryClientToServerIds so CategoryId can be resolved for within-push categories.
+            // Pass seriesClientToServerIds so RecurringSeriesClientId can be resolved for within-push series.
             await ProcessTaskCreatesAsync(userId,
                                           request,
                                           utcNow,
                                           taskCreateResults,
                                           taskClientToServerIds,
                                           categoryClientToServerIds, // REFACTORED
+                                          seriesClientToServerIds,   // REFACTORED: recurring-tasks feature
                                           cancellationToken);
 
             await ProcessTaskUpdatesAsync(userId,
@@ -279,6 +390,30 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 {
                     Deleted = attachmentDeleteResults
                 },
+                // REFACTORED: added recurring-task results for recurring-tasks feature
+                RecurringRoots = new SyncPushRecurringRootsResultDto
+                {
+                    Created = recurringRootCreateResults,
+                    Deleted = recurringRootDeleteResults
+                },
+                RecurringSeries = new SyncPushRecurringSeriesResultDto
+                {
+                    Created = recurringSeriesCreateResults,
+                    Updated = recurringSeriesUpdateResults,
+                    Deleted = recurringSeriesDeleteResults
+                },
+                RecurringSeriesSubtasks = new SyncPushRecurringSeriesSubtasksResultDto
+                {
+                    Created = recurringSubtaskCreateResults,
+                    Updated = recurringSubtaskUpdateResults,
+                    Deleted = recurringSubtaskDeleteResults
+                },
+                RecurringExceptions = new SyncPushRecurringExceptionsResultDto
+                {
+                    Created = recurringExceptionCreateResults,
+                    Updated = recurringExceptionUpdateResults,
+                    Deleted = recurringExceptionDeleteResults
+                },
             };
 
             return Result.Ok(resultDto);
@@ -297,6 +432,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                    List<TaskCreatedPushResultDto> results,
                                                    Dictionary<Guid, Guid> clientToServerIds,
                                                    Dictionary<Guid, Guid> categoryClientToServerIds, // REFACTORED: within-push category resolution
+                                                   Dictionary<Guid, Guid> seriesClientToServerIds,   // REFACTORED: within-push series resolution (recurring-tasks feature)
                                                    CancellationToken cancellationToken)
         {
             foreach (var item in request.Tasks.Created)
@@ -391,6 +527,33 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                         });
 
                         continue;
+                    }
+                }
+
+                // REFACTORED: link to recurring series if provided (recurring-tasks feature).
+                // Called here — after task creation and before outbox — so the series link is
+                // persisted atomically with the task row. LinkToSeries() throws if called twice.
+                if (item.CanonicalOccurrenceDate.HasValue)
+                {
+                    Guid? resolvedSeriesId = null;
+
+                    if (item.RecurringSeriesClientId.HasValue && item.RecurringSeriesClientId.Value != Guid.Empty)
+                    {
+                        // Series was created in the same push — resolve via mapping.
+                        if (seriesClientToServerIds.TryGetValue(item.RecurringSeriesClientId.Value, out var mapped)
+                            && mapped != Guid.Empty)
+                        {
+                            resolvedSeriesId = mapped;
+                        }
+                    }
+                    else if (item.RecurringSeriesId.HasValue && item.RecurringSeriesId.Value != Guid.Empty)
+                    {
+                        resolvedSeriesId = item.RecurringSeriesId.Value;
+                    }
+
+                    if (resolvedSeriesId.HasValue)
+                    {
+                        task.LinkToSeries(resolvedSeriesId.Value, item.CanonicalOccurrenceDate.Value);
                     }
                 }
 
@@ -2280,6 +2443,1435 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new AttachmentDeletedPushResultDto
+                {
+                    Id = item.Id,
+                    Status = SyncPushDeletedStatus.Deleted
+                });
+            }
+        }
+
+
+        // -----------------------------------------------
+        // REFACTORED: Recurring Task processing (recurring-tasks feature)
+        // Processing order: RecurringRoots → RecurringSeries → RecurringSeriesSubtasks
+        //                   → RecurringExceptions  (inserted before Tasks in Handle)
+        // No server-side cascade on deletes — the mobile client sends explicit deletes
+        // for all related entities in the same push payload.
+        // -----------------------------------------------
+
+        /// <summary>
+        /// Creates new RecurringTaskRoot entities from the push payload.
+        /// Populates <paramref name="rootClientToServerIds"/> so subsequent series creates
+        /// can resolve RootClientId references to within-push roots.
+        /// </summary>
+        private async Task ProcessRecurringRootCreatesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<RecurringRootCreatedPushResultDto> results,
+            Dictionary<Guid, Guid> rootClientToServerIds,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.RecurringRoots.Created)
+            {
+                var createResult = RecurringTaskRoot.Create(userId, utcNow);
+
+                if (createResult.IsFailure)
+                {
+                    results.Add(new RecurringRootCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        ServerId = Guid.Empty,
+                        Version = 0,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = createResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var root = createResult.Value;
+
+                var payload = JsonSerializer.Serialize(new
+                {
+                    RootId = root.Id,
+                    root.UserId,
+                    root.Version,
+                    Event = RecurringRootEventType.Created.ToString(),
+                    OccurredAtUtc = utcNow,
+                    OriginDeviceId = request.DeviceId
+                });
+
+                var outboxResult = OutboxMessage.Create<RecurringTaskRoot, RecurringRootEventType>(
+                    root,
+                    RecurringRootEventType.Created,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new RecurringRootCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        ServerId = Guid.Empty,
+                        Version = 0,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                await _recurringRootRepository.AddAsync(root, cancellationToken);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                rootClientToServerIds[item.ClientId] = root.Id;
+
+                results.Add(new RecurringRootCreatedPushResultDto
+                {
+                    ClientId = item.ClientId,
+                    ServerId = root.Id,
+                    Version = root.Version,
+                    Status = SyncPushCreatedStatus.Created
+                });
+            }
+        }
+
+        /// <summary>
+        /// Soft-deletes RecurringTaskRoot entities from the push payload.
+        /// Uses "delete wins" semantics — no server-side cascade to series, exceptions, or tasks.
+        /// The mobile client sends explicit deletes for all related entities in the same push.
+        /// </summary>
+        private async Task ProcessRecurringRootDeletesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<RecurringRootDeletedPushResultDto> results,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.RecurringRoots.Deleted)
+            {
+                var root = await _recurringRootRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+
+                if (root is null || root.UserId != userId)
+                {
+                    results.Add(new RecurringRootDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.NotFound
+                    });
+
+                    continue;
+                }
+
+                if (root.IsDeleted)
+                {
+                    results.Add(new RecurringRootDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.AlreadyDeleted
+                    });
+
+                    continue;
+                }
+
+                var payload = JsonSerializer.Serialize(new
+                {
+                    RootId = root.Id,
+                    root.UserId,
+                    root.Version,
+                    Event = RecurringRootEventType.Deleted.ToString(),
+                    OccurredAtUtc = utcNow,
+                    OriginDeviceId = request.DeviceId
+                });
+
+                var outboxResult = OutboxMessage.Create<RecurringTaskRoot, RecurringRootEventType>(
+                    root,
+                    RecurringRootEventType.Deleted,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new RecurringRootDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var deleteResult = root.SoftDelete(utcNow);
+                if (deleteResult.IsFailure)
+                {
+                    results.Add(new RecurringRootDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = deleteResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                _recurringRootRepository.Update(root);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                results.Add(new RecurringRootDeletedPushResultDto
+                {
+                    Id = item.Id,
+                    Status = SyncPushDeletedStatus.Deleted
+                });
+            }
+        }
+
+        /// <summary>
+        /// Creates new RecurringTaskSeries entities from the push payload.
+        /// Populates <paramref name="seriesClientToServerIds"/> so subsequent subtask creates
+        /// and task creates can resolve within-push series references.
+        /// MaterializedUpToDate is initialised to StartsOnDate − 1 day so the horizon worker
+        /// advances it after the mobile's pushed TaskItems have been stored.
+        /// </summary>
+        private async Task ProcessRecurringSeriesCreatesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<RecurringSeriesCreatedPushResultDto> results,
+            Dictionary<Guid, Guid> rootClientToServerIds,
+            Dictionary<Guid, Guid> seriesClientToServerIds,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.RecurringSeries.Created)
+            {
+                // Resolve RootId: prefer within-push mapping, fall back to direct server ID.
+                Guid? resolvedRootId = null;
+
+                if (item.RootClientId.HasValue && item.RootClientId.Value != Guid.Empty)
+                {
+                    if (rootClientToServerIds.TryGetValue(item.RootClientId.Value, out var mappedRootId)
+                        && mappedRootId != Guid.Empty)
+                    {
+                        resolvedRootId = mappedRootId;
+                    }
+                }
+                else if (item.RootId.HasValue && item.RootId.Value != Guid.Empty)
+                {
+                    var root = await _recurringRootRepository.GetByIdUntrackedAsync(
+                        item.RootId.Value, cancellationToken);
+                    if (root is not null && root.UserId == userId && !root.IsDeleted)
+                    {
+                        resolvedRootId = item.RootId.Value;
+                    }
+                }
+
+                if (resolvedRootId is null)
+                {
+                    results.Add(new RecurringSeriesCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        ServerId = Guid.Empty,
+                        Version = 0,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ParentNotFound,
+                            Errors = new[] { "Parent recurring root not found or does not belong to you." }
+                        }
+                    });
+
+                    continue;
+                }
+
+                // MaterializedUpToDate = StartsOnDate − 1 day.
+                // The mobile pushes individual Task.Created items for its already-materialized
+                // occurrences (with RecurringSeriesId set), so the horizon worker will find those
+                // existing tasks via GetBySeriesInRangeAsync and skip re-materialising them.
+                var materializedUpToDate = item.StartsOnDate.AddDays(-1);
+
+                var createResult = RecurringTaskSeries.Create(
+                    userId,
+                    resolvedRootId.Value,
+                    item.RRuleString,
+                    item.StartsOnDate,
+                    item.EndsBeforeDate,
+                    item.Title,
+                    item.Description,
+                    item.StartTime,
+                    item.EndTime,
+                    item.Location,
+                    item.TravelTime,
+                    item.CategoryId,
+                    item.Priority,
+                    item.MeetingLink,
+                    item.ReminderOffsetMinutes,
+                    materializedUpToDate,
+                    utcNow);
+
+                if (createResult.IsFailure)
+                {
+                    results.Add(new RecurringSeriesCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        ServerId = Guid.Empty,
+                        Version = 0,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = createResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var series = createResult.Value;
+
+                var payload = JsonSerializer.Serialize(new
+                {
+                    SeriesId = series.Id,
+                    series.UserId,
+                    series.RootId,
+                    series.Version,
+                    Event = RecurringSeriesEventType.Created.ToString(),
+                    OccurredAtUtc = utcNow,
+                    OriginDeviceId = request.DeviceId
+                });
+
+                var outboxResult = OutboxMessage.Create<RecurringTaskSeries, RecurringSeriesEventType>(
+                    series,
+                    RecurringSeriesEventType.Created,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new RecurringSeriesCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        ServerId = Guid.Empty,
+                        Version = 0,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                await _recurringSeriesRepository.AddAsync(series, cancellationToken);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                seriesClientToServerIds[item.ClientId] = series.Id;
+
+                results.Add(new RecurringSeriesCreatedPushResultDto
+                {
+                    ClientId = item.ClientId,
+                    ServerId = series.Id,
+                    Version = series.Version,
+                    Status = SyncPushCreatedStatus.Created
+                });
+            }
+        }
+
+        /// <summary>
+        /// Applies template-field updates (and optional termination) to existing RecurringTaskSeries entities.
+        /// When <see cref="RecurringSeriesUpdatedPushItemDto.EndsBeforeDate"/> is set,
+        /// <see cref="RecurringTaskSeries.Terminate"/> is called and the outbox event is Terminated.
+        /// </summary>
+        private async Task ProcessRecurringSeriesUpdatesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<RecurringSeriesUpdatedPushResultDto> results,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.RecurringSeries.Updated)
+            {
+                var series = await _recurringSeriesRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+
+                if (series is null || series.UserId != userId)
+                {
+                    results.Add(new RecurringSeriesUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = null,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.NotFound
+                        }
+                    });
+
+                    continue;
+                }
+
+                if (series.IsDeleted)
+                {
+                    results.Add(new RecurringSeriesUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = null,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.DeletedOnServer
+                        }
+                    });
+
+                    continue;
+                }
+
+                if (series.Version != item.ExpectedVersion)
+                {
+                    results.Add(new RecurringSeriesUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = series.Version,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.VersionMismatch,
+                            ClientVersion = item.ExpectedVersion,
+                            ServerVersion = series.Version
+                        }
+                    });
+
+                    continue;
+                }
+
+                var updateResult = series.UpdateTemplate(
+                    item.Title,
+                    item.Description,
+                    item.StartTime,
+                    item.EndTime,
+                    item.Location,
+                    item.TravelTime,
+                    item.CategoryId,
+                    item.Priority,
+                    item.MeetingLink,
+                    item.ReminderOffsetMinutes,
+                    utcNow);
+
+                if (updateResult.IsFailure)
+                {
+                    results.Add(new RecurringSeriesUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = null,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            ClientVersion = item.ExpectedVersion,
+                            ServerVersion = series.Version,
+                            Errors = updateResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                // When EndsBeforeDate is provided, terminate the series segment (ThisAndFollowing split).
+                var eventType = RecurringSeriesEventType.Updated;
+                if (item.EndsBeforeDate.HasValue)
+                {
+                    var terminateResult = series.Terminate(item.EndsBeforeDate.Value, utcNow);
+                    if (terminateResult.IsFailure)
+                    {
+                        results.Add(new RecurringSeriesUpdatedPushResultDto
+                        {
+                            Id = item.Id,
+                            NewVersion = null,
+                            Status = SyncPushUpdatedStatus.Failed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.ValidationFailed,
+                                Errors = terminateResult.Errors.Select(e => e.Message).ToArray()
+                            }
+                        });
+
+                        continue;
+                    }
+
+                    eventType = RecurringSeriesEventType.Terminated;
+                }
+
+                var payload = JsonSerializer.Serialize(new
+                {
+                    SeriesId = series.Id,
+                    series.UserId,
+                    series.RootId,
+                    series.Version,
+                    Event = eventType.ToString(),
+                    OccurredAtUtc = utcNow,
+                    OriginDeviceId = request.DeviceId
+                });
+
+                var outboxResult = OutboxMessage.Create<RecurringTaskSeries, RecurringSeriesEventType>(
+                    series,
+                    eventType,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new RecurringSeriesUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = null,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                _recurringSeriesRepository.Update(series);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                results.Add(new RecurringSeriesUpdatedPushResultDto
+                {
+                    Id = item.Id,
+                    NewVersion = series.Version,
+                    Status = SyncPushUpdatedStatus.Updated
+                });
+            }
+        }
+
+        /// <summary>
+        /// Soft-deletes RecurringTaskSeries entities from the push payload.
+        /// Uses RecurringSeriesEventType.Terminated as the outbox event (series has no Deleted event type).
+        /// No server-side cascade — the client sends explicit deletes for related subtasks,
+        /// exceptions, and tasks in the same payload.
+        /// </summary>
+        private async Task ProcessRecurringSeriesDeletesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<RecurringSeriesDeletedPushResultDto> results,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.RecurringSeries.Deleted)
+            {
+                var series = await _recurringSeriesRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+
+                if (series is null || series.UserId != userId)
+                {
+                    results.Add(new RecurringSeriesDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.NotFound
+                    });
+
+                    continue;
+                }
+
+                if (series.IsDeleted)
+                {
+                    results.Add(new RecurringSeriesDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.AlreadyDeleted
+                    });
+
+                    continue;
+                }
+
+                var payload = JsonSerializer.Serialize(new
+                {
+                    SeriesId = series.Id,
+                    series.UserId,
+                    series.RootId,
+                    series.Version,
+                    Event = RecurringSeriesEventType.Terminated.ToString(),
+                    OccurredAtUtc = utcNow,
+                    OriginDeviceId = request.DeviceId
+                });
+
+                var outboxResult = OutboxMessage.Create<RecurringTaskSeries, RecurringSeriesEventType>(
+                    series,
+                    RecurringSeriesEventType.Terminated,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new RecurringSeriesDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var deleteResult = series.SoftDelete(utcNow);
+                if (deleteResult.IsFailure)
+                {
+                    results.Add(new RecurringSeriesDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = deleteResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                _recurringSeriesRepository.Update(series);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                results.Add(new RecurringSeriesDeletedPushResultDto
+                {
+                    Id = item.Id,
+                    Status = SyncPushDeletedStatus.Deleted
+                });
+            }
+        }
+
+        /// <summary>
+        /// Creates new RecurringTaskSubtask entities (series template or exception override)
+        /// from the push payload.
+        /// Routing: ExceptionId set → CreateForException; otherwise → CreateForSeries.
+        /// SeriesClientId is resolved via <paramref name="seriesClientToServerIds"/>.
+        /// </summary>
+        private async Task ProcessRecurringSubtaskCreatesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<RecurringSubtaskCreatedPushResultDto> results,
+            Dictionary<Guid, Guid> seriesClientToServerIds,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.RecurringSeriesSubtasks.Created)
+            {
+                DomainResult<RecurringTaskSubtask> createResult;
+
+                if (item.ExceptionId.HasValue && item.ExceptionId.Value != Guid.Empty)
+                {
+                    // Exception subtask override — validate exception ownership.
+                    var exception = await _recurringExceptionRepository.GetByIdUntrackedAsync(
+                        item.ExceptionId.Value, cancellationToken);
+
+                    if (exception is null || exception.UserId != userId || exception.IsDeleted)
+                    {
+                        results.Add(new RecurringSubtaskCreatedPushResultDto
+                        {
+                            ClientId = item.ClientId,
+                            Status = SyncPushCreatedStatus.Failed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.ParentNotFound,
+                                Errors = new[] { "Parent recurring exception not found or does not belong to you." }
+                            }
+                        });
+
+                        continue;
+                    }
+
+                    createResult = RecurringTaskSubtask.CreateForException(
+                        userId, item.ExceptionId.Value, item.Text, item.Position, item.IsCompleted, utcNow);
+                }
+                else
+                {
+                    // Series template subtask — resolve SeriesId.
+                    Guid? resolvedSeriesId = null;
+
+                    if (item.SeriesClientId.HasValue && item.SeriesClientId.Value != Guid.Empty)
+                    {
+                        if (seriesClientToServerIds.TryGetValue(item.SeriesClientId.Value, out var mapped)
+                            && mapped != Guid.Empty)
+                        {
+                            resolvedSeriesId = mapped;
+                        }
+                    }
+                    else if (item.SeriesId.HasValue && item.SeriesId.Value != Guid.Empty)
+                    {
+                        var series = await _recurringSeriesRepository.GetByIdUntrackedAsync(
+                            item.SeriesId.Value, cancellationToken);
+                        if (series is not null && series.UserId == userId && !series.IsDeleted)
+                        {
+                            resolvedSeriesId = item.SeriesId.Value;
+                        }
+                    }
+
+                    if (resolvedSeriesId is null)
+                    {
+                        results.Add(new RecurringSubtaskCreatedPushResultDto
+                        {
+                            ClientId = item.ClientId,
+                            Status = SyncPushCreatedStatus.Failed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.ParentNotFound,
+                                Errors = new[] { "Parent recurring series not found or does not belong to you." }
+                            }
+                        });
+
+                        continue;
+                    }
+
+                    createResult = RecurringTaskSubtask.CreateForSeries(
+                        userId, resolvedSeriesId.Value, item.Text, item.Position, utcNow);
+                }
+
+                if (createResult.IsFailure)
+                {
+                    results.Add(new RecurringSubtaskCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = createResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var subtask = createResult.Value;
+
+                var payload = JsonSerializer.Serialize(new
+                {
+                    SubtaskId = subtask.Id,
+                    subtask.UserId,
+                    subtask.SeriesId,
+                    subtask.ExceptionId,
+                    subtask.Text,
+                    subtask.Version,
+                    Event = RecurringSeriesSubtaskEventType.Created.ToString(),
+                    OccurredAtUtc = utcNow,
+                    OriginDeviceId = request.DeviceId
+                });
+
+                var outboxResult = OutboxMessage.Create<RecurringTaskSubtask, RecurringSeriesSubtaskEventType>(
+                    subtask,
+                    RecurringSeriesSubtaskEventType.Created,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new RecurringSubtaskCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                await _recurringSeriesSubtaskRepository.AddAsync(subtask, cancellationToken);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                results.Add(new RecurringSubtaskCreatedPushResultDto
+                {
+                    ClientId = item.ClientId,
+                    ServerId = subtask.Id,
+                    Version = subtask.Version,
+                    Status = SyncPushCreatedStatus.Created
+                });
+            }
+        }
+
+        /// <summary>
+        /// Applies partial updates (text, position, completion) to existing RecurringTaskSubtask entities.
+        /// Null fields mean "no change" — same pattern as SubtaskUpdatedPushItemDto.
+        /// </summary>
+        private async Task ProcessRecurringSubtaskUpdatesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<RecurringSubtaskUpdatedPushResultDto> results,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.RecurringSeriesSubtasks.Updated)
+            {
+                var subtask = await _recurringSeriesSubtaskRepository.GetByIdUntrackedAsync(
+                    item.Id, cancellationToken);
+
+                if (subtask is null || subtask.UserId != userId)
+                {
+                    results.Add(new RecurringSubtaskUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.NotFound
+                        }
+                    });
+
+                    continue;
+                }
+
+                if (subtask.IsDeleted)
+                {
+                    results.Add(new RecurringSubtaskUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.DeletedOnServer
+                        }
+                    });
+
+                    continue;
+                }
+
+                if (subtask.Version != item.ExpectedVersion)
+                {
+                    results.Add(new RecurringSubtaskUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.VersionMismatch,
+                            ClientVersion = item.ExpectedVersion,
+                            ServerVersion = subtask.Version
+                        }
+                    });
+
+                    continue;
+                }
+
+                var hasChanges = false;
+
+                if (item.Text is not null)
+                {
+                    var textResult = subtask.UpdateText(item.Text, utcNow);
+                    if (textResult.IsFailure)
+                    {
+                        results.Add(new RecurringSubtaskUpdatedPushResultDto
+                        {
+                            Id = item.Id,
+                            Status = SyncPushUpdatedStatus.Failed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.ValidationFailed,
+                                Errors = textResult.Errors.Select(e => e.Message).ToArray()
+                            }
+                        });
+
+                        continue;
+                    }
+
+                    hasChanges = true;
+                }
+
+                if (item.IsCompleted.HasValue)
+                {
+                    subtask.SetCompleted(item.IsCompleted.Value, utcNow);
+                    hasChanges = true;
+                }
+
+                if (item.Position is not null)
+                {
+                    var posResult = subtask.UpdatePosition(item.Position, utcNow);
+                    if (posResult.IsFailure)
+                    {
+                        results.Add(new RecurringSubtaskUpdatedPushResultDto
+                        {
+                            Id = item.Id,
+                            Status = SyncPushUpdatedStatus.Failed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.ValidationFailed,
+                                Errors = posResult.Errors.Select(e => e.Message).ToArray()
+                            }
+                        });
+
+                        continue;
+                    }
+
+                    hasChanges = true;
+                }
+
+                if (hasChanges)
+                {
+                    var payload = JsonSerializer.Serialize(new
+                    {
+                        SubtaskId = subtask.Id,
+                        subtask.UserId,
+                        subtask.SeriesId,
+                        subtask.ExceptionId,
+                        subtask.Text,
+                        subtask.Version,
+                        Event = RecurringSeriesSubtaskEventType.Updated.ToString(),
+                        OccurredAtUtc = utcNow,
+                        OriginDeviceId = request.DeviceId
+                    });
+
+                    var outboxResult = OutboxMessage.Create<RecurringTaskSubtask, RecurringSeriesSubtaskEventType>(
+                        subtask,
+                        RecurringSeriesSubtaskEventType.Updated,
+                        payload,
+                        utcNow);
+
+                    if (outboxResult.IsFailure)
+                    {
+                        results.Add(new RecurringSubtaskUpdatedPushResultDto
+                        {
+                            Id = item.Id,
+                            Status = SyncPushUpdatedStatus.Failed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.OutboxFailed,
+                                Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                            }
+                        });
+
+                        continue;
+                    }
+
+                    _recurringSeriesSubtaskRepository.Update(subtask);
+                    await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                }
+
+                results.Add(new RecurringSubtaskUpdatedPushResultDto
+                {
+                    Id = item.Id,
+                    NewVersion = subtask.Version,
+                    Status = SyncPushUpdatedStatus.Updated
+                });
+            }
+        }
+
+        /// <summary>
+        /// Soft-deletes RecurringTaskSubtask entities from the push payload.
+        /// Covers both series template subtasks and exception subtask overrides.
+        /// </summary>
+        private async Task ProcessRecurringSubtaskDeletesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<RecurringSubtaskDeletedPushResultDto> results,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.RecurringSeriesSubtasks.Deleted)
+            {
+                var subtask = await _recurringSeriesSubtaskRepository.GetByIdUntrackedAsync(
+                    item.Id, cancellationToken);
+
+                if (subtask is null || subtask.UserId != userId)
+                {
+                    results.Add(new RecurringSubtaskDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.NotFound
+                    });
+
+                    continue;
+                }
+
+                if (subtask.IsDeleted)
+                {
+                    results.Add(new RecurringSubtaskDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.AlreadyDeleted
+                    });
+
+                    continue;
+                }
+
+                var payload = JsonSerializer.Serialize(new
+                {
+                    SubtaskId = subtask.Id,
+                    subtask.UserId,
+                    subtask.SeriesId,
+                    subtask.ExceptionId,
+                    subtask.Text,
+                    subtask.Version,
+                    Event = RecurringSeriesSubtaskEventType.Deleted.ToString(),
+                    OccurredAtUtc = utcNow,
+                    OriginDeviceId = request.DeviceId
+                });
+
+                var outboxResult = OutboxMessage.Create<RecurringTaskSubtask, RecurringSeriesSubtaskEventType>(
+                    subtask,
+                    RecurringSeriesSubtaskEventType.Deleted,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new RecurringSubtaskDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var deleteResult = subtask.SoftDelete(utcNow);
+                if (deleteResult.IsFailure)
+                {
+                    results.Add(new RecurringSubtaskDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = deleteResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                _recurringSeriesSubtaskRepository.Update(subtask);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                results.Add(new RecurringSubtaskDeletedPushResultDto
+                {
+                    Id = item.Id,
+                    Status = SyncPushDeletedStatus.Deleted
+                });
+            }
+        }
+
+        /// <summary>
+        /// Upserts RecurringTaskException entities from the push payload.
+        /// If an active exception already exists for (SeriesId, OccurrenceDate), it is soft-deleted
+        /// and replaced by a new one so the DB unique index constraint is satisfied within the same
+        /// SaveChangesAsync call. The outbox event is always Created (representing the final desired state).
+        /// </summary>
+        private async Task ProcessRecurringExceptionCreatesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<RecurringExceptionCreatedPushResultDto> results,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.RecurringExceptions.Created)
+            {
+                // Verify series ownership.
+                var series = await _recurringSeriesRepository.GetByIdUntrackedAsync(
+                    item.SeriesId, cancellationToken);
+
+                if (series is null || series.UserId != userId)
+                {
+                    results.Add(new RecurringExceptionCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        ServerId = Guid.Empty,
+                        Version = 0,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ParentNotFound,
+                            Errors = new[] { "Parent recurring series not found or does not belong to you." }
+                        }
+                    });
+
+                    continue;
+                }
+
+                // Create the new exception domain object.
+                DomainResult<RecurringTaskException> createResult;
+
+                if (item.IsDeletion)
+                {
+                    createResult = RecurringTaskException.CreateDeletion(
+                        userId, item.SeriesId, item.OccurrenceDate,
+                        materializedTaskItemId: null, utcNow);
+                }
+                else
+                {
+                    createResult = RecurringTaskException.CreateOverride(
+                        userId, item.SeriesId, item.OccurrenceDate,
+                        item.OverrideTitle,
+                        item.OverrideDescription,
+                        item.OverrideDate,
+                        item.OverrideStartTime,
+                        item.OverrideEndTime,
+                        item.OverrideLocation,
+                        item.OverrideTravelTime,
+                        item.OverrideCategoryId,
+                        item.OverridePriority,
+                        item.OverrideMeetingLink,
+                        item.OverrideReminderAtUtc,
+                        isCompleted: item.IsCompleted,
+                        materializedTaskItemId: null,
+                        utcNow);
+                }
+
+                if (createResult.IsFailure)
+                {
+                    results.Add(new RecurringExceptionCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        ServerId = Guid.Empty,
+                        Version = 0,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = createResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var newException = createResult.Value;
+
+                // Build outbox BEFORE modifying the change tracker (consistent pattern).
+                var payload = JsonSerializer.Serialize(new
+                {
+                    ExceptionId = newException.Id,
+                    newException.UserId,
+                    newException.SeriesId,
+                    newException.OccurrenceDate,
+                    newException.IsDeletion,
+                    newException.Version,
+                    Event = RecurringExceptionEventType.Created.ToString(),
+                    OccurredAtUtc = utcNow,
+                    OriginDeviceId = request.DeviceId
+                });
+
+                var outboxResult = OutboxMessage.Create<RecurringTaskException, RecurringExceptionEventType>(
+                    newException,
+                    RecurringExceptionEventType.Created,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new RecurringExceptionCreatedPushResultDto
+                    {
+                        ClientId = item.ClientId,
+                        ServerId = Guid.Empty,
+                        Version = 0,
+                        Status = SyncPushCreatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                // If an active exception already exists for this (SeriesId, OccurrenceDate),
+                // soft-delete it to satisfy the unique DB index. Both the soft-delete and the
+                // new insert are committed in the same SaveChangesAsync() transaction.
+                var existing = await _recurringExceptionRepository.GetByOccurrenceAsync(
+                    item.SeriesId, item.OccurrenceDate, cancellationToken);
+
+                if (existing is not null && !existing.IsDeleted)
+                {
+                    existing.SoftDelete(utcNow);
+                    _recurringExceptionRepository.Update(existing);
+                }
+
+                await _recurringExceptionRepository.AddAsync(newException, cancellationToken);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                results.Add(new RecurringExceptionCreatedPushResultDto
+                {
+                    ClientId = item.ClientId,
+                    ServerId = newException.Id,
+                    Version = newException.Version,
+                    Status = SyncPushCreatedStatus.Created
+                });
+            }
+        }
+
+        /// <summary>
+        /// Applies override field updates to existing RecurringTaskException entities.
+        /// UpdateOverride() fails if the exception is a deletion tombstone (IsDeletion = true) —
+        /// that error is surfaced as a ValidationFailed conflict.
+        /// </summary>
+        private async Task ProcessRecurringExceptionUpdatesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<RecurringExceptionUpdatedPushResultDto> results,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.RecurringExceptions.Updated)
+            {
+                var exception = await _recurringExceptionRepository.GetByIdUntrackedAsync(
+                    item.Id, cancellationToken);
+
+                if (exception is null || exception.UserId != userId)
+                {
+                    results.Add(new RecurringExceptionUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = null,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.NotFound
+                        }
+                    });
+
+                    continue;
+                }
+
+                if (exception.IsDeleted)
+                {
+                    results.Add(new RecurringExceptionUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = null,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.DeletedOnServer
+                        }
+                    });
+
+                    continue;
+                }
+
+                if (exception.Version != item.ExpectedVersion)
+                {
+                    results.Add(new RecurringExceptionUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = exception.Version,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.VersionMismatch,
+                            ClientVersion = item.ExpectedVersion,
+                            ServerVersion = exception.Version
+                        }
+                    });
+
+                    continue;
+                }
+
+                var updateResult = exception.UpdateOverride(
+                    item.OverrideTitle,
+                    item.OverrideDescription,
+                    item.OverrideDate,
+                    item.OverrideStartTime,
+                    item.OverrideEndTime,
+                    item.OverrideLocation,
+                    item.OverrideTravelTime,
+                    item.OverrideCategoryId,
+                    item.OverridePriority,
+                    item.OverrideMeetingLink,
+                    item.OverrideReminderAtUtc,
+                    isCompleted: item.IsCompleted ?? exception.IsCompleted,
+                    utcNow);
+
+                if (updateResult.IsFailure)
+                {
+                    results.Add(new RecurringExceptionUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = null,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            ClientVersion = item.ExpectedVersion,
+                            ServerVersion = exception.Version,
+                            Errors = updateResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var payload = JsonSerializer.Serialize(new
+                {
+                    ExceptionId = exception.Id,
+                    exception.UserId,
+                    exception.SeriesId,
+                    exception.OccurrenceDate,
+                    exception.Version,
+                    Event = RecurringExceptionEventType.Updated.ToString(),
+                    OccurredAtUtc = utcNow,
+                    OriginDeviceId = request.DeviceId
+                });
+
+                var outboxResult = OutboxMessage.Create<RecurringTaskException, RecurringExceptionEventType>(
+                    exception,
+                    RecurringExceptionEventType.Updated,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new RecurringExceptionUpdatedPushResultDto
+                    {
+                        Id = item.Id,
+                        NewVersion = null,
+                        Status = SyncPushUpdatedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                _recurringExceptionRepository.Update(exception);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                results.Add(new RecurringExceptionUpdatedPushResultDto
+                {
+                    Id = item.Id,
+                    NewVersion = exception.Version,
+                    Status = SyncPushUpdatedStatus.Updated
+                });
+            }
+        }
+
+        /// <summary>
+        /// Soft-deletes RecurringTaskException entities from the push payload.
+        /// Mirrors ProcessSubtaskDeletesAsync — delete-wins semantics.
+        /// </summary>
+        private async Task ProcessRecurringExceptionDeletesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<RecurringExceptionDeletedPushResultDto> results,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.RecurringExceptions.Deleted)
+            {
+                var exception = await _recurringExceptionRepository.GetByIdUntrackedAsync(
+                    item.Id, cancellationToken);
+
+                if (exception is null || exception.UserId != userId)
+                {
+                    results.Add(new RecurringExceptionDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.NotFound
+                    });
+
+                    continue;
+                }
+
+                if (exception.IsDeleted)
+                {
+                    results.Add(new RecurringExceptionDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.AlreadyDeleted
+                    });
+
+                    continue;
+                }
+
+                var payload = JsonSerializer.Serialize(new
+                {
+                    ExceptionId = exception.Id,
+                    exception.UserId,
+                    exception.SeriesId,
+                    exception.OccurrenceDate,
+                    exception.Version,
+                    Event = RecurringExceptionEventType.Deleted.ToString(),
+                    OccurredAtUtc = utcNow,
+                    OriginDeviceId = request.DeviceId
+                });
+
+                var outboxResult = OutboxMessage.Create<RecurringTaskException, RecurringExceptionEventType>(
+                    exception,
+                    RecurringExceptionEventType.Deleted,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new RecurringExceptionDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var deleteResult = exception.SoftDelete(utcNow);
+                if (deleteResult.IsFailure)
+                {
+                    results.Add(new RecurringExceptionDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = deleteResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                _recurringExceptionRepository.Update(exception);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                results.Add(new RecurringExceptionDeletedPushResultDto
                 {
                     Id = item.Id,
                     Status = SyncPushDeletedStatus.Deleted

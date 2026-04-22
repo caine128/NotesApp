@@ -1,10 +1,14 @@
+using NotesApp.Application.Abstractions;
 ﻿using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Moq;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Configuration;
 using NotesApp.Application.Tasks.Commands.CreateTask;
+using NotesApp.Application.Tasks.Services;
 using NotesApp.Application.Tests.Infrastructure;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
@@ -33,7 +37,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange: real EF Core context pointing at test database
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -47,11 +51,17 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new CreateTaskCommandHandler(
                 taskRepository,
+                new Mock<ISubtaskRepository>().Object,
                 new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
-                clock);
+                clock,
+                Options.Create(new RecurringTaskOptions()),
+                new Mock<IRecurringTaskRootRepository>().Object,
+                new Mock<IRecurringTaskSeriesRepository>().Object,
+                new Mock<IRecurringTaskSubtaskRepository>().Object,
+                new Mock<IRecurringTaskMaterializerService>().Object);
 
             var date = new DateOnly(2025, 2, 20);
             var reminderAtUtc = DateTime.UtcNow.AddHours(1);
@@ -119,7 +129,7 @@ namespace NotesApp.Application.Tests.Tasks
         {
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -133,11 +143,17 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new CreateTaskCommandHandler(
                 taskRepository,
+                new Mock<ISubtaskRepository>().Object,
                 new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
-                clock);
+                clock,
+                Options.Create(new RecurringTaskOptions()),
+                new Mock<IRecurringTaskRootRepository>().Object,
+                new Mock<IRecurringTaskSeriesRepository>().Object,
+                new Mock<IRecurringTaskSubtaskRepository>().Object,
+                new Mock<IRecurringTaskMaterializerService>().Object);
 
             var command = new CreateTaskCommand
             {
@@ -161,7 +177,7 @@ namespace NotesApp.Application.Tests.Tasks
         {
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -175,11 +191,17 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new CreateTaskCommandHandler(
                 taskRepository,
+                new Mock<ISubtaskRepository>().Object,
                 new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
-                clock);
+                clock,
+                Options.Create(new RecurringTaskOptions()),
+                new Mock<IRecurringTaskRootRepository>().Object,
+                new Mock<IRecurringTaskSeriesRepository>().Object,
+                new Mock<IRecurringTaskSubtaskRepository>().Object,
+                new Mock<IRecurringTaskMaterializerService>().Object);
 
             var command = new CreateTaskCommand
             {
@@ -204,7 +226,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -218,11 +240,17 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new CreateTaskCommandHandler(
                 taskRepository,
+                new Mock<ISubtaskRepository>().Object,
                 new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
-                clock);
+                clock,
+                Options.Create(new RecurringTaskOptions()),
+                new Mock<IRecurringTaskRootRepository>().Object,
+                new Mock<IRecurringTaskSeriesRepository>().Object,
+                new Mock<IRecurringTaskSubtaskRepository>().Object,
+                new Mock<IRecurringTaskMaterializerService>().Object);
 
             var command = new CreateTaskCommand
             {
@@ -252,7 +280,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -266,11 +294,17 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new CreateTaskCommandHandler(
                 taskRepository,
+                new Mock<ISubtaskRepository>().Object,
                 new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
-                clock);
+                clock,
+                Options.Create(new RecurringTaskOptions()),
+                new Mock<IRecurringTaskRootRepository>().Object,
+                new Mock<IRecurringTaskSeriesRepository>().Object,
+                new Mock<IRecurringTaskSubtaskRepository>().Object,
+                new Mock<IRecurringTaskMaterializerService>().Object);
 
             var date = new DateOnly(2025, 2, 20);
             var command = new CreateTaskCommand
@@ -312,7 +346,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -326,11 +360,17 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new CreateTaskCommandHandler(
                 taskRepository,
+                new Mock<ISubtaskRepository>().Object,
                 new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
-                clock);
+                clock,
+                Options.Create(new RecurringTaskOptions()),
+                new Mock<IRecurringTaskRootRepository>().Object,
+                new Mock<IRecurringTaskSeriesRepository>().Object,
+                new Mock<IRecurringTaskSubtaskRepository>().Object,
+                new Mock<IRecurringTaskMaterializerService>().Object);
 
             var command = new CreateTaskCommand
             {
@@ -360,7 +400,7 @@ namespace NotesApp.Application.Tests.Tasks
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             IOutboxRepository outboxRepository = new OutboxRepository(context);
             IUnitOfWork unitOfWork = new UnitOfWork(context);
             ISystemClock clock = new SystemClock();
@@ -374,11 +414,17 @@ namespace NotesApp.Application.Tests.Tasks
 
             var handler = new CreateTaskCommandHandler(
                 taskRepository,
+                new Mock<ISubtaskRepository>().Object,
                 new Mock<ICategoryRepository>().Object,
                 outboxRepository,
                 unitOfWork,
                 currentUserServiceMock.Object,
-                clock);
+                clock,
+                Options.Create(new RecurringTaskOptions()),
+                new Mock<IRecurringTaskRootRepository>().Object,
+                new Mock<IRecurringTaskSeriesRepository>().Object,
+                new Mock<IRecurringTaskSubtaskRepository>().Object,
+                new Mock<IRecurringTaskMaterializerService>().Object);
 
             var command = new CreateTaskCommand
             {

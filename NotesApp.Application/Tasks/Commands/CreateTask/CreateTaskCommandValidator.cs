@@ -51,6 +51,37 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
             RuleFor(x => x.MeetingLink)
                 .MaximumLength(2048)
                 .WithMessage("Meeting link cannot exceed 2048 characters.");
+
+            // REFACTORED: added recurrence validation for recurring-tasks feature
+            When(x => x.RecurrenceRule != null, () =>
+            {
+                RuleFor(x => x.RecurrenceRule!.RRuleString)
+                    .NotEmpty()
+                    .WithMessage("RRuleString is required when creating a recurring task.")
+                    .Must(s => s.Contains("FREQ=", StringComparison.OrdinalIgnoreCase))
+                    .WithMessage("RRuleString must contain a FREQ component (e.g. FREQ=WEEKLY).");
+
+                RuleFor(x => x.RecurrenceRule!.StartsOnDate)
+                    .NotEqual(default(DateOnly))
+                    .WithMessage("StartsOnDate is required when creating a recurring task.");
+
+                RuleFor(x => x.RecurrenceRule!)
+                    .Must(r => r.EndsBeforeDate == null || r.EndsBeforeDate.Value > r.StartsOnDate)
+                    .WithMessage("EndsBeforeDate must be after StartsOnDate.")
+                    .Must(r => r.ReminderOffsetMinutes == null || r.ReminderOffsetMinutes.Value >= 0)
+                    .WithMessage("ReminderOffsetMinutes cannot be negative.");
+
+                RuleForEach(x => x.RecurrenceRule!.TemplateSubtasks)
+                    .ChildRules(st =>
+                    {
+                        st.RuleFor(s => s.Text)
+                            .NotEmpty()
+                            .WithMessage("Subtask text cannot be empty.");
+                        st.RuleFor(s => s.Position)
+                            .NotEmpty()
+                            .WithMessage("Subtask position cannot be empty.");
+                    });
+            });
         }
     }
 }

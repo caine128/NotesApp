@@ -1,3 +1,4 @@
+using NotesApp.Application.Abstractions;
 ﻿using FluentAssertions;
 using Moq;
 using NotesApp.Application.Abstractions.Persistence;
@@ -21,7 +22,7 @@ namespace NotesApp.Application.Tests.Calendar
             // Arrange
             await using var context = SqlServerAppDbContextFactory.CreateContext();
 
-            ITaskRepository taskRepository = new TaskRepository(context);
+            ITaskRepository taskRepository = new TaskRepository(context, new Mock<IRecurrenceEngine>().Object);
             INoteRepository noteRepository = new NoteRepository(context);
 
             var userId = Guid.NewGuid();

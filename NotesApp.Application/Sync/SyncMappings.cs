@@ -25,6 +25,9 @@ namespace NotesApp.Application.Sync
                 CategoryId = task.CategoryId, // REFACTORED: added CategoryId mapping
                 Priority = task.Priority, // REFACTORED: added Priority mapping
                 MeetingLink = task.MeetingLink, // REFACTORED: added MeetingLink mapping
+                // REFACTORED: added recurring-task fields for recurring-tasks feature
+                RecurringSeriesId = task.RecurringSeriesId,
+                CanonicalOccurrenceDate = task.CanonicalOccurrenceDate,
                 Version = task.Version,
                 CreatedAtUtc = task.CreatedAtUtc,
                 UpdatedAtUtc = task.UpdatedAtUtc
@@ -151,6 +154,108 @@ namespace NotesApp.Application.Sync
                 DisplayOrder = attachment.DisplayOrder,
                 CreatedAtUtc = attachment.CreatedAtUtc,
                 UpdatedAtUtc = attachment.UpdatedAtUtc
+            };
+        }
+
+        // REFACTORED: added recurring-task sync mappings for recurring-tasks feature
+
+        /// <summary>Maps a <see cref="RecurringTaskRoot"/> to its sync pull representation.</summary>
+        public static RecurringRootSyncItemDto ToSyncDto(this RecurringTaskRoot root)
+        {
+            return new RecurringRootSyncItemDto
+            {
+                Id = root.Id,
+                UserId = root.UserId,
+                Version = root.Version,
+                CreatedAtUtc = root.CreatedAtUtc,
+                UpdatedAtUtc = root.UpdatedAtUtc
+            };
+        }
+
+        /// <summary>
+        /// Maps a <see cref="RecurringTaskSeries"/> to its sync pull representation.
+        /// RRuleString is sent verbatim for client-side iCal parsing.
+        /// </summary>
+        public static RecurringSeriesSyncItemDto ToSyncDto(this RecurringTaskSeries series)
+        {
+            return new RecurringSeriesSyncItemDto
+            {
+                Id = series.Id,
+                UserId = series.UserId,
+                RootId = series.RootId,
+                RRuleString = series.RRuleString,
+                StartsOnDate = series.StartsOnDate,
+                EndsBeforeDate = series.EndsBeforeDate,
+                Title = series.Title,
+                Description = series.Description,
+                StartTime = series.StartTime,
+                EndTime = series.EndTime,
+                Location = series.Location,
+                TravelTime = series.TravelTime,
+                CategoryId = series.CategoryId,
+                Priority = series.Priority,
+                MeetingLink = series.MeetingLink,
+                ReminderOffsetMinutes = series.ReminderOffsetMinutes,
+                MaterializedUpToDate = series.MaterializedUpToDate,
+                Version = series.Version,
+                CreatedAtUtc = series.CreatedAtUtc,
+                UpdatedAtUtc = series.UpdatedAtUtc
+            };
+        }
+
+        /// <summary>
+        /// Maps a <see cref="RecurringTaskSubtask"/> to its sync pull representation.
+        /// Covers both series template subtasks (SeriesId set) and exception overrides (ExceptionId set).
+        /// </summary>
+        public static RecurringSubtaskSyncItemDto ToSyncDto(this RecurringTaskSubtask subtask)
+        {
+            return new RecurringSubtaskSyncItemDto
+            {
+                Id = subtask.Id,
+                UserId = subtask.UserId,
+                SeriesId = subtask.SeriesId,
+                ExceptionId = subtask.ExceptionId,
+                Text = subtask.Text,
+                IsCompleted = subtask.IsCompleted,
+                Position = subtask.Position,
+                Version = subtask.Version,
+                CreatedAtUtc = subtask.CreatedAtUtc,
+                UpdatedAtUtc = subtask.UpdatedAtUtc
+            };
+        }
+
+        /// <summary>
+        /// Maps a <see cref="RecurringTaskException"/> to its sync pull representation.
+        /// Subtasks are pre-loaded by the caller via GetByExceptionIdsAsync and passed in.
+        /// </summary>
+        public static RecurringExceptionSyncItemDto ToSyncDto(
+            this RecurringTaskException exception,
+            IReadOnlyList<RecurringSubtaskSyncItemDto> subtasks)
+        {
+            return new RecurringExceptionSyncItemDto
+            {
+                Id = exception.Id,
+                UserId = exception.UserId,
+                SeriesId = exception.SeriesId,
+                OccurrenceDate = exception.OccurrenceDate,
+                IsDeletion = exception.IsDeletion,
+                OverrideTitle = exception.OverrideTitle,
+                OverrideDescription = exception.OverrideDescription,
+                OverrideDate = exception.OverrideDate,
+                OverrideStartTime = exception.OverrideStartTime,
+                OverrideEndTime = exception.OverrideEndTime,
+                OverrideLocation = exception.OverrideLocation,
+                OverrideTravelTime = exception.OverrideTravelTime,
+                OverrideCategoryId = exception.OverrideCategoryId,
+                OverridePriority = exception.OverridePriority,
+                OverrideMeetingLink = exception.OverrideMeetingLink,
+                OverrideReminderAtUtc = exception.OverrideReminderAtUtc,
+                IsCompleted = exception.IsCompleted,
+                MaterializedTaskItemId = exception.MaterializedTaskItemId,
+                Subtasks = subtasks,
+                Version = exception.Version,
+                CreatedAtUtc = exception.CreatedAtUtc,
+                UpdatedAtUtc = exception.UpdatedAtUtc
             };
         }
     }

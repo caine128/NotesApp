@@ -40,6 +40,11 @@ namespace NotesApp.Application.Sync.Queries
         private readonly ICategoryRepository _categoryRepository; // REFACTORED: added for category sync pull
         private readonly ISubtaskRepository _subtaskRepository; // REFACTORED: added for subtask sync pull
         private readonly IAttachmentRepository _attachmentRepository; // REFACTORED: added for task-attachments sync pull
+        // REFACTORED: added recurring-task repos for recurring-tasks feature
+        private readonly IRecurringTaskRootRepository _recurringRootRepository;
+        private readonly IRecurringTaskSeriesRepository _recurringSeriesRepository;
+        private readonly IRecurringTaskSubtaskRepository _recurringSubtaskRepository;
+        private readonly IRecurringTaskExceptionRepository _recurringExceptionRepository;
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<GetSyncChangesQueryHandler> _logger;
 
@@ -51,6 +56,10 @@ namespace NotesApp.Application.Sync.Queries
                                           ICategoryRepository categoryRepository,
                                           ISubtaskRepository subtaskRepository,
                                           IAttachmentRepository attachmentRepository,
+                                          IRecurringTaskRootRepository recurringRootRepository,
+                                          IRecurringTaskSeriesRepository recurringSeriesRepository,
+                                          IRecurringTaskSubtaskRepository recurringSubtaskRepository,
+                                          IRecurringTaskExceptionRepository recurringExceptionRepository,
                                           ICurrentUserService currentUserService,
                                           ILogger<GetSyncChangesQueryHandler> logger)
         {
@@ -62,6 +71,11 @@ namespace NotesApp.Application.Sync.Queries
             _categoryRepository = categoryRepository; // REFACTORED: added for category sync pull
             _subtaskRepository = subtaskRepository; // REFACTORED: added for subtask sync pull
             _attachmentRepository = attachmentRepository; // REFACTORED: added for task-attachments sync pull
+            // REFACTORED: added recurring-task repos for recurring-tasks feature
+            _recurringRootRepository = recurringRootRepository;
+            _recurringSeriesRepository = recurringSeriesRepository;
+            _recurringSubtaskRepository = recurringSubtaskRepository;
+            _recurringExceptionRepository = recurringExceptionRepository;
             _currentUserService = currentUserService;
             _logger = logger;
         }
@@ -122,6 +136,41 @@ namespace NotesApp.Application.Sync.Queries
                                                                                 request.SinceUtc,
                                                                                 cancellationToken);
 
+            // REFACTORED: fetch recurring-task entity changes for recurring-tasks feature
+            var recurringRoots = await _recurringRootRepository.GetChangedSinceAsync(userId,
+                                                                                      request.SinceUtc,
+                                                                                      cancellationToken);
+
+            var recurringSeries = await _recurringSeriesRepository.GetChangedSinceAsync(userId,
+                                                                                         request.SinceUtc,
+                                                                                         cancellationToken);
+
+            var recurringSubtasks = await _recurringSubtaskRepository.GetChangedSinceAsync(userId,
+                                                                                             request.SinceUtc,
+                                                                                             cancellationToken);
+
+            var recurringExceptions = await _recurringExceptionRepository.GetChangedSinceAsync(userId,
+                                                                                                request.SinceUtc,
+                                                                                                cancellationToken);
+
+            // Batch-load exception subtasks for inlining in RecurringExceptionSyncItemDto.Subtasks.
+            // Only non-deleted exceptions can have subtasks worth inlining.
+            var nonDeletedExceptionIds = recurringExceptions
+                .Where(e => !e.IsDeleted && !e.IsDeletion)
+                .Select(e => e.Id)
+                .ToList();
+
+            var allExceptionSubtasks = nonDeletedExceptionIds.Count > 0
+                ? await _recurringSubtaskRepository.GetByExceptionIdsAsync(nonDeletedExceptionIds, cancellationToken)
+                : (IReadOnlyList<RecurringTaskSubtask>)Array.Empty<RecurringTaskSubtask>();
+
+            // Group exception subtasks by ExceptionId for O(1) lookup during mapping.
+            var exceptionSubtasksByExceptionId = allExceptionSubtasks
+                .GroupBy(s => s.ExceptionId!.Value)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlyList<RecurringSubtaskSyncItemDto>)g.Select(s => s.ToSyncDto()).ToList());
+
             var serverTimestampUtc = DateTime.UtcNow;
 
             // Categorise entities into buckets
@@ -132,6 +181,11 @@ namespace NotesApp.Application.Sync.Queries
             var categoriesBuckets = CategoriseCategories(categories, request.SinceUtc); // REFACTORED: added categories bucket
             var subtasksBuckets = CategoriseSubtasks(subtasks, request.SinceUtc); // REFACTORED: added subtasks bucket
             var attachmentsBuckets = CategoriseAttachments(attachments, request.SinceUtc); // REFACTORED: added attachments bucket
+            // REFACTORED: categorise recurring-task entities for recurring-tasks feature
+            var recurringRootsBuckets = CategoriseRecurringRoots(recurringRoots, request.SinceUtc);
+            var recurringSeriesBuckets = CategoriseRecurringSeries(recurringSeries, request.SinceUtc);
+            var recurringSubtasksBuckets = CategoriseRecurringSubtasks(recurringSubtasks, request.SinceUtc);
+            var recurringExceptionsBuckets = CategoriseRecurringExceptions(recurringExceptions, request.SinceUtc, exceptionSubtasksByExceptionId);
 
             // Determine effective max items per entity
             var effectiveMax = request.MaxItemsPerEntity ?? SyncLimits.DefaultPullMaxItemsPerEntity;
@@ -162,6 +216,23 @@ namespace NotesApp.Application.Sync.Queries
             var subtaskUpdated = subtasksBuckets.Updated.ToList();
             var subtaskDeleted = subtasksBuckets.Deleted.ToList();
 
+            // REFACTORED: materialise recurring-task lists for pagination (recurring-tasks feature)
+            var recurringRootCreated = recurringRootsBuckets.Created.ToList();
+            var recurringRootUpdated = recurringRootsBuckets.Updated.ToList();
+            var recurringRootDeleted = recurringRootsBuckets.Deleted.ToList();
+
+            var recurringSeriesCreated = recurringSeriesBuckets.Created.ToList();
+            var recurringSeriesUpdated = recurringSeriesBuckets.Updated.ToList();
+            var recurringSeriesDeleted = recurringSeriesBuckets.Deleted.ToList();
+
+            var recurringSubtaskCreated = recurringSubtasksBuckets.Created.ToList();
+            var recurringSubtaskUpdated = recurringSubtasksBuckets.Updated.ToList();
+            var recurringSubtaskDeleted = recurringSubtasksBuckets.Deleted.ToList();
+
+            var recurringExceptionCreated = recurringExceptionsBuckets.Created.ToList();
+            var recurringExceptionUpdated = recurringExceptionsBuckets.Updated.ToList();
+            var recurringExceptionDeleted = recurringExceptionsBuckets.Deleted.ToList();
+
             // Calculate totals for pagination indicators
             var totalTaskChanges = taskCreated.Count + taskUpdated.Count + taskDeleted.Count;
             var totalNoteChanges = noteCreated.Count + noteUpdated.Count + noteDeleted.Count;
@@ -169,11 +240,22 @@ namespace NotesApp.Application.Sync.Queries
             var totalCategoryChanges = categoryCreated.Count + categoryUpdated.Count + categoryDeleted.Count; // REFACTORED
             var totalSubtaskChanges = subtaskCreated.Count + subtaskUpdated.Count + subtaskDeleted.Count; // REFACTORED
 
+            // REFACTORED: totals for recurring-task entities (recurring-tasks feature)
+            var totalRecurringRootChanges = recurringRootCreated.Count + recurringRootUpdated.Count + recurringRootDeleted.Count;
+            var totalRecurringSeriesChanges = recurringSeriesCreated.Count + recurringSeriesUpdated.Count + recurringSeriesDeleted.Count;
+            var totalRecurringSubtaskChanges = recurringSubtaskCreated.Count + recurringSubtaskUpdated.Count + recurringSubtaskDeleted.Count;
+            var totalRecurringExceptionChanges = recurringExceptionCreated.Count + recurringExceptionUpdated.Count + recurringExceptionDeleted.Count;
+
             var hasMoreTasks = totalTaskChanges > effectiveMax;
             var hasMoreNotes = totalNoteChanges > effectiveMax;
             var hasMoreBlocks = totalBlockChanges > effectiveMax;
             var hasMoreCategories = totalCategoryChanges > effectiveMax; // REFACTORED: aligned with convention
             var hasMoreSubtasks = totalSubtaskChanges > effectiveMax; // REFACTORED: subtasks pagination flag
+            // REFACTORED: recurring-task pagination flags (recurring-tasks feature)
+            var hasMoreRecurringRoots = totalRecurringRootChanges > effectiveMax;
+            var hasMoreRecurringSeries = totalRecurringSeriesChanges > effectiveMax;
+            var hasMoreRecurringSeriesSubtasks = totalRecurringSubtaskChanges > effectiveMax;
+            var hasMoreRecurringExceptions = totalRecurringExceptionChanges > effectiveMax;
 
             static List<T> LimitList<T>(List<T> source, ref int remaining)
             {
@@ -232,6 +314,27 @@ namespace NotesApp.Application.Sync.Queries
             var limitedSubtaskUpdated = LimitList(subtaskUpdated, ref subtaskRemaining);
             var limitedSubtaskDeleted = LimitList(subtaskDeleted, ref subtaskRemaining);
 
+            // REFACTORED: recurring-task entities use the same effectiveMax (recurring-tasks feature)
+            var recurringRootRemaining = effectiveMax;
+            var limitedRecurringRootCreated = LimitList(recurringRootCreated, ref recurringRootRemaining);
+            var limitedRecurringRootUpdated = LimitList(recurringRootUpdated, ref recurringRootRemaining);
+            var limitedRecurringRootDeleted = LimitList(recurringRootDeleted, ref recurringRootRemaining);
+
+            var recurringSeriesRemaining = effectiveMax;
+            var limitedRecurringSeriesCreated = LimitList(recurringSeriesCreated, ref recurringSeriesRemaining);
+            var limitedRecurringSeriesUpdated = LimitList(recurringSeriesUpdated, ref recurringSeriesRemaining);
+            var limitedRecurringSeriesDeleted = LimitList(recurringSeriesDeleted, ref recurringSeriesRemaining);
+
+            var recurringSubtaskRemaining = effectiveMax;
+            var limitedRecurringSubtaskCreated = LimitList(recurringSubtaskCreated, ref recurringSubtaskRemaining);
+            var limitedRecurringSubtaskUpdated = LimitList(recurringSubtaskUpdated, ref recurringSubtaskRemaining);
+            var limitedRecurringSubtaskDeleted = LimitList(recurringSubtaskDeleted, ref recurringSubtaskRemaining);
+
+            var recurringExceptionRemaining = effectiveMax;
+            var limitedRecurringExceptionCreated = LimitList(recurringExceptionCreated, ref recurringExceptionRemaining);
+            var limitedRecurringExceptionUpdated = LimitList(recurringExceptionUpdated, ref recurringExceptionRemaining);
+            var limitedRecurringExceptionDeleted = LimitList(recurringExceptionDeleted, ref recurringExceptionRemaining);
+
             var limitedTasksBuckets = new SyncTasksChangesDto
             {
                 Created = limitedTaskCreated,
@@ -282,6 +385,35 @@ namespace NotesApp.Application.Sync.Queries
                 Deleted = limitedSubtaskDeleted
             };
 
+            // REFACTORED: build limited recurring-task buckets (recurring-tasks feature)
+            var limitedRecurringRootsBuckets = new SyncRecurringRootsChangesDto
+            {
+                Created = limitedRecurringRootCreated,
+                Updated = limitedRecurringRootUpdated,
+                Deleted = limitedRecurringRootDeleted
+            };
+
+            var limitedRecurringSeriesBuckets = new SyncRecurringSeriesChangesDto
+            {
+                Created = limitedRecurringSeriesCreated,
+                Updated = limitedRecurringSeriesUpdated,
+                Deleted = limitedRecurringSeriesDeleted
+            };
+
+            var limitedRecurringSeriesSubtasksBuckets = new SyncRecurringSeriesSubtasksChangesDto
+            {
+                Created = limitedRecurringSubtaskCreated,
+                Updated = limitedRecurringSubtaskUpdated,
+                Deleted = limitedRecurringSubtaskDeleted
+            };
+
+            var limitedRecurringExceptionsBuckets = new SyncRecurringExceptionsChangesDto
+            {
+                Created = limitedRecurringExceptionCreated,
+                Updated = limitedRecurringExceptionUpdated,
+                Deleted = limitedRecurringExceptionDeleted
+            };
+
             var dto = new SyncChangesDto
             {
                 ServerTimestampUtc = serverTimestampUtc,
@@ -292,11 +424,21 @@ namespace NotesApp.Application.Sync.Queries
                 Categories = limitedCategoriesBuckets, // REFACTORED: added categories
                 Subtasks = limitedSubtasksBuckets, // REFACTORED: added subtasks
                 Attachments = limitedAttachmentsBuckets, // REFACTORED: added attachments
+                // REFACTORED: added recurring-task buckets for recurring-tasks feature
+                RecurringRoots = limitedRecurringRootsBuckets,
+                RecurringSeries = limitedRecurringSeriesBuckets,
+                RecurringSeriesSubtasks = limitedRecurringSeriesSubtasksBuckets,
+                RecurringExceptions = limitedRecurringExceptionsBuckets,
                 HasMoreTasks = hasMoreTasks,
                 HasMoreNotes = hasMoreNotes,
                 HasMoreBlocks = hasMoreBlocks,
                 HasMoreCategories = hasMoreCategories, // REFACTORED: added categories pagination flag
-                HasMoreSubtasks = hasMoreSubtasks // REFACTORED: added subtasks pagination flag
+                HasMoreSubtasks = hasMoreSubtasks, // REFACTORED: added subtasks pagination flag
+                // REFACTORED: recurring-task pagination flags (recurring-tasks feature)
+                HasMoreRecurringRoots = hasMoreRecurringRoots,
+                HasMoreRecurringSeries = hasMoreRecurringSeries,
+                HasMoreRecurringSeriesSubtasks = hasMoreRecurringSeriesSubtasks,
+                HasMoreRecurringExceptions = hasMoreRecurringExceptions
             };
 
             return Result.Ok(dto);
@@ -654,6 +796,202 @@ namespace NotesApp.Application.Sync.Queries
             return new SyncAttachmentsChangesDto
             {
                 Created = createdList,
+                Deleted = deletedList
+            };
+        }
+
+        // REFACTORED: recurring-task categorise methods for recurring-tasks feature
+
+        private static SyncRecurringRootsChangesDto CategoriseRecurringRoots(
+            IReadOnlyList<RecurringTaskRoot> roots, DateTime? sinceUtc)
+        {
+            if (sinceUtc is null)
+            {
+                var created = roots
+                    .Where(r => !r.IsDeleted)
+                    .OrderBy(r => r.UpdatedAtUtc)
+                    .Select(r => r.ToSyncDto())
+                    .ToList();
+
+                return new SyncRecurringRootsChangesDto
+                {
+                    Created = created,
+                    Updated = Array.Empty<RecurringRootSyncItemDto>(),
+                    Deleted = Array.Empty<DeletedSyncItemDto>()
+                };
+            }
+
+            var createdList = new List<RecurringRootSyncItemDto>();
+            var updatedList = new List<RecurringRootSyncItemDto>();
+            var deletedList = new List<DeletedSyncItemDto>();
+
+            foreach (var root in roots.OrderBy(r => r.UpdatedAtUtc))
+            {
+                if (root.IsDeleted)
+                {
+                    deletedList.Add(new DeletedSyncItemDto { Id = root.Id, DeletedAtUtc = root.UpdatedAtUtc });
+                    continue;
+                }
+
+                if (root.CreatedAtUtc > sinceUtc.Value)
+                    createdList.Add(root.ToSyncDto());
+                else
+                    updatedList.Add(root.ToSyncDto());
+            }
+
+            return new SyncRecurringRootsChangesDto
+            {
+                Created = createdList,
+                Updated = updatedList,
+                Deleted = deletedList
+            };
+        }
+
+        private static SyncRecurringSeriesChangesDto CategoriseRecurringSeries(
+            IReadOnlyList<RecurringTaskSeries> seriesList, DateTime? sinceUtc)
+        {
+            if (sinceUtc is null)
+            {
+                var created = seriesList
+                    .Where(s => !s.IsDeleted)
+                    .OrderBy(s => s.UpdatedAtUtc)
+                    .Select(s => s.ToSyncDto())
+                    .ToList();
+
+                return new SyncRecurringSeriesChangesDto
+                {
+                    Created = created,
+                    Updated = Array.Empty<RecurringSeriesSyncItemDto>(),
+                    Deleted = Array.Empty<DeletedSyncItemDto>()
+                };
+            }
+
+            var createdList = new List<RecurringSeriesSyncItemDto>();
+            var updatedList = new List<RecurringSeriesSyncItemDto>();
+            var deletedList = new List<DeletedSyncItemDto>();
+
+            foreach (var series in seriesList.OrderBy(s => s.UpdatedAtUtc))
+            {
+                if (series.IsDeleted)
+                {
+                    deletedList.Add(new DeletedSyncItemDto { Id = series.Id, DeletedAtUtc = series.UpdatedAtUtc });
+                    continue;
+                }
+
+                if (series.CreatedAtUtc > sinceUtc.Value)
+                    createdList.Add(series.ToSyncDto());
+                else
+                    updatedList.Add(series.ToSyncDto());
+            }
+
+            return new SyncRecurringSeriesChangesDto
+            {
+                Created = createdList,
+                Updated = updatedList,
+                Deleted = deletedList
+            };
+        }
+
+        private static SyncRecurringSeriesSubtasksChangesDto CategoriseRecurringSubtasks(
+            IReadOnlyList<RecurringTaskSubtask> subtasks, DateTime? sinceUtc)
+        {
+            if (sinceUtc is null)
+            {
+                var created = subtasks
+                    .Where(s => !s.IsDeleted)
+                    .OrderBy(s => s.UpdatedAtUtc)
+                    .Select(s => s.ToSyncDto())
+                    .ToList();
+
+                return new SyncRecurringSeriesSubtasksChangesDto
+                {
+                    Created = created,
+                    Updated = Array.Empty<RecurringSubtaskSyncItemDto>(),
+                    Deleted = Array.Empty<DeletedSyncItemDto>()
+                };
+            }
+
+            var createdList = new List<RecurringSubtaskSyncItemDto>();
+            var updatedList = new List<RecurringSubtaskSyncItemDto>();
+            var deletedList = new List<DeletedSyncItemDto>();
+
+            foreach (var subtask in subtasks.OrderBy(s => s.UpdatedAtUtc))
+            {
+                if (subtask.IsDeleted)
+                {
+                    deletedList.Add(new DeletedSyncItemDto { Id = subtask.Id, DeletedAtUtc = subtask.UpdatedAtUtc });
+                    continue;
+                }
+
+                if (subtask.CreatedAtUtc > sinceUtc.Value)
+                    createdList.Add(subtask.ToSyncDto());
+                else
+                    updatedList.Add(subtask.ToSyncDto());
+            }
+
+            return new SyncRecurringSeriesSubtasksChangesDto
+            {
+                Created = createdList,
+                Updated = updatedList,
+                Deleted = deletedList
+            };
+        }
+
+        private static SyncRecurringExceptionsChangesDto CategoriseRecurringExceptions(
+            IReadOnlyList<RecurringTaskException> exceptions,
+            DateTime? sinceUtc,
+            Dictionary<Guid, IReadOnlyList<RecurringSubtaskSyncItemDto>> exceptionSubtasksById)
+        {
+            static IReadOnlyList<RecurringSubtaskSyncItemDto> GetSubtasks(
+                RecurringTaskException ex,
+                Dictionary<Guid, IReadOnlyList<RecurringSubtaskSyncItemDto>> lookup)
+            {
+                if (ex.IsDeleted || ex.IsDeletion)
+                    return Array.Empty<RecurringSubtaskSyncItemDto>();
+
+                return lookup.TryGetValue(ex.Id, out var subs) ? subs : Array.Empty<RecurringSubtaskSyncItemDto>();
+            }
+
+            if (sinceUtc is null)
+            {
+                var created = exceptions
+                    .Where(e => !e.IsDeleted)
+                    .OrderBy(e => e.UpdatedAtUtc)
+                    .Select(e => e.ToSyncDto(GetSubtasks(e, exceptionSubtasksById)))
+                    .ToList();
+
+                return new SyncRecurringExceptionsChangesDto
+                {
+                    Created = created,
+                    Updated = Array.Empty<RecurringExceptionSyncItemDto>(),
+                    Deleted = Array.Empty<DeletedSyncItemDto>()
+                };
+            }
+
+            var createdList = new List<RecurringExceptionSyncItemDto>();
+            var updatedList = new List<RecurringExceptionSyncItemDto>();
+            var deletedList = new List<DeletedSyncItemDto>();
+
+            foreach (var exception in exceptions.OrderBy(e => e.UpdatedAtUtc))
+            {
+                if (exception.IsDeleted)
+                {
+                    deletedList.Add(new DeletedSyncItemDto { Id = exception.Id, DeletedAtUtc = exception.UpdatedAtUtc });
+                    continue;
+                }
+
+                var subtasks = GetSubtasks(exception, exceptionSubtasksById);
+
+                if (exception.CreatedAtUtc > sinceUtc.Value)
+                    createdList.Add(exception.ToSyncDto(subtasks));
+                else
+                    updatedList.Add(exception.ToSyncDto(subtasks));
+            }
+
+            return new SyncRecurringExceptionsChangesDto
+            {
+                Created = createdList,
+                Updated = updatedList,
                 Deleted = deletedList
             };
         }

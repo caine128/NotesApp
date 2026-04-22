@@ -1,3 +1,4 @@
+using NotesApp.Application.Abstractions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -65,13 +66,18 @@ namespace NotesApp.Application.Tests.Sync
 
             return new SyncPushCommandHandler(
                 currentUserSvc.Object,
-                new TaskRepository(context),
+                new TaskRepository(context, new Mock<IRecurrenceEngine>().Object),
                 new NoteRepository(context),
                 new BlockRepository(context),
                 new UserDeviceRepository(context),
                 new CategoryRepository(context),
                 new SubtaskRepository(context),
                 new AttachmentRepository(context),
+                // REFACTORED: added recurring-task repos for recurring-tasks feature
+                new RecurringTaskRootRepository(context),
+                new RecurringTaskSeriesRepository(context),
+                new RecurringTaskSubtaskRepository(context),
+                new RecurringTaskExceptionRepository(context),
                 new OutboxRepository(context),
                 new UnitOfWork(context),
                 clock.Object,
@@ -243,6 +249,8 @@ namespace NotesApp.Application.Tests.Sync
             // Call SoftDeleteAllForTaskAsync directly to simulate the REST delete cascade
             var attachmentRepo = new AttachmentRepository(context);
             await attachmentRepo.SoftDeleteAllForTaskAsync(task.Id, userId, _now, CancellationToken.None);
+            // SoftDeleteAllForTaskAsync uses the change-tracker pattern — caller must SaveChangesAsync.
+            await context.SaveChangesAsync();
             context.ChangeTracker.Clear();
 
             var allAttachments = await context.Attachments

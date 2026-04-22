@@ -70,4 +70,46 @@ namespace NotesApp.Domain.Common
         Created,
         Deleted
     }
+
+    // REFACTORED: added recurring-task event types for recurring-tasks feature
+
+    /// <summary>
+    /// Event types for RecurringTaskRoot entity (used in outbox messages).
+    /// </summary>
+    public enum RecurringRootEventType
+    {
+        Created,
+        Deleted
+    }
+
+    /// <summary>
+    /// Event types for RecurringTaskSeries entity (used in outbox messages).
+    /// </summary>
+    public enum RecurringSeriesEventType
+    {
+        Created,
+        Updated,
+        Terminated
+    }
+
+    /// <summary>
+    /// Event types for RecurringTaskSubtask entity (used in outbox messages).
+    /// Covers both series template subtasks and exception subtask overrides.
+    /// </summary>
+    public enum RecurringSeriesSubtaskEventType
+    {
+        Created,
+        Updated,
+        Deleted
+    }
+
+    /// <summary>
+    /// Event types for RecurringTaskException entity (used in outbox messages).
+    /// </summary>
+    public enum RecurringExceptionEventType
+    {
+        Created,
+        Updated,
+        Deleted
+    }
 }

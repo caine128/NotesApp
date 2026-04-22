@@ -69,6 +69,11 @@ namespace NotesApp.Application.Tests.Sync
                 _categoryRepositoryMock.Object,
                 _subtaskRepositoryMock.Object,
                 _attachmentRepositoryMock.Object, // REFACTORED: added for task-attachments feature
+                // REFACTORED: added recurring-task repos for recurring-tasks feature
+                new Mock<IRecurringTaskRootRepository>().Object,
+                new Mock<IRecurringTaskSeriesRepository>().Object,
+                new Mock<IRecurringTaskSubtaskRepository>().Object,
+                new Mock<IRecurringTaskExceptionRepository>().Object,
                 _outboxRepositoryMock.Object,
                 _unitOfWorkMock.Object,
                 _clockMock.Object,

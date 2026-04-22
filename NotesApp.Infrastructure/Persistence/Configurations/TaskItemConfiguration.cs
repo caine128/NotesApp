@@ -131,6 +131,31 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
             builder.HasIndex(t => new { t.UserId, t.CategoryId })
                    .HasFilter("[CategoryId] IS NOT NULL AND [IsDeleted] = 0")
                    .HasDatabaseName("IX_Tasks_UserCategory");
+
+            // REFACTORED: added recurring-task fields for recurring-tasks feature
+
+            // Nullable FK — null for non-recurring tasks.
+            // SetNull: when the series segment is deleted, the FK on existing TaskItems is cleared
+            // rather than cascading to the materialized tasks themselves (soft-delete handles that).
+            builder.Property(t => t.RecurringSeriesId)
+                   .IsRequired(false);
+
+            builder.HasOne<RecurringTaskSeries>()
+                   .WithMany()
+                   .HasForeignKey(t => t.RecurringSeriesId)
+                   .OnDelete(DeleteBehavior.SetNull)
+                   .IsRequired(false);
+
+            builder.Property(t => t.CanonicalOccurrenceDate)
+                   .HasColumnType("date")
+                   .IsRequired(false);
+
+            // 6) Reverse lookup: find all materialized TaskItems for a series segment,
+            //    and deduplicate virtual occurrences at query time using CanonicalOccurrenceDate.
+            //    Filtered to rows where RecurringSeriesId IS NOT NULL to keep the index small.
+            builder.HasIndex(t => new { t.RecurringSeriesId, t.CanonicalOccurrenceDate })
+                   .HasFilter("[RecurringSeriesId] IS NOT NULL")
+                   .HasDatabaseName("IX_Tasks_RecurringSeriesId_CanonicalOccurrenceDate");
         }
     }
 }

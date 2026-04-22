@@ -94,18 +94,22 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
         public async Task SoftDeleteAllForTaskAsync(
             Guid taskId, Guid userId, DateTime utcNow, CancellationToken cancellationToken = default)
         {
-            // Bulk update: marks all non-deleted subtasks for the task as deleted.
-            // ExecuteUpdateAsync bypasses the global query filter so we can target by taskId/userId
-            // without loading entities into memory, then updates in a single SQL statement.
-            await _context.Subtasks
+            // Change-tracker pattern: load non-deleted subtasks, call domain SoftDelete() on each.
+            // The caller's SaveChangesAsync() commits these soft-deletes atomically with any other
+            // staged changes (e.g. new Subtask rows, TaskItem soft-delete, outbox message).
+            // Does NOT use ExecuteUpdateAsync — that would commit immediately outside the ambient transaction.
+            var subtasks = await _context.Subtasks
                 .IgnoreQueryFilters()
                 .Where(s => s.TaskId == taskId && s.UserId == userId && !s.IsDeleted)
-                .ExecuteUpdateAsync(
-                    setters => setters
-                        .SetProperty(s => s.IsDeleted, true)
-                        .SetProperty(s => s.UpdatedAtUtc, utcNow)
-                        .SetProperty(s => s.Version, s => s.Version + 1),
-                    cancellationToken);
+                .ToListAsync(cancellationToken);
+
+            foreach (var subtask in subtasks)
+            {
+                // SoftDelete() can only fail when IsDeleted is already true, which the
+                // filter above excludes — discard the result safely.
+                _ = subtask.SoftDelete(utcNow);
+            }
+            // No SaveChangesAsync here — caller commits everything atomically.
         }
     }
 }

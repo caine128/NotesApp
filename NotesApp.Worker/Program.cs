@@ -50,10 +50,18 @@ builder.Services.AddSingleton<ICurrentUserService, WorkerCurrentUserService>();
 // Register dispatcher implementation
 builder.Services.AddScoped<IOutboxMessageDispatcher, LoggingOutboxMessageDispatcher>();
 
+// REFACTORED: added RecurringTaskHorizonWorker options for recurring-tasks feature
+builder.Services.AddOptions<RecurringTaskHorizonWorkerOptions>()
+    .Bind(builder.Configuration.GetSection(RecurringTaskHorizonWorkerOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
 // Register the OutboxProcessingWorker as a hosted service
 builder.Services.AddHostedService<OutboxProcessingWorker>();
 // New hosted service:
 builder.Services.AddHostedService<ReminderMonitorWorker>();
+// REFACTORED: added recurring-task horizon worker for recurring-tasks feature
+builder.Services.AddHostedService<RecurringTaskHorizonWorker>();
 
 var host = builder.Build();
 host.Run();
