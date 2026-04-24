@@ -1,11 +1,14 @@
 # CLAUDE.md
 
 Apply these rules to the whole NotesApp repo.
+See @.claude/research-policy.md
 
 ## Core rule
 Follow the existing NotesApp pattern before introducing a new one. Inspect nearby files in the same feature first.
 
 When a task involves framework-specific behavior, SDKs, external APIs, NuGet packages, authentication providers, database-provider behavior, or any third-party package with official documentation, use the `official-docs-researcher` subagent before recommending or implementing anything.
+
+If Context7 or another current-doc MCP source is available, use it through the research subagent for library/framework documentation lookup. The research subagent must still prefer creator-owned official documentation when it is available and relevant.
 
 Do not propose an approach unless you are fully confident it is the best, or clearly one of the best, options after:
 1. checking the latest official docs from the package/framework creator,
