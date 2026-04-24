@@ -36,6 +36,13 @@ namespace NotesApp.Application.Sync.Models
         public SyncRecurringSeriesSubtasksChangesDto RecurringSeriesSubtasks { get; init; } = new();
         public SyncRecurringExceptionsChangesDto RecurringExceptions { get; init; } = new();
 
+        // REFACTORED: added recurring attachment changes bucket for recurring-task-attachments feature
+        /// <summary>
+        /// Recurring task attachment changes (created/deleted) — top-level series template attachments.
+        /// Exception attachment overrides are inlined within RecurringExceptions items.
+        /// </summary>
+        public SyncRecurringAttachmentsChangesDto RecurringAttachments { get; init; } = new();
+
         /// <summary>
         /// True when the server had more task changes than were included
         /// in this response (based on MaxItemsPerEntity).
@@ -73,6 +80,9 @@ namespace NotesApp.Application.Sync.Models
         public bool HasMoreRecurringSeriesSubtasks { get; init; }
         /// <summary>True when the server had more recurring exception changes than were included in this response.</summary>
         public bool HasMoreRecurringExceptions { get; init; }
+        // REFACTORED: added pagination flag for recurring-task-attachments feature
+        /// <summary>True when the server had more recurring attachment changes than were included in this response.</summary>
+        public bool HasMoreRecurringAttachments { get; init; }
     }
 
     public sealed record SyncTasksChangesDto
@@ -475,8 +485,50 @@ namespace NotesApp.Application.Sync.Models
         /// Empty = inherit series template subtasks; non-empty = complete replacement list for this occurrence.
         /// </summary>
         public IReadOnlyList<RecurringSubtaskSyncItemDto> Subtasks { get; init; } = Array.Empty<RecurringSubtaskSyncItemDto>();
+        // REFACTORED: added attachment override fields for recurring-task-attachments feature
+        /// <summary>
+        /// When true, this occurrence manages its own attachment list (exception-scoped).
+        /// When false, the occurrence inherits series template attachments and <see cref="Attachments"/> is ignored.
+        /// </summary>
+        public bool HasAttachmentOverride { get; init; }
+        /// <summary>
+        /// Exception-specific attachment overrides.
+        /// Only meaningful when <see cref="HasAttachmentOverride"/> is true.
+        /// Empty with HasAttachmentOverride=true means all series template attachments were deleted.
+        /// </summary>
+        public IReadOnlyList<RecurringAttachmentSyncItemDto> Attachments { get; init; } = Array.Empty<RecurringAttachmentSyncItemDto>();
         public long Version { get; init; }
         public DateTime CreatedAtUtc { get; init; }
         public DateTime UpdatedAtUtc { get; init; }
     }
+
+    // REFACTORED: added recurring attachment sync DTOs for recurring-task-attachments feature
+
+    /// <summary>
+    /// Recurring task attachment changes bucket returned by the sync pull endpoint.
+    /// No Updated bucket — recurring task attachments are immutable after creation.
+    /// </summary>
+    public sealed record SyncRecurringAttachmentsChangesDto
+    {
+        public IReadOnlyList<RecurringAttachmentSyncItemDto> Created { get; init; } = Array.Empty<RecurringAttachmentSyncItemDto>();
+        public IReadOnlyList<DeletedSyncItemDto> Deleted { get; init; } = Array.Empty<DeletedSyncItemDto>();
+    }
+
+    /// <summary>
+    /// Full recurring task attachment representation used in sync pull payloads.
+    /// Covers both series template attachments (SeriesId set) and exception overrides (ExceptionId set).
+    /// Also inlined inside RecurringExceptionSyncItemDto.Attachments for convenience.
+    /// Download URLs are NOT included; use GET /api/recurring-attachments/.../download-url on demand.
+    /// </summary>
+    public sealed record RecurringAttachmentSyncItemDto(
+        Guid Id,
+        Guid UserId,
+        Guid? SeriesId,
+        Guid? ExceptionId,
+        string FileName,
+        string ContentType,
+        long SizeBytes,
+        int DisplayOrder,
+        DateTime CreatedAtUtc,
+        DateTime UpdatedAtUtc);
 }

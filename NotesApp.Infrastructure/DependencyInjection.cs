@@ -66,6 +66,7 @@ namespace NotesApp.Infrastructure
             services.AddScoped<IRecurringTaskSeriesRepository, RecurringTaskSeriesRepository>();
             services.AddScoped<IRecurringTaskSubtaskRepository, RecurringTaskSubtaskRepository>();
             services.AddScoped<IRecurringTaskExceptionRepository, RecurringTaskExceptionRepository>();
+            services.AddScoped<IRecurringTaskAttachmentRepository, RecurringTaskAttachmentRepository>(); // REFACTORED: added for recurring-task-attachments feature
 
             // 3) System clock (for time abstraction)
             services.AddSingleton<ISystemClock, SystemClock>();

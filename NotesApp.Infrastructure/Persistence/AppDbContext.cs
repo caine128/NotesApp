@@ -30,6 +30,8 @@ namespace NotesApp.Infrastructure.Persistence
         public DbSet<RecurringTaskSeries> RecurringTaskSeries => Set<RecurringTaskSeries>();
         public DbSet<RecurringTaskSubtask> RecurringTaskSubtasks => Set<RecurringTaskSubtask>();
         public DbSet<RecurringTaskException> RecurringTaskExceptions => Set<RecurringTaskException>();
+        // REFACTORED: added RecurringTaskAttachments for recurring-task-attachments feature
+        public DbSet<RecurringTaskAttachment> RecurringTaskAttachments => Set<RecurringTaskAttachment>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

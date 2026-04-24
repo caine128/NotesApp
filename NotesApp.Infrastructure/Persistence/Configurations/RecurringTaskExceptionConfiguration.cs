@@ -101,6 +101,14 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
                    .IsRequired()
                    .HasDefaultValue(false);
 
+            // REFACTORED: added HasAttachmentOverride for recurring-task-attachments feature
+            // Distinguishes "exception for another reason (e.g. title override)" from "exception whose
+            // attachment list has been explicitly managed". Prevents snap-back to series attachments
+            // when the last exception attachment is deleted (once set, never cleared automatically).
+            builder.Property(e => e.HasAttachmentOverride)
+                   .IsRequired()
+                   .HasDefaultValue(false);
+
             // -------------------------
             // Materialization link
             // -------------------------

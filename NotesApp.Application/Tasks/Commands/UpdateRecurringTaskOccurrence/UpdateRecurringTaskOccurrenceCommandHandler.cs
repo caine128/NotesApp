@@ -40,6 +40,8 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
         private readonly IRecurringTaskSeriesRepository _seriesRepository;
         private readonly IRecurringTaskSubtaskRepository _recurringSubtaskRepository;
         private readonly IRecurringTaskExceptionRepository _exceptionRepository;
+        // REFACTORED: added for recurring-task-attachments feature
+        private readonly IRecurringTaskAttachmentRepository _recurringAttachmentRepository;
         private readonly IRecurringTaskMaterializerService _materializerService;
         private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
@@ -54,6 +56,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
                                                            IRecurringTaskSeriesRepository seriesRepository,
                                                            IRecurringTaskSubtaskRepository recurringSubtaskRepository,
                                                            IRecurringTaskExceptionRepository exceptionRepository,
+                                                           IRecurringTaskAttachmentRepository recurringAttachmentRepository,
                                                            IRecurringTaskMaterializerService materializerService,
                                                            IOutboxRepository outboxRepository,
                                                            IUnitOfWork unitOfWork,
@@ -68,6 +71,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
             _seriesRepository = seriesRepository;
             _recurringSubtaskRepository = recurringSubtaskRepository;
             _exceptionRepository = exceptionRepository;
+            _recurringAttachmentRepository = recurringAttachmentRepository;
             _materializerService = materializerService;
             _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
@@ -392,6 +396,31 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
             foreach (var st in templateSubtasks)
             {
                 await _recurringSubtaskRepository.AddAsync(st, cancellationToken);
+            }
+
+            // Copy series template attachments from the old series to the new series.
+            // Same BlobPath, new row IDs — the orphan-cleanup worker checks ExistsNonDeletedWithBlobPathAsync
+            // before deleting any blob, so shared blobs are safe.
+            var oldSeriesAttachments = await _recurringAttachmentRepository.GetBySeriesIdAsync(
+                oldSeries.Id, cancellationToken);
+
+            foreach (var template in oldSeriesAttachments)
+            {
+                var copyResult = RecurringTaskAttachment.CreateForSeries(
+                    id: Guid.NewGuid(),
+                    userId: userId,
+                    seriesId: newSeries.Id,
+                    fileName: template.FileName,
+                    contentType: template.ContentType,
+                    sizeBytes: template.SizeBytes,
+                    blobPath: template.BlobPath,
+                    displayOrder: template.DisplayOrder,
+                    utcNow: utcNow);
+
+                if (copyResult.IsFailure)
+                    return Result.Fail<TaskDetailDto>(copyResult.Errors.Select(e => new Error(e.Message)));
+
+                await _recurringAttachmentRepository.AddAsync(copyResult.Value!, cancellationToken);
             }
 
             foreach (var task in batch.Tasks)

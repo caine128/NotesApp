@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.RecurringAttachments;
 using NotesApp.Application.Sync.Models;
 using NotesApp.Domain.Entities;
 using System;
@@ -45,6 +46,8 @@ namespace NotesApp.Application.Sync.Queries
         private readonly IRecurringTaskSeriesRepository _recurringSeriesRepository;
         private readonly IRecurringTaskSubtaskRepository _recurringSubtaskRepository;
         private readonly IRecurringTaskExceptionRepository _recurringExceptionRepository;
+        // REFACTORED: added for recurring-task-attachments feature
+        private readonly IRecurringTaskAttachmentRepository _recurringAttachmentRepository;
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<GetSyncChangesQueryHandler> _logger;
 
@@ -60,6 +63,7 @@ namespace NotesApp.Application.Sync.Queries
                                           IRecurringTaskSeriesRepository recurringSeriesRepository,
                                           IRecurringTaskSubtaskRepository recurringSubtaskRepository,
                                           IRecurringTaskExceptionRepository recurringExceptionRepository,
+                                          IRecurringTaskAttachmentRepository recurringAttachmentRepository,
                                           ICurrentUserService currentUserService,
                                           ILogger<GetSyncChangesQueryHandler> logger)
         {
@@ -76,6 +80,7 @@ namespace NotesApp.Application.Sync.Queries
             _recurringSeriesRepository = recurringSeriesRepository;
             _recurringSubtaskRepository = recurringSubtaskRepository;
             _recurringExceptionRepository = recurringExceptionRepository;
+            _recurringAttachmentRepository = recurringAttachmentRepository; // REFACTORED: added for recurring-task-attachments feature
             _currentUserService = currentUserService;
             _logger = logger;
         }
@@ -153,6 +158,10 @@ namespace NotesApp.Application.Sync.Queries
                                                                                                 request.SinceUtc,
                                                                                                 cancellationToken);
 
+            // REFACTORED: fetch recurring attachment changes for sync pull (recurring-task-attachments feature)
+            var recurringAttachments = await _recurringAttachmentRepository.GetChangedSinceAsync(
+                userId, request.SinceUtc, cancellationToken);
+
             // Batch-load exception subtasks for inlining in RecurringExceptionSyncItemDto.Subtasks.
             // Only non-deleted exceptions can have subtasks worth inlining.
             var nonDeletedExceptionIds = recurringExceptions
@@ -171,6 +180,23 @@ namespace NotesApp.Application.Sync.Queries
                     g => g.Key,
                     g => (IReadOnlyList<RecurringSubtaskSyncItemDto>)g.Select(s => s.ToSyncDto()).ToList());
 
+            // Batch-load exception attachments for inlining in RecurringExceptionSyncItemDto.Attachments.
+            // Only non-deleted, HasAttachmentOverride exceptions have exception-scoped attachments.
+            var overrideExceptionIds = recurringExceptions
+                .Where(e => !e.IsDeleted && !e.IsDeletion && e.HasAttachmentOverride)
+                .Select(e => e.Id)
+                .ToList();
+
+            var allExceptionAttachments = overrideExceptionIds.Count > 0
+                ? await _recurringAttachmentRepository.GetByExceptionIdsAsync(overrideExceptionIds, cancellationToken)
+                : (IReadOnlyList<RecurringTaskAttachment>)Array.Empty<RecurringTaskAttachment>();
+
+            var exceptionAttachmentsByExceptionId = allExceptionAttachments
+                .GroupBy(a => a.ExceptionId!.Value)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlyList<RecurringAttachmentSyncItemDto>)g.Select(a => a.ToSyncDto()).ToList());
+
             var serverTimestampUtc = DateTime.UtcNow;
 
             // Categorise entities into buckets
@@ -185,7 +211,9 @@ namespace NotesApp.Application.Sync.Queries
             var recurringRootsBuckets = CategoriseRecurringRoots(recurringRoots, request.SinceUtc);
             var recurringSeriesBuckets = CategoriseRecurringSeries(recurringSeries, request.SinceUtc);
             var recurringSubtasksBuckets = CategoriseRecurringSubtasks(recurringSubtasks, request.SinceUtc);
-            var recurringExceptionsBuckets = CategoriseRecurringExceptions(recurringExceptions, request.SinceUtc, exceptionSubtasksByExceptionId);
+            var recurringExceptionsBuckets = CategoriseRecurringExceptions(recurringExceptions, request.SinceUtc, exceptionSubtasksByExceptionId, exceptionAttachmentsByExceptionId);
+            // REFACTORED: categorise recurring attachment changes (recurring-task-attachments feature)
+            var recurringAttachmentsBuckets = CategoriseRecurringAttachments(recurringAttachments, request.SinceUtc);
 
             // Determine effective max items per entity
             var effectiveMax = request.MaxItemsPerEntity ?? SyncLimits.DefaultPullMaxItemsPerEntity;
@@ -233,6 +261,10 @@ namespace NotesApp.Application.Sync.Queries
             var recurringExceptionUpdated = recurringExceptionsBuckets.Updated.ToList();
             var recurringExceptionDeleted = recurringExceptionsBuckets.Deleted.ToList();
 
+            // REFACTORED: materialise recurring attachment lists (recurring-task-attachments feature)
+            var recurringAttachmentCreated = recurringAttachmentsBuckets.Created.ToList();
+            var recurringAttachmentDeleted = recurringAttachmentsBuckets.Deleted.ToList();
+
             // Calculate totals for pagination indicators
             var totalTaskChanges = taskCreated.Count + taskUpdated.Count + taskDeleted.Count;
             var totalNoteChanges = noteCreated.Count + noteUpdated.Count + noteDeleted.Count;
@@ -256,6 +288,9 @@ namespace NotesApp.Application.Sync.Queries
             var hasMoreRecurringSeries = totalRecurringSeriesChanges > effectiveMax;
             var hasMoreRecurringSeriesSubtasks = totalRecurringSubtaskChanges > effectiveMax;
             var hasMoreRecurringExceptions = totalRecurringExceptionChanges > effectiveMax;
+            // REFACTORED: recurring attachment pagination (recurring-task-attachments feature)
+            // Volume is bounded by MaxAttachmentsPerTask × series count; follow the no-limit pattern of Attachments.
+            var hasMoreRecurringAttachments = false;
 
             static List<T> LimitList<T>(List<T> source, ref int remaining)
             {
@@ -414,6 +449,13 @@ namespace NotesApp.Application.Sync.Queries
                 Deleted = limitedRecurringExceptionDeleted
             };
 
+            // REFACTORED: build limited recurring attachments bucket (recurring-task-attachments feature)
+            var limitedRecurringAttachmentsBuckets = new SyncRecurringAttachmentsChangesDto
+            {
+                Created = recurringAttachmentCreated,
+                Deleted = recurringAttachmentDeleted
+            };
+
             var dto = new SyncChangesDto
             {
                 ServerTimestampUtc = serverTimestampUtc,
@@ -429,6 +471,8 @@ namespace NotesApp.Application.Sync.Queries
                 RecurringSeries = limitedRecurringSeriesBuckets,
                 RecurringSeriesSubtasks = limitedRecurringSeriesSubtasksBuckets,
                 RecurringExceptions = limitedRecurringExceptionsBuckets,
+                // REFACTORED: added recurring attachments bucket (recurring-task-attachments feature)
+                RecurringAttachments = limitedRecurringAttachmentsBuckets,
                 HasMoreTasks = hasMoreTasks,
                 HasMoreNotes = hasMoreNotes,
                 HasMoreBlocks = hasMoreBlocks,
@@ -438,7 +482,8 @@ namespace NotesApp.Application.Sync.Queries
                 HasMoreRecurringRoots = hasMoreRecurringRoots,
                 HasMoreRecurringSeries = hasMoreRecurringSeries,
                 HasMoreRecurringSeriesSubtasks = hasMoreRecurringSeriesSubtasks,
-                HasMoreRecurringExceptions = hasMoreRecurringExceptions
+                HasMoreRecurringExceptions = hasMoreRecurringExceptions,
+                HasMoreRecurringAttachments = hasMoreRecurringAttachments
             };
 
             return Result.Ok(dto);
@@ -937,10 +982,12 @@ namespace NotesApp.Application.Sync.Queries
             };
         }
 
+        // REFACTORED: updated signature to include attachments for recurring-task-attachments feature
         private static SyncRecurringExceptionsChangesDto CategoriseRecurringExceptions(
             IReadOnlyList<RecurringTaskException> exceptions,
             DateTime? sinceUtc,
-            Dictionary<Guid, IReadOnlyList<RecurringSubtaskSyncItemDto>> exceptionSubtasksById)
+            Dictionary<Guid, IReadOnlyList<RecurringSubtaskSyncItemDto>> exceptionSubtasksById,
+            Dictionary<Guid, IReadOnlyList<RecurringAttachmentSyncItemDto>> exceptionAttachmentsById)
         {
             static IReadOnlyList<RecurringSubtaskSyncItemDto> GetSubtasks(
                 RecurringTaskException ex,
@@ -952,12 +999,22 @@ namespace NotesApp.Application.Sync.Queries
                 return lookup.TryGetValue(ex.Id, out var subs) ? subs : Array.Empty<RecurringSubtaskSyncItemDto>();
             }
 
+            static IReadOnlyList<RecurringAttachmentSyncItemDto> GetAttachments(
+                RecurringTaskException ex,
+                Dictionary<Guid, IReadOnlyList<RecurringAttachmentSyncItemDto>> lookup)
+            {
+                if (ex.IsDeleted || ex.IsDeletion || !ex.HasAttachmentOverride)
+                    return Array.Empty<RecurringAttachmentSyncItemDto>();
+
+                return lookup.TryGetValue(ex.Id, out var atts) ? atts : Array.Empty<RecurringAttachmentSyncItemDto>();
+            }
+
             if (sinceUtc is null)
             {
                 var created = exceptions
                     .Where(e => !e.IsDeleted)
                     .OrderBy(e => e.UpdatedAtUtc)
-                    .Select(e => e.ToSyncDto(GetSubtasks(e, exceptionSubtasksById)))
+                    .Select(e => e.ToSyncDto(GetSubtasks(e, exceptionSubtasksById), GetAttachments(e, exceptionAttachmentsById)))
                     .ToList();
 
                 return new SyncRecurringExceptionsChangesDto
@@ -981,17 +1038,53 @@ namespace NotesApp.Application.Sync.Queries
                 }
 
                 var subtasks = GetSubtasks(exception, exceptionSubtasksById);
+                var attachments = GetAttachments(exception, exceptionAttachmentsById);
 
                 if (exception.CreatedAtUtc > sinceUtc.Value)
-                    createdList.Add(exception.ToSyncDto(subtasks));
+                    createdList.Add(exception.ToSyncDto(subtasks, attachments));
                 else
-                    updatedList.Add(exception.ToSyncDto(subtasks));
+                    updatedList.Add(exception.ToSyncDto(subtasks, attachments));
             }
 
             return new SyncRecurringExceptionsChangesDto
             {
                 Created = createdList,
                 Updated = updatedList,
+                Deleted = deletedList
+            };
+        }
+
+        // REFACTORED: added CategoriseRecurringAttachments for recurring-task-attachments feature
+        /// <summary>
+        /// Categorises recurring attachment changes into created/deleted buckets.
+        /// Recurring task attachments are immutable, so there is no "updated" bucket.
+        /// Mirrors <see cref="CategoriseAttachments"/> exactly.
+        /// </summary>
+        private static SyncRecurringAttachmentsChangesDto CategoriseRecurringAttachments(
+            IReadOnlyList<RecurringTaskAttachment> attachments, DateTime? sinceUtc)
+        {
+            var createdList = new List<RecurringAttachmentSyncItemDto>();
+            var deletedList = new List<DeletedSyncItemDto>();
+
+            foreach (var attachment in attachments.OrderBy(a => a.UpdatedAtUtc))
+            {
+                if (attachment.IsDeleted)
+                {
+                    deletedList.Add(new DeletedSyncItemDto
+                    {
+                        Id = attachment.Id,
+                        DeletedAtUtc = attachment.UpdatedAtUtc
+                    });
+
+                    continue;
+                }
+
+                createdList.Add(attachment.ToSyncDto());
+            }
+
+            return new SyncRecurringAttachmentsChangesDto
+            {
+                Created = createdList,
                 Deleted = deletedList
             };
         }

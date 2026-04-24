@@ -2,6 +2,7 @@ using FluentResults;
 using MediatR;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.RecurringAttachments;
 using NotesApp.Application.Subtasks;
 using NotesApp.Application.Subtasks.Models;
 using NotesApp.Application.Tasks.Models;
@@ -38,16 +39,20 @@ namespace NotesApp.Application.Tasks.Queries
         private readonly IRecurringTaskSeriesRepository _seriesRepository;
         private readonly IRecurringTaskExceptionRepository _exceptionRepository;
         private readonly IRecurringTaskSubtaskRepository _recurringSubtaskRepository;
+        // REFACTORED: added for recurring-task-attachments feature
+        private readonly IRecurringTaskAttachmentRepository _recurringAttachmentRepository;
         private readonly ICurrentUserService _currentUserService;
 
         public GetVirtualTaskOccurrenceDetailQueryHandler(IRecurringTaskSeriesRepository seriesRepository,
                                                           IRecurringTaskExceptionRepository exceptionRepository,
                                                           IRecurringTaskSubtaskRepository recurringSubtaskRepository,
+                                                          IRecurringTaskAttachmentRepository recurringAttachmentRepository,
                                                           ICurrentUserService currentUserService)
         {
             _seriesRepository = seriesRepository;
             _exceptionRepository = exceptionRepository;
             _recurringSubtaskRepository = recurringSubtaskRepository;
+            _recurringAttachmentRepository = recurringAttachmentRepository;
             _currentUserService = currentUserService;
         }
 
@@ -126,6 +131,18 @@ namespace NotesApp.Application.Tasks.Queries
                 subtaskDtos = await LoadTemplateSubtasksAsync(request.SeriesId, cancellationToken);
             }
 
+            // 4b. Resolve recurring attachments using the same HasAttachmentOverride semantics:
+            //     exception exists AND HasAttachmentOverride=true → exception-scoped attachments
+            //     (even if empty — empty = occurrence was explicitly cleared of all attachments)
+            //     otherwise → series template attachments.
+            var recurringAttachmentDtos = exception is not null && exception.HasAttachmentOverride
+                ? (await _recurringAttachmentRepository.GetByExceptionIdAsync(exception.Id, cancellationToken))
+                    .Select(a => a.ToRecurringAttachmentDto())
+                    .ToList()
+                : (await _recurringAttachmentRepository.GetBySeriesIdAsync(request.SeriesId, cancellationToken))
+                    .Select(a => a.ToRecurringAttachmentDto())
+                    .ToList();
+
             // 5. Compose the DTO.
             //    TaskId = Guid.Empty  -> client uses this to identify a virtual occurrence.
             //    RowVersion = empty   -> no EF row to version-stamp.
@@ -149,7 +166,8 @@ namespace NotesApp.Application.Tasks.Queries
                                         MeetingLink: meetingLink,
                                         RowVersion: Array.Empty<byte>())
             {
-                Subtasks = subtaskDtos
+                Subtasks = subtaskDtos,
+                RecurringAttachments = recurringAttachmentDtos
             };
 
             return Result.Ok(dto);

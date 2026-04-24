@@ -50,5 +50,12 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         /// Processed after RecurringSeries so SeriesId references are available.
         /// </summary>
         public SyncPushRecurringExceptionsDto RecurringExceptions { get; init; } = new();
+
+        // REFACTORED: added recurring attachment push collection for recurring-task-attachments feature
+        /// <summary>
+        /// Recurring task attachment deletions from the client device.
+        /// Uploads always go through the REST endpoint; only deletions are synced via push.
+        /// </summary>
+        public SyncPushRecurringAttachmentsDto RecurringAttachments { get; init; } = new();
     }
 }

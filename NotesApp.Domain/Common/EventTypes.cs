@@ -112,4 +112,15 @@ namespace NotesApp.Domain.Common
         Updated,
         Deleted
     }
+
+    /// <summary>
+    /// Event types for RecurringTaskAttachment entity (used in outbox messages).
+    /// No Updated value — recurring attachments are immutable after creation.
+    /// </summary>
+    // REFACTORED: added RecurringAttachmentEventType for recurring-task-attachments feature
+    public enum RecurringAttachmentEventType
+    {
+        Created,
+        Deleted
+    }
 }

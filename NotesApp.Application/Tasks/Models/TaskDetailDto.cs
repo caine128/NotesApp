@@ -1,4 +1,5 @@
 ﻿using NotesApp.Application.Attachments.Models;
+using NotesApp.Application.RecurringAttachments.Models;
 using NotesApp.Application.Subtasks.Models;
 using NotesApp.Domain.Common;
 using System;
@@ -38,5 +39,16 @@ namespace NotesApp.Application.Tasks.Models
         /// Use GET /api/attachments/{id}/download-url to obtain a pre-signed URL on demand.
         /// </summary>
         public IReadOnlyList<AttachmentDto> Attachments { get; init; } = [];
+
+        // REFACTORED: added recurring attachments list for recurring-task-attachments feature
+        /// <summary>
+        /// Attachments from the recurring series template or from the occurrence's exception override.
+        /// Resolution rule: if the occurrence has HasAttachmentOverride=true, these come from the
+        /// exception; otherwise they are inherited from the series template.
+        /// Always empty for non-recurring tasks.
+        /// Use GET /api/recurring-attachments/series/{id}/download-url or
+        /// /occurrences/{id}/download-url to obtain a pre-signed URL on demand.
+        /// </summary>
+        public IReadOnlyList<RecurringAttachmentDto> RecurringAttachments { get; init; } = [];
     }
 }

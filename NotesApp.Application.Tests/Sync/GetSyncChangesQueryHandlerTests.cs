@@ -96,6 +96,7 @@ namespace NotesApp.Application.Tests.Sync
                 _recurringSeriesRepositoryMock.Object,
                 _recurringSeriesSubtaskRepositoryMock.Object,
                 _recurringExceptionRepositoryMock.Object,
+                new Mock<IRecurringTaskAttachmentRepository>().Object, // REFACTORED: added for recurring-task-attachments feature
                 _currentUserServiceMock.Object,
                 _loggerMock.Object);
         }

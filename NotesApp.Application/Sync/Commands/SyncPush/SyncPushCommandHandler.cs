@@ -43,6 +43,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         private readonly IRecurringTaskSeriesRepository _recurringSeriesRepository;
         private readonly IRecurringTaskSubtaskRepository _recurringSeriesSubtaskRepository;
         private readonly IRecurringTaskExceptionRepository _recurringExceptionRepository;
+        // REFACTORED: added for recurring-task-attachments feature
+        private readonly IRecurringTaskAttachmentRepository _recurringAttachmentRepository;
         private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISystemClock _clock;
@@ -60,6 +62,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                      IRecurringTaskSeriesRepository recurringSeriesRepository,
                                      IRecurringTaskSubtaskRepository recurringSeriesSubtaskRepository,
                                      IRecurringTaskExceptionRepository recurringExceptionRepository,
+                                     IRecurringTaskAttachmentRepository recurringAttachmentRepository,
                                      IOutboxRepository outboxRepository,
                                      IUnitOfWork unitOfWork,
                                      ISystemClock clock,
@@ -78,6 +81,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             _recurringSeriesRepository = recurringSeriesRepository;
             _recurringSeriesSubtaskRepository = recurringSeriesSubtaskRepository;
             _recurringExceptionRepository = recurringExceptionRepository;
+            _recurringAttachmentRepository = recurringAttachmentRepository; // REFACTORED: recurring-task-attachments feature
             _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _clock = clock;
@@ -129,6 +133,9 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
             // REFACTORED: added attachment result list for task-attachments feature
             var attachmentDeleteResults = new List<AttachmentDeletedPushResultDto>();
+
+            // REFACTORED: added recurring attachment result list for recurring-task-attachments feature
+            var recurringAttachmentDeleteResults = new List<RecurringAttachmentDeletedPushResultDto>();
 
             // REFACTORED: added recurring-task result lists for recurring-tasks feature
             var recurringRootCreateResults = new List<RecurringRootCreatedPushResultDto>();
@@ -328,6 +335,13 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                 attachmentDeleteResults,
                                                 cancellationToken);
 
+            // REFACTORED: process recurring attachment deletes for recurring-task-attachments feature
+            await ProcessRecurringAttachmentDeletesAsync(userId,
+                                                         request,
+                                                         utcNow,
+                                                         recurringAttachmentDeleteResults,
+                                                         cancellationToken);
+
             // Process blocks (after tasks/notes so parent ID mappings are available)
             await ProcessBlockCreatesAsync(userId,
                                            request,
@@ -389,6 +403,11 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 Attachments = new SyncPushAttachmentsResultDto
                 {
                     Deleted = attachmentDeleteResults
+                },
+                // REFACTORED: added recurring attachment results for recurring-task-attachments feature
+                RecurringAttachments = new SyncPushRecurringAttachmentsResultDto
+                {
+                    Deleted = recurringAttachmentDeleteResults
                 },
                 // REFACTORED: added recurring-task results for recurring-tasks feature
                 RecurringRoots = new SyncPushRecurringRootsResultDto
@@ -2443,6 +2462,98 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
 
                 results.Add(new AttachmentDeletedPushResultDto
+                {
+                    Id = item.Id,
+                    Status = SyncPushDeletedStatus.Deleted
+                });
+            }
+        }
+
+
+        // REFACTORED: added ProcessRecurringAttachmentDeletesAsync for recurring-task-attachments feature
+        /// <summary>
+        /// Processes recurring attachment delete operations from the client push payload.
+        /// Mirrors ProcessAttachmentDeletesAsync — delete-wins semantics, no version check.
+        /// Blob deletion is deferred to the orphan-cleanup background worker.
+        /// </summary>
+        private async Task ProcessRecurringAttachmentDeletesAsync(
+            Guid userId,
+            SyncPushCommand request,
+            DateTime utcNow,
+            List<RecurringAttachmentDeletedPushResultDto> results,
+            CancellationToken cancellationToken)
+        {
+            foreach (var item in request.RecurringAttachments.Deleted)
+            {
+                var attachment = await _recurringAttachmentRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+
+                if (attachment is null || attachment.UserId != userId)
+                {
+                    results.Add(new RecurringAttachmentDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.NotFound
+                    });
+
+                    continue;
+                }
+
+                if (attachment.IsDeleted)
+                {
+                    results.Add(new RecurringAttachmentDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.AlreadyDeleted
+                    });
+
+                    continue;
+                }
+
+                var payload = OutboxPayloadBuilder.BuildRecurringAttachmentPayload(attachment, request.DeviceId);
+
+                var outboxResult = OutboxMessage.Create<RecurringTaskAttachment, RecurringAttachmentEventType>(
+                    attachment,
+                    RecurringAttachmentEventType.Deleted,
+                    payload,
+                    utcNow);
+
+                if (outboxResult.IsFailure)
+                {
+                    results.Add(new RecurringAttachmentDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.OutboxFailed,
+                            Errors = outboxResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                var deleteResult = attachment.SoftDelete(utcNow);
+                if (deleteResult.IsFailure)
+                {
+                    results.Add(new RecurringAttachmentDeletedPushResultDto
+                    {
+                        Id = item.Id,
+                        Status = SyncPushDeletedStatus.Failed,
+                        Conflict = new SyncPushConflictDetailDto
+                        {
+                            ConflictType = SyncConflictType.ValidationFailed,
+                            Errors = deleteResult.Errors.Select(e => e.Message).ToArray()
+                        }
+                    });
+
+                    continue;
+                }
+
+                _recurringAttachmentRepository.Update(attachment);
+                await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+
+                results.Add(new RecurringAttachmentDeletedPushResultDto
                 {
                     Id = item.Id,
                     Status = SyncPushDeletedStatus.Deleted

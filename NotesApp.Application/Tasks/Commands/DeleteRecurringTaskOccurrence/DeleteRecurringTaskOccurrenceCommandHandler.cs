@@ -30,6 +30,8 @@ namespace NotesApp.Application.Tasks.Commands.DeleteRecurringTaskOccurrence
         private readonly IRecurringTaskRootRepository _rootRepository;
         private readonly IRecurringTaskSeriesRepository _seriesRepository;
         private readonly IRecurringTaskExceptionRepository _exceptionRepository;
+        // REFACTORED: added for recurring-task-attachments feature
+        private readonly IRecurringTaskAttachmentRepository _recurringAttachmentRepository;
         private readonly IOutboxRepository _outboxRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
@@ -39,6 +41,7 @@ namespace NotesApp.Application.Tasks.Commands.DeleteRecurringTaskOccurrence
                                                            IRecurringTaskRootRepository rootRepository,
                                                            IRecurringTaskSeriesRepository seriesRepository,
                                                            IRecurringTaskExceptionRepository exceptionRepository,
+                                                           IRecurringTaskAttachmentRepository recurringAttachmentRepository,
                                                            IOutboxRepository outboxRepository,
                                                            IUnitOfWork unitOfWork,
                                                            ICurrentUserService currentUserService,
@@ -48,6 +51,7 @@ namespace NotesApp.Application.Tasks.Commands.DeleteRecurringTaskOccurrence
             _rootRepository = rootRepository;
             _seriesRepository = seriesRepository;
             _exceptionRepository = exceptionRepository;
+            _recurringAttachmentRepository = recurringAttachmentRepository;
             _outboxRepository = outboxRepository;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
@@ -177,6 +181,17 @@ namespace NotesApp.Application.Tasks.Commands.DeleteRecurringTaskOccurrence
                                                                    utcNow,
                                                                    cancellationToken);
 
+            // Soft-delete exception attachments for each exception being removed.
+            // Required because ExceptionId FK uses DeleteBehavior.Restrict (no DB-level cascade).
+            var exceptionsToRemove = await _exceptionRepository.GetForSeriesInRangeAsync(
+                command.SeriesId, command.OccurrenceDate, DateOnly.MaxValue, cancellationToken);
+
+            foreach (var ex in exceptionsToRemove)
+            {
+                await _recurringAttachmentRepository.SoftDeleteAllForExceptionAsync(
+                    ex.Id, userId, utcNow, cancellationToken);
+            }
+
             // Bulk soft-delete all exceptions from this date forward (change-tracker pattern).
             await _exceptionRepository.SoftDeleteFromDateAsync(command.SeriesId,
                                                                command.OccurrenceDate,
@@ -184,7 +199,7 @@ namespace NotesApp.Application.Tasks.Commands.DeleteRecurringTaskOccurrence
                                                                utcNow,
                                                                cancellationToken);
 
-            // Single SaveChangesAsync — terminates series + deletes tasks + deletes exceptions atomically.
+            // Single SaveChangesAsync — terminates series + deletes tasks + exception attachments + exceptions atomically.
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result.Ok();
@@ -229,13 +244,32 @@ namespace NotesApp.Application.Tasks.Commands.DeleteRecurringTaskOccurrence
             // Bulk soft-delete all materialized TaskItems for the root (change-tracker pattern).
             await _taskRepository.SoftDeleteAllForRootAsync(rootId, userId, utcNow, cancellationToken);
 
+            // Soft-delete all recurring attachments (series template + exception-scoped) for the root.
+            // Required because ExceptionId FK uses DeleteBehavior.Restrict (no DB-level cascade).
+            var allSeries = await _seriesRepository.GetActiveByRootIdAsync(rootId, userId, cancellationToken);
+
+            foreach (var s in allSeries)
+            {
+                await _recurringAttachmentRepository.SoftDeleteAllForSeriesAsync(
+                    s.Id, userId, utcNow, cancellationToken);
+
+                var seriesExceptions = await _exceptionRepository.GetForSeriesInRangeAsync(
+                    s.Id, DateOnly.MinValue, DateOnly.MaxValue, cancellationToken);
+
+                foreach (var ex in seriesExceptions)
+                {
+                    await _recurringAttachmentRepository.SoftDeleteAllForExceptionAsync(
+                        ex.Id, userId, utcNow, cancellationToken);
+                }
+            }
+
             // Bulk soft-delete all exceptions for the root (change-tracker pattern).
             await _exceptionRepository.SoftDeleteAllForRootAsync(rootId, userId, utcNow, cancellationToken);
 
             // Bulk soft-delete all series segments for the root (change-tracker pattern).
             await _seriesRepository.SoftDeleteAllForRootAsync(rootId, userId, utcNow, cancellationToken);
 
-            // Single SaveChangesAsync — root + all series + all tasks + all exceptions atomically.
+            // Single SaveChangesAsync — root + all series + all tasks + all attachments + all exceptions atomically.
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result.Ok();

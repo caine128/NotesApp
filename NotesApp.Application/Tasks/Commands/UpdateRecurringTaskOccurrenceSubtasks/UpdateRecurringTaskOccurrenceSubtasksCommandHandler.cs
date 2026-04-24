@@ -63,6 +63,8 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
         private readonly IRecurringTaskSeriesRepository _seriesRepository;
         private readonly IRecurringTaskExceptionRepository _exceptionRepository;
         private readonly IRecurringTaskSubtaskRepository _recurringSubtaskRepository;
+        // REFACTORED: added for recurring-task-attachments feature
+        private readonly IRecurringTaskAttachmentRepository _recurringAttachmentRepository;
         private readonly IRecurringTaskMaterializerService _materializerService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
@@ -75,6 +77,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
             IRecurringTaskSeriesRepository seriesRepository,
             IRecurringTaskExceptionRepository exceptionRepository,
             IRecurringTaskSubtaskRepository recurringSubtaskRepository,
+            IRecurringTaskAttachmentRepository recurringAttachmentRepository,
             IRecurringTaskMaterializerService materializerService,
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUserService,
@@ -86,6 +89,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
             _seriesRepository = seriesRepository;
             _exceptionRepository = exceptionRepository;
             _recurringSubtaskRepository = recurringSubtaskRepository;
+            _recurringAttachmentRepository = recurringAttachmentRepository;
             _materializerService = materializerService;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
@@ -428,11 +432,35 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
             //    - New series (step 5)
             //    - New template subtasks (step 6)
             //    - New materialized TaskItems + Subtask rows (step 7)
+            //    - Copied series template attachments (below)
             await _seriesRepository.AddAsync(newSeries, cancellationToken);
 
             foreach (var st in newTemplateSubtasks)
             {
                 await _recurringSubtaskRepository.AddAsync(st, cancellationToken);
+            }
+
+            // Copy series template attachments from old series to new series (same BlobPath, new row IDs).
+            var oldSeriesAttachments = await _recurringAttachmentRepository.GetBySeriesIdAsync(
+                oldSeries.Id, cancellationToken);
+
+            foreach (var template in oldSeriesAttachments)
+            {
+                var copyResult = RecurringTaskAttachment.CreateForSeries(
+                    id: Guid.NewGuid(),
+                    userId: userId,
+                    seriesId: newSeries.Id,
+                    fileName: template.FileName,
+                    contentType: template.ContentType,
+                    sizeBytes: template.SizeBytes,
+                    blobPath: template.BlobPath,
+                    displayOrder: template.DisplayOrder,
+                    utcNow: utcNow);
+
+                if (copyResult.IsFailure)
+                    return Result.Fail(copyResult.Errors.Select(e => new Error(e.Message)));
+
+                await _recurringAttachmentRepository.AddAsync(copyResult.Value!, cancellationToken);
             }
 
             foreach (var task in batch.Tasks)
