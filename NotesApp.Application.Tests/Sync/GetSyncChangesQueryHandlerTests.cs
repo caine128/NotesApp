@@ -34,6 +34,8 @@ namespace NotesApp.Application.Tests.Sync
         private readonly Mock<IRecurringTaskSeriesRepository> _recurringSeriesRepositoryMock = new();
         private readonly Mock<IRecurringTaskSubtaskRepository> _recurringSeriesSubtaskRepositoryMock = new();
         private readonly Mock<IRecurringTaskExceptionRepository> _recurringExceptionRepositoryMock = new();
+        // REFACTORED: added recurring attachment repository mock for recurring-task-attachments feature
+        private readonly Mock<IRecurringTaskAttachmentRepository> _recurringAttachmentRepositoryMock = new();
         private readonly Mock<ICurrentUserService> _currentUserServiceMock = new();
         private readonly Mock<ILogger<GetSyncChangesQueryHandler>> _loggerMock = new();
 
@@ -83,6 +85,11 @@ namespace NotesApp.Application.Tests.Sync
                 .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new List<RecurringTaskException>());
 
+            // REFACTORED: set up recurring attachment repo mock to return empty collection
+            _recurringAttachmentRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskAttachment>());
+
             return new GetSyncChangesQueryHandler(
                 _taskRepositoryMock.Object,
                 _noteRepositoryMock.Object,
@@ -96,7 +103,7 @@ namespace NotesApp.Application.Tests.Sync
                 _recurringSeriesRepositoryMock.Object,
                 _recurringSeriesSubtaskRepositoryMock.Object,
                 _recurringExceptionRepositoryMock.Object,
-                new Mock<IRecurringTaskAttachmentRepository>().Object, // REFACTORED: added for recurring-task-attachments feature
+                _recurringAttachmentRepositoryMock.Object, // REFACTORED: added for recurring-task-attachments feature
                 _currentUserServiceMock.Object,
                 _loggerMock.Object);
         }
