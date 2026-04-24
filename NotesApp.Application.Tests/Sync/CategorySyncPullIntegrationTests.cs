@@ -55,6 +55,7 @@ namespace NotesApp.Application.Tests.Sync
                 new RecurringTaskSeriesRepository(context),
                 new RecurringTaskSubtaskRepository(context),
                 new RecurringTaskExceptionRepository(context),
+                new RecurringTaskAttachmentRepository(context), // REFACTORED: added for recurring-task-attachments feature
                 currentUserSvc.Object,
                 new Mock<ILogger<GetSyncChangesQueryHandler>>().Object);
         }

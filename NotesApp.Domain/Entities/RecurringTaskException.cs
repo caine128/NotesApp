@@ -101,6 +101,19 @@ namespace NotesApp.Domain.Entities
         /// </summary>
         public bool IsCompleted { get; private set; }
 
+        // ATTACHMENT OVERRIDE FLAG
+
+        /// <summary>
+        /// When <c>true</c>, this occurrence's attachment list is managed independently via
+        /// <see cref="RecurringTaskAttachment"/> rows linked to this exception's ID.
+        /// When <c>false</c>, the occurrence inherits the series template attachments.
+        ///
+        /// Set to <c>true</c> the first time an attachment upload or delete targets this specific
+        /// occurrence. Once set, it is never cleared — even if all exception attachments are later
+        /// deleted — to prevent "snap-back" to the series template attachment list.
+        /// </summary>
+        public bool HasAttachmentOverride { get; private set; }
+
         // MATERIALIZATION LINK
 
         /// <summary>
@@ -386,6 +399,21 @@ namespace NotesApp.Domain.Entities
             IncrementVersion();
             Touch(utcNow);
             return DomainResult.Success();
+        }
+
+        /// <summary>
+        /// Marks this exception as having its own managed attachment list.
+        /// Idempotent — calling when already marked is a no-op.
+        /// Sets <see cref="HasAttachmentOverride"/> = <c>true</c> and increments version.
+        /// </summary>
+        public void MarkAttachmentsOverridden(DateTime utcNow)
+        {
+            if (HasAttachmentOverride)
+                return;
+
+            HasAttachmentOverride = true;
+            IncrementVersion();
+            Touch(utcNow);
         }
 
         /// <summary>

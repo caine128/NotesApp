@@ -78,6 +78,7 @@ namespace NotesApp.Application.Tests.Sync
                 new RecurringTaskSeriesRepository(context),
                 new RecurringTaskSubtaskRepository(context),
                 new RecurringTaskExceptionRepository(context),
+                new RecurringTaskAttachmentRepository(context), // REFACTORED: added for recurring-task-attachments feature
                 new OutboxRepository(context),
                 new UnitOfWork(context),
                 clock.Object,

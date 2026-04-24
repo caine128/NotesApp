@@ -115,5 +115,29 @@ namespace NotesApp.Application.Common
 
             return JsonSerializer.Serialize(payload);
         }
+
+        // REFACTORED: added BuildRecurringAttachmentPayload for recurring-task-attachments feature
+        /// <summary>
+        /// Builds the standardized JSON payload for recurring-task attachment outbox messages.
+        /// </summary>
+        public static string BuildRecurringAttachmentPayload(RecurringTaskAttachment attachment,
+                                                              Guid originDeviceId)
+        {
+            var payload = new
+            {
+                AttachmentId = attachment.Id,
+                attachment.UserId,
+                attachment.SeriesId,
+                attachment.ExceptionId,
+                attachment.FileName,
+                attachment.ContentType,
+                attachment.SizeBytes,
+                attachment.BlobPath,
+                attachment.DisplayOrder,
+                OriginDeviceId = originDeviceId
+            };
+
+            return JsonSerializer.Serialize(payload);
+        }
     }
 }

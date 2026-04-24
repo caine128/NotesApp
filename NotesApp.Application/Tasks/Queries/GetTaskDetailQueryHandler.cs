@@ -3,6 +3,7 @@ using MediatR;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Attachments;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.RecurringAttachments;
 using NotesApp.Application.Subtasks;
 using NotesApp.Application.Tasks.Models;
 using System;
@@ -20,17 +21,24 @@ namespace NotesApp.Application.Tasks.Queries
         private readonly ISubtaskRepository _subtaskRepository;
         // REFACTORED: added attachment repository for task-attachments feature
         private readonly IAttachmentRepository _attachmentRepository;
+        // REFACTORED: added for recurring-task-attachments feature
+        private readonly IRecurringTaskAttachmentRepository _recurringAttachmentRepository;
+        private readonly IRecurringTaskExceptionRepository _exceptionRepository;
         private readonly ICurrentUserService _currentUserService;
 
         public GetTaskDetailQueryHandler(
             ITaskRepository taskRepository,
             ISubtaskRepository subtaskRepository,
             IAttachmentRepository attachmentRepository,
+            IRecurringTaskAttachmentRepository recurringAttachmentRepository,
+            IRecurringTaskExceptionRepository exceptionRepository,
             ICurrentUserService currentUserService)
         {
             _taskRepository = taskRepository;
             _subtaskRepository = subtaskRepository;
             _attachmentRepository = attachmentRepository;
+            _recurringAttachmentRepository = recurringAttachmentRepository;
+            _exceptionRepository = exceptionRepository;
             _currentUserService = currentUserService;
         }
 
@@ -58,7 +66,32 @@ namespace NotesApp.Application.Tasks.Queries
             var attachments = await _attachmentRepository.GetAllForTaskAsync(task.Id, userId, cancellationToken);
             var attachmentDtos = attachments.Select(a => a.ToAttachmentDto()).ToList();
 
-            var dto = task.ToDetailDto() with { Subtasks = subtaskDtos, Attachments = attachmentDtos };
+            // REFACTORED: resolve recurring attachments for materialized recurring occurrences
+            // (recurring-task-attachments feature). Applies HasAttachmentOverride semantics:
+            // exception exists AND HasAttachmentOverride=true → exception-scoped attachments;
+            // otherwise → series template attachments.
+            var recurringAttachmentDtos = new List<RecurringAttachments.Models.RecurringAttachmentDto>();
+
+            if (task.RecurringSeriesId.HasValue && task.CanonicalOccurrenceDate.HasValue)
+            {
+                var exception = await _exceptionRepository.GetByOccurrenceAsync(
+                    task.RecurringSeriesId.Value, task.CanonicalOccurrenceDate.Value, cancellationToken);
+
+                var recurringAttachments = exception is not null && exception.HasAttachmentOverride
+                    ? await _recurringAttachmentRepository.GetByExceptionIdAsync(exception.Id, cancellationToken)
+                    : await _recurringAttachmentRepository.GetBySeriesIdAsync(task.RecurringSeriesId.Value, cancellationToken);
+
+                recurringAttachmentDtos = recurringAttachments
+                    .Select(a => a.ToRecurringAttachmentDto())
+                    .ToList();
+            }
+
+            var dto = task.ToDetailDto() with
+            {
+                Subtasks = subtaskDtos,
+                Attachments = attachmentDtos,
+                RecurringAttachments = recurringAttachmentDtos
+            };
             return Result.Ok(dto);
         }
     }

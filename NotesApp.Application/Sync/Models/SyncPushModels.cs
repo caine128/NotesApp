@@ -60,6 +60,13 @@ namespace NotesApp.Application.Sync.Models
         /// Processed after RecurringSeries so SeriesId references are available.
         /// </summary>
         public SyncPushRecurringExceptionsDto RecurringExceptions { get; init; } = new();
+
+        // REFACTORED: added recurring attachment push for recurring-task-attachments feature
+        /// <summary>
+        /// Recurring task attachment deletions from the client device.
+        /// Uploads always go through the REST endpoint; only deletions are synced via push.
+        /// </summary>
+        public SyncPushRecurringAttachmentsDto RecurringAttachments { get; init; } = new();
     }
 
     // ----------------------------
@@ -343,6 +350,9 @@ namespace NotesApp.Application.Sync.Models
         public SyncPushRecurringSeriesResultDto RecurringSeries { get; init; } = new();
         public SyncPushRecurringSeriesSubtasksResultDto RecurringSeriesSubtasks { get; init; } = new();
         public SyncPushRecurringExceptionsResultDto RecurringExceptions { get; init; } = new();
+
+        // REFACTORED: added recurring attachment results for recurring-task-attachments feature
+        public SyncPushRecurringAttachmentsResultDto RecurringAttachments { get; init; } = new();
     }
 
     public sealed record SyncPushTasksResultDto
@@ -1138,6 +1148,45 @@ namespace NotesApp.Application.Sync.Models
     {
         public Guid Id { get; init; }
         public SyncPushDeletedStatus Status { get; init; }
+        public SyncPushConflictDetailDto? Conflict { get; init; }
+    }
+
+    // ----------------------------
+    // REFACTORED: Recurring Attachments — request and result DTOs (recurring-task-attachments feature)
+    // ----------------------------
+
+    /// <summary>
+    /// Recurring task attachment push from the client device.
+    /// Only deletions are included — uploads always go through the REST endpoint.
+    /// </summary>
+    public sealed record SyncPushRecurringAttachmentsDto
+    {
+        public IReadOnlyList<RecurringAttachmentDeletedPushItemDto> Deleted { get; init; } = [];
+    }
+
+    /// <summary>A recurring task attachment deletion initiated by the mobile client.</summary>
+    public sealed record RecurringAttachmentDeletedPushItemDto
+    {
+        public Guid Id { get; init; }
+
+        /// <summary>
+        /// Optional version for stronger delete semantics.
+        /// Currently not enforced on delete — "delete wins" semantics apply.
+        /// </summary>
+        public long? ExpectedVersion { get; init; }
+    }
+
+    public sealed record SyncPushRecurringAttachmentsResultDto
+    {
+        public IReadOnlyList<RecurringAttachmentDeletedPushResultDto> Deleted { get; init; } = [];
+    }
+
+    public sealed record RecurringAttachmentDeletedPushResultDto
+    {
+        public Guid Id { get; init; }
+        public SyncPushDeletedStatus Status { get; init; }
+
+        /// <summary>Conflict details when Status indicates a failure. Null for successful operations.</summary>
         public SyncPushConflictDetailDto? Conflict { get; init; }
     }
 }

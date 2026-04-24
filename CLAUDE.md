@@ -37,6 +37,7 @@ If that confidence is missing, do not guess and do not present assumptions as re
 - Domain entities return `DomainResult` / `DomainResult<T>`.
 - Use the existing conversion helpers instead of inventing new result shapes.
 - Validators live in Application and are executed by the MediatR validation pipeline.
+- **Every command and query handler must have a corresponding validator.** When you add a handler, add its validator in the same folder before considering the task done. No exceptions.
 
 ## Command handler pattern
 For update/delete-style handlers, preserve this order:
