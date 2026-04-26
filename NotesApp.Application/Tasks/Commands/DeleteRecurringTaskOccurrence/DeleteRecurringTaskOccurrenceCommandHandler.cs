@@ -87,24 +87,6 @@ namespace NotesApp.Application.Tasks.Commands.DeleteRecurringTaskOccurrence
                                                                            command.OccurrenceDate,
                                                                            cancellationToken);
 
-            if (existing is not null)
-            {
-                // Already a deletion exception — nothing to do (idempotent).
-                if (existing.IsDeletion)
-                {
-                    return Result.Ok();
-                }
-
-                // Existing override exception: soft-delete it (it will be replaced by the deletion tombstone below).
-                var existingSoftDeleteResult = existing.SoftDelete(utcNow);
-                if (existingSoftDeleteResult.IsFailure)
-                {
-                    return Result.Fail(existingSoftDeleteResult.Errors.Select(e => new Error(e.Message)));
-                }
-
-                _exceptionRepository.Update(existing);
-            }
-
             // Determine the materialized TaskItem FK to record in the exception (may be null for virtual).
             Guid? materializedTaskItemId = null;
 
@@ -129,7 +111,22 @@ namespace NotesApp.Application.Tasks.Commands.DeleteRecurringTaskOccurrence
                 materializedTaskItemId = task.Id;
             }
 
-            // Create the deletion exception (tombstone so future virtual projection skips this date).
+            if (existing is not null)
+            {
+                // Convert the existing exception into a deletion in-place (idempotent on already-deletion rows).
+                // Avoids leaving a duplicate (soft-deleted override + new live deletion) row pair.
+                var convertResult = existing.ConvertToDeletion(materializedTaskItemId, utcNow);
+                if (convertResult.IsFailure)
+                {
+                    return Result.Fail(convertResult.Errors.Select(e => new Error(e.Message)));
+                }
+
+                _exceptionRepository.Update(existing);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                return Result.Ok();
+            }
+
+            // No existing exception — create a fresh deletion tombstone.
             var exceptionResult = RecurringTaskException.CreateDeletion(userId: userId,
                                                                         seriesId: command.SeriesId,
                                                                         occurrenceDate: command.OccurrenceDate,

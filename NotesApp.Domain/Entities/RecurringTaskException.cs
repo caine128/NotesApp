@@ -417,6 +417,46 @@ namespace NotesApp.Domain.Entities
         }
 
         /// <summary>
+        /// Converts this override exception into a deletion exception in-place.
+        /// Clears all override fields and sets <see cref="IsDeletion"/> = <c>true</c>.
+        /// Idempotent — calling on an already-deletion exception is a no-op success.
+        /// Used by the delete-occurrence Single-scope handler to avoid creating a duplicate row
+        /// when an override exception already exists for the same (SeriesId, OccurrenceDate).
+        /// </summary>
+        public DomainResult ConvertToDeletion(Guid? materializedTaskItemId, DateTime utcNow)
+        {
+            if (IsDeleted)
+            {
+                return DomainResult.Failure(
+                    new DomainError("RecurringException.Deleted", "Cannot update a deleted exception."));
+            }
+
+            if (IsDeletion)
+            {
+                return DomainResult.Success();
+            }
+
+            IsDeletion = true;
+            OverrideTitle = null;
+            OverrideDescription = null;
+            OverrideDate = null;
+            OverrideStartTime = null;
+            OverrideEndTime = null;
+            OverrideLocation = null;
+            OverrideTravelTime = null;
+            OverrideCategoryId = null;
+            OverridePriority = null;
+            OverrideMeetingLink = null;
+            OverrideReminderAtUtc = null;
+            IsCompleted = false;
+            MaterializedTaskItemId = materializedTaskItemId;
+
+            IncrementVersion();
+            Touch(utcNow);
+            return DomainResult.Success();
+        }
+
+        /// <summary>
         /// Soft-deletes this exception.
         /// Idempotent — calling on an already-deleted exception is a no-op.
         /// </summary>
