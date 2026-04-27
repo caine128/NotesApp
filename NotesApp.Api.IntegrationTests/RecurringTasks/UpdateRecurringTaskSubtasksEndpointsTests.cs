@@ -75,7 +75,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "Single",
+                Scope = 0,
                 TaskItemId = target.Id,
                 SeriesId = series.Id,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,
@@ -146,7 +146,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "Single",
+                Scope = 0,
                 TaskItemId = (Guid?)null,
                 SeriesId = seriesId,
                 OccurrenceDate = virtualDate,
@@ -215,7 +215,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "Single",
+                Scope = 0,
                 TaskItemId = (Guid?)null,
                 SeriesId = seriesId,
                 OccurrenceDate = virtualDate,
@@ -250,7 +250,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "All",
+                Scope = 2,
                 TaskItemId = (Guid?)null,
                 SeriesId = series.Id,
                 Subtasks = new[]
@@ -294,7 +294,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "Single",
+                Scope = 0,
                 TaskItemId = target.Id,
                 SeriesId = series.Id,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,
@@ -316,7 +316,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "Single",
+                Scope = 0,
                 TaskItemId = target.Id,
                 SeriesId = series.Id,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,
@@ -338,7 +338,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "Single",
+                Scope = 0,
                 TaskItemId = target.Id,
                 SeriesId = Guid.Empty,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,
@@ -365,7 +365,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
             var attackerClient = _factory.CreateClientAsUser(Guid.NewGuid());
             var body = new
             {
-                Scope = "Single",
+                Scope = 0,
                 TaskItemId = target.Id,
                 SeriesId = series.Id,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,
@@ -394,7 +394,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
             var anonClient = _factory.CreateClient();
             var body = new
             {
-                Scope = "Single",
+                Scope = 0,
                 TaskItemId = target.Id,
                 SeriesId = series.Id,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,

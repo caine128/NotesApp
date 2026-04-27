@@ -90,7 +90,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "All",
+                Scope = 2,
                 SeriesId = series.Id,
                 OccurrenceDate = firstTask.CanonicalOccurrenceDate!.Value,
                 Title = "Renamed title",
@@ -137,7 +137,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
             // First — make a Single-scope override on the second occurrence.
             var singleBody = new
             {
-                Scope = "Single",
+                Scope = 0,
                 SeriesId = series.Id,
                 OccurrenceDate = pinnedDate,
                 Title = "Pinned override",
@@ -150,7 +150,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
             // Now do an All-scope update.
             var allBody = new
             {
-                Scope = "All",
+                Scope = 2,
                 SeriesId = series.Id,
                 OccurrenceDate = tasks[0].CanonicalOccurrenceDate!.Value,
                 Title = "Bulk title",
@@ -186,7 +186,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "ThisAndFollowing",
+                Scope = 1,
                 SeriesId = series.Id,
                 OccurrenceDate = splitDate,
                 Title = "New segment title",
@@ -246,7 +246,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "ThisAndFollowing",
+                Scope = 1,
                 SeriesId = series.Id,
                 OccurrenceDate = splitTask.CanonicalOccurrenceDate!.Value,
                 Title = "Weekly now",
@@ -272,7 +272,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "ThisAndFollowing",
+                Scope = 1,
                 SeriesId = series.Id,
                 OccurrenceDate = tasks[1].CanonicalOccurrenceDate!.Value,
                 Title = "Bad rule",
@@ -298,7 +298,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "Single",
+                Scope = 0,
                 SeriesId = series.Id,
                 OccurrenceDate = occurrenceDate,
                 Title = "One-off override",
@@ -344,7 +344,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var first = new
             {
-                Scope = "Single",
+                Scope = 0,
                 SeriesId = series.Id,
                 OccurrenceDate = occurrenceDate,
                 Title = "Override v1",
@@ -356,7 +356,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var second = new
             {
-                Scope = "Single",
+                Scope = 0,
                 SeriesId = series.Id,
                 OccurrenceDate = occurrenceDate,
                 Title = "Override v2",
@@ -423,7 +423,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "Single",
+                Scope = 0,
                 SeriesId = seriesId,
                 OccurrenceDate = virtualDate,
                 Title = "Virtual override",
@@ -483,7 +483,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
             // Create an override exception via Single-scope edit.
             var overrideBody = new
             {
-                Scope = "Single",
+                Scope = 0,
                 SeriesId = series.Id,
                 OccurrenceDate = occurrenceDate,
                 Title = "Detailed override",
@@ -517,7 +517,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "All",
+                Scope = 2,
                 SeriesId = series.Id,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,
                 Title = new string('x', 201), // > 200 chars
@@ -537,7 +537,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "All",
+                Scope = 2,
                 SeriesId = series.Id,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,
                 Title = "Reasonable",
@@ -559,7 +559,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "All",
+                Scope = 2,
                 SeriesId = series.Id,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,
                 Title = "",
@@ -585,7 +585,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "Single",
+                Scope = 0,
                 SeriesId = series.Id,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,
                 Title = "Hijack",
@@ -609,7 +609,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             var body = new
             {
-                Scope = "Single",
+                Scope = 0,
                 SeriesId = series.Id,
                 OccurrenceDate = occurrenceDate,
                 Title = "Hijack virtual",
@@ -636,7 +636,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
             var anonClient = _factory.CreateClient();
             var body = new
             {
-                Scope = "All",
+                Scope = 2,
                 SeriesId = series.Id,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,
                 Title = "Anon",
