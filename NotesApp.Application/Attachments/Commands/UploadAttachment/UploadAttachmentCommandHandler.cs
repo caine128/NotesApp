@@ -88,16 +88,10 @@ namespace NotesApp.Application.Attachments.Commands.UploadAttachment
             // Load task WITHOUT tracking
             var task = await _taskRepository.GetByIdUntrackedAsync(request.TaskId, cancellationToken);
 
-            if (task is null || task.UserId != userId)
+            if (task is null || task.UserId != userId || task.IsDeleted)
             {
-                return Result.Fail(new Error("Task.NotFound")
-                    .WithMetadata("Message", "Task not found."));
-            }
-
-            if (task.IsDeleted)
-            {
-                return Result.Fail(new Error("Task.NotFound")
-                    .WithMetadata("Message", "Task not found."));
+                return Result.Fail(new Error("Task not found.")
+                    .WithMetadata("ErrorCode", "Tasks.NotFound"));
             }
 
             // Validate content type against the configured whitelist (runtime value)

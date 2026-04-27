@@ -222,7 +222,6 @@ namespace NotesApp.Api.IntegrationTests.RecurringAttachments
             {
                 Date = startDate,
                 Title = "Future series",
-                Priority = "Normal",
                 RecurrenceRule = new
                 {
                     RRuleString = "FREQ=DAILY;COUNT=10",
@@ -237,8 +236,12 @@ namespace NotesApp.Api.IntegrationTests.RecurringAttachments
 
             using var scope = _factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            // userId is the external claim (oid); look up the internal DB user via UserLogins.
+            var login = await db.UserLogins.AsNoTracking()
+                .SingleAsync(ul => ul.Provider == "https://test.local" && ul.ExternalId == userId.ToString());
             var seriesId = (await db.RecurringTaskSeries.AsNoTracking()
-                .SingleAsync(s => s.UserId == userId)).Id;
+                .SingleAsync(s => s.UserId == login.UserId)).Id;
             return (userId, seriesId, client);
         }
 

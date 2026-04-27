@@ -43,7 +43,9 @@ namespace NotesApp.Api.FluentResults
 
             // Map known error codes to specific HTTP status codes.
             if (errorCodes.Contains("Tasks.NotFound") ||
-            errorCodes.Contains("Notes.NotFound"))
+                errorCodes.Contains("Notes.NotFound") ||
+                errorCodes.Contains("Attachments.NotFound") ||
+                errorCodes.Contains("Categories.NotFound"))
             {
                 statusCode = StatusCodes.Status404NotFound;
             }

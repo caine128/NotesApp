@@ -50,7 +50,6 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 Description = "Original description",
                 StartTime = new TimeOnly(9, 0),
                 EndTime = new TimeOnly(9, 30),
-                Priority = "Normal",
                 RecurrenceRule = new
                 {
                     RRuleString = $"FREQ=DAILY;COUNT={count}",
@@ -66,14 +65,17 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             using var scope = _factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var root = await db.RecurringTaskRoots.AsNoTracking().SingleAsync(r => r.UserId == userId);
-            var series = await db.RecurringTaskSeries.AsNoTracking().SingleAsync(s => s.UserId == userId);
+            var login = await db.UserLogins.AsNoTracking()
+                .SingleAsync(ul => ul.Provider == "https://test.local" && ul.ExternalId == userId.ToString());
+            var internalUserId = login.UserId;
+            var root = await db.RecurringTaskRoots.AsNoTracking().SingleAsync(r => r.UserId == internalUserId);
+            var series = await db.RecurringTaskSeries.AsNoTracking().SingleAsync(s => s.UserId == internalUserId);
             var tasks = await db.Tasks.AsNoTracking()
-                .Where(t => t.UserId == userId)
+                .Where(t => t.UserId == internalUserId)
                 .OrderBy(t => t.Date)
                 .ToListAsync();
 
-            return (userId, root, series, tasks, client);
+            return (internalUserId, root, series, tasks, client);
         }
 
         // -----------------------------------------------------------------
@@ -95,7 +97,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 Description = "New description",
                 StartTime = new TimeOnly(10, 0),
                 EndTime = new TimeOnly(10, 45),
-                Priority = "High",
+                Priority = 3,
                 IsCompleted = false
             };
 
@@ -139,7 +141,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 SeriesId = series.Id,
                 OccurrenceDate = pinnedDate,
                 Title = "Pinned override",
-                Priority = "High",
+                Priority = 3,
                 IsCompleted = false
             };
             var singleResponse = await client.PutAsJsonAsync($"/api/tasks/{pinnedTask.Id}/recurring", singleBody);
@@ -152,7 +154,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 SeriesId = series.Id,
                 OccurrenceDate = tasks[0].CanonicalOccurrenceDate!.Value,
                 Title = "Bulk title",
-                Priority = "Normal",
+                Priority = 2,
                 IsCompleted = false
             };
             var response = await client.PutAsJsonAsync($"/api/tasks/{tasks[0].Id}/recurring", allBody);
@@ -191,7 +193,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 Description = "New segment desc",
                 StartTime = new TimeOnly(11, 0),
                 EndTime = new TimeOnly(11, 30),
-                Priority = "Normal",
+                Priority = 2,
                 IsCompleted = false
             };
 
@@ -248,7 +250,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 SeriesId = series.Id,
                 OccurrenceDate = splitTask.CanonicalOccurrenceDate!.Value,
                 Title = "Weekly now",
-                Priority = "Normal",
+                Priority = 2,
                 IsCompleted = false,
                 NewRRuleString = "FREQ=WEEKLY;COUNT=2"
             };
@@ -274,7 +276,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 SeriesId = series.Id,
                 OccurrenceDate = tasks[1].CanonicalOccurrenceDate!.Value,
                 Title = "Bad rule",
-                Priority = "Normal",
+                Priority = 2,
                 IsCompleted = false,
                 NewRRuleString = "COUNT=3" // missing FREQ=
             };
@@ -302,7 +304,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 Title = "One-off override",
                 Description = "Special",
                 Location = "Room 9",
-                Priority = "High",
+                Priority = 3,
                 IsCompleted = false
             };
 
@@ -346,7 +348,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 SeriesId = series.Id,
                 OccurrenceDate = occurrenceDate,
                 Title = "Override v1",
-                Priority = "Normal",
+                Priority = 2,
                 IsCompleted = false
             };
             (await client.PutAsJsonAsync($"/api/tasks/{target.Id}/recurring", first))
@@ -358,7 +360,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 SeriesId = series.Id,
                 OccurrenceDate = occurrenceDate,
                 Title = "Override v2",
-                Priority = "High",
+                Priority = 3,
                 IsCompleted = true
             };
             (await client.PutAsJsonAsync($"/api/tasks/{target.Id}/recurring", second))
@@ -391,7 +393,6 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
             {
                 Date = startDate,
                 Title = "Future series",
-                Priority = "Normal",
                 RecurrenceRule = new
                 {
                     RRuleString = "FREQ=DAILY;COUNT=10",
@@ -404,19 +405,18 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
             (await client.PostAsJsonAsync("/api/tasks", payload))
                 .StatusCode.Should().Be(HttpStatusCode.Created);
 
+            Guid seriesId;
             using (var seedScope = _factory.Services.CreateScope())
             {
                 var db = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var login = await db.UserLogins.AsNoTracking()
+                    .SingleAsync(ul => ul.Provider == "https://test.local" && ul.ExternalId == userId.ToString());
+                var internalUserId = login.UserId;
                 // Confirm we have a series; tasks may or may not be materialized depending on horizon.
-                (await db.RecurringTaskSeries.AsNoTracking().AnyAsync(s => s.UserId == userId))
+                (await db.RecurringTaskSeries.AsNoTracking().AnyAsync(s => s.UserId == internalUserId))
                     .Should().BeTrue();
-            }
-
-            Guid seriesId;
-            using (var s = _factory.Services.CreateScope())
-            {
-                seriesId = (await s.ServiceProvider.GetRequiredService<AppDbContext>()
-                    .RecurringTaskSeries.AsNoTracking().SingleAsync(x => x.UserId == userId)).Id;
+                seriesId = (await db.RecurringTaskSeries.AsNoTracking()
+                    .SingleAsync(x => x.UserId == internalUserId)).Id;
             }
 
             var virtualDate = startDate.AddDays(8); // far enough out to be virtual
@@ -427,7 +427,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 SeriesId = seriesId,
                 OccurrenceDate = virtualDate,
                 Title = "Virtual override",
-                Priority = "High",
+                Priority = 3,
                 IsCompleted = true
             };
 
@@ -488,7 +488,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 OccurrenceDate = occurrenceDate,
                 Title = "Detailed override",
                 Description = "Override description",
-                Priority = "High",
+                Priority = 3,
                 IsCompleted = false
             };
             (await client.PutAsJsonAsync($"/api/tasks/{target.Id}/recurring", overrideBody))
@@ -521,7 +521,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 SeriesId = series.Id,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,
                 Title = new string('x', 201), // > 200 chars
-                Priority = "Normal",
+                Priority = 2,
                 IsCompleted = false
             };
 
@@ -543,7 +543,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 Title = "Reasonable",
                 StartTime = new TimeOnly(10, 0),
                 EndTime = new TimeOnly(9, 0), // earlier than start
-                Priority = "Normal",
+                Priority = 2,
                 IsCompleted = false
             };
 
@@ -563,7 +563,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 SeriesId = series.Id,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,
                 Title = "",
-                Priority = "Normal",
+                Priority = 2,
                 IsCompleted = false
             };
 
@@ -589,7 +589,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 SeriesId = series.Id,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,
                 Title = "Hijack",
-                Priority = "Normal",
+                Priority = 2,
                 IsCompleted = false
             };
 
@@ -613,7 +613,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 SeriesId = series.Id,
                 OccurrenceDate = occurrenceDate,
                 Title = "Hijack virtual",
-                Priority = "Normal",
+                Priority = 2,
                 IsCompleted = false
             };
 
@@ -640,7 +640,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 SeriesId = series.Id,
                 OccurrenceDate = target.CanonicalOccurrenceDate!.Value,
                 Title = "Anon",
-                Priority = "Normal",
+                Priority = 2,
                 IsCompleted = false
             };
 

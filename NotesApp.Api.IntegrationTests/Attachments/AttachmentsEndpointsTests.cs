@@ -52,9 +52,14 @@ namespace NotesApp.Api.IntegrationTests.Attachments
             using var scope = _factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+            // userId is the external claim (oid); CurrentUserService creates an internal User
+            // with a different auto-generated Id. Derive the real internal userId from the task.
+            var taskRow = await db.Tasks.AsNoTracking().SingleAsync(t => t.Id == task.TaskId);
+            var internalUserId = taskRow.UserId;
+
             var row = await db.Attachments.AsNoTracking()
                 .SingleAsync(a => a.Id == dto.AttachmentId);
-            row.UserId.Should().Be(userId);
+            row.UserId.Should().Be(internalUserId);
             row.TaskId.Should().Be(task.TaskId);
             row.FileName.Should().Be("hello.pdf");
             row.ContentType.Should().Be("application/pdf");
@@ -63,7 +68,7 @@ namespace NotesApp.Api.IntegrationTests.Attachments
             row.BlobPath.Should().NotBeNullOrWhiteSpace();
 
             var outbox = await db.OutboxMessages.AsNoTracking()
-                .SingleAsync(o => o.AggregateId == dto.AttachmentId && o.UserId == userId);
+                .SingleAsync(o => o.AggregateId == dto.AttachmentId && o.UserId == internalUserId);
             outbox.AggregateType.Should().Be(nameof(Attachment));
             outbox.MessageType.Should().Be($"{nameof(Attachment)}.{AttachmentEventType.Created}");
             outbox.Payload.Should().NotBeNullOrWhiteSpace();

@@ -35,7 +35,6 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
             {
                 Date = startDate,
                 Title = "Deletable",
-                Priority = "Normal",
                 RecurrenceRule = new
                 {
                     RRuleString = $"FREQ=DAILY;COUNT={count}",
@@ -51,13 +50,16 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             using var scope = _factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var root = await db.RecurringTaskRoots.AsNoTracking().SingleAsync(r => r.UserId == userId);
-            var series = await db.RecurringTaskSeries.AsNoTracking().SingleAsync(s => s.UserId == userId);
+            var login = await db.UserLogins.AsNoTracking()
+                .SingleAsync(ul => ul.Provider == "https://test.local" && ul.ExternalId == userId.ToString());
+            var internalUserId = login.UserId;
+            var root = await db.RecurringTaskRoots.AsNoTracking().SingleAsync(r => r.UserId == internalUserId);
+            var series = await db.RecurringTaskSeries.AsNoTracking().SingleAsync(s => s.UserId == internalUserId);
             var tasks = await db.Tasks.AsNoTracking()
-                .Where(t => t.UserId == userId)
+                .Where(t => t.UserId == internalUserId)
                 .OrderBy(t => t.Date)
                 .ToListAsync();
-            return (userId, root, series, tasks, client);
+            return (internalUserId, root, series, tasks, client);
         }
 
         // -----------------------------------------------------------------
@@ -119,7 +121,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 SeriesId = series.Id,
                 OccurrenceDate = occurrenceDate,
                 Title = "Pre-deletion override",
-                Priority = "Normal",
+                Priority = 2,
                 IsCompleted = false
             };
             (await client.PutAsJsonAsync($"/api/tasks/{target.Id}/recurring", updateBody))
@@ -188,7 +190,6 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
             {
                 Date = startDate,
                 Title = "Future series",
-                Priority = "Normal",
                 RecurrenceRule = new
                 {
                     RRuleString = "FREQ=DAILY;COUNT=10",
@@ -204,8 +205,11 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
             Guid seriesId;
             using (var s = _factory.Services.CreateScope())
             {
-                seriesId = (await s.ServiceProvider.GetRequiredService<AppDbContext>()
-                    .RecurringTaskSeries.AsNoTracking().SingleAsync(x => x.UserId == userId)).Id;
+                var db0 = s.ServiceProvider.GetRequiredService<AppDbContext>();
+                var login = await db0.UserLogins.AsNoTracking()
+                    .SingleAsync(ul => ul.Provider == "https://test.local" && ul.ExternalId == userId.ToString());
+                seriesId = (await db0.RecurringTaskSeries.AsNoTracking()
+                    .SingleAsync(x => x.UserId == login.UserId)).Id;
             }
             var virtualDate = startDate.AddDays(8);
 

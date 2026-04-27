@@ -55,14 +55,17 @@ namespace NotesApp.Api.IntegrationTests.Categories
                 .AsNoTracking()
                 .SingleAsync(c => c.Id == dto.CategoryId);
 
-            row.UserId.Should().Be(userId);
+            // userId is the external claim (oid); CurrentUserService stores an auto-generated
+            // internal Id. Derive the real internal userId from the row we just fetched.
+            var internalUserId = row.UserId;
+            internalUserId.Should().NotBeEmpty();
             row.Name.Should().Be("Work");
             row.IsDeleted.Should().BeFalse();
             row.Version.Should().Be(1);
 
             var outbox = await db.OutboxMessages
                 .AsNoTracking()
-                .SingleAsync(o => o.AggregateId == dto.CategoryId && o.UserId == userId);
+                .SingleAsync(o => o.AggregateId == dto.CategoryId && o.UserId == internalUserId);
 
             outbox.AggregateType.Should().Be(nameof(TaskCategory));
             outbox.MessageType.Should().Be($"{nameof(TaskCategory)}.{TaskCategoryEventType.Created}");

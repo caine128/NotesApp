@@ -13,7 +13,7 @@ namespace NotesApp.Api.IntegrationTests.Infrastructure.Storage
     {
         private readonly ConcurrentDictionary<string, (byte[] Data, string ContentType)> _store = new();
 
-        public Task<Result<StorageUploadResult>> UploadAsync(
+        public async Task<Result<StorageUploadResult>> UploadAsync(
             string containerName,
             string blobPath,
             Stream content,
@@ -21,16 +21,16 @@ namespace NotesApp.Api.IntegrationTests.Infrastructure.Storage
             CancellationToken cancellationToken = default)
         {
             using var ms = new MemoryStream();
-            content.CopyTo(ms);
+            await content.CopyToAsync(ms, cancellationToken);
             var bytes = ms.ToArray();
 
             _store[blobPath] = (bytes, contentType);
 
-            return Task.FromResult(Result.Ok(new StorageUploadResult(
+            return Result.Ok(new StorageUploadResult(
                 BlobPath: blobPath,
                 ContentType: contentType,
                 SizeBytes: bytes.LongLength,
-                ETag: Guid.NewGuid().ToString())));
+                ETag: Guid.NewGuid().ToString()));
         }
 
         public Task<Result<StorageDownloadResult>> DownloadAsync(

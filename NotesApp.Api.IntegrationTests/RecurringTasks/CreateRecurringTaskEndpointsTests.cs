@@ -42,7 +42,6 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
                 Description = "Team sync",
                 StartTime = new TimeOnly(9, 0),
                 EndTime = new TimeOnly(9, 15),
-                Priority = "Normal",
                 RecurrenceRule = new
                 {
                     RRuleString = "FREQ=DAILY;COUNT=5",
@@ -63,15 +62,19 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
             using var scope = _factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+            var login = await db.UserLogins.AsNoTracking()
+                .SingleAsync(ul => ul.Provider == "https://test.local" && ul.ExternalId == userId.ToString());
+            var internalUserId = login.UserId;
+
             // RecurringTaskRoot
             var roots = await db.RecurringTaskRoots.AsNoTracking()
-                .Where(r => r.UserId == userId).ToListAsync();
+                .Where(r => r.UserId == internalUserId).ToListAsync();
             roots.Should().HaveCount(1);
             var root = roots[0];
 
             // RecurringTaskSeries
             var seriesList = await db.RecurringTaskSeries.AsNoTracking()
-                .Where(s => s.UserId == userId).ToListAsync();
+                .Where(s => s.UserId == internalUserId).ToListAsync();
             seriesList.Should().HaveCount(1);
             var series = seriesList[0];
             series.RootId.Should().Be(root.Id);
@@ -81,11 +84,11 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             // No template subtasks (we passed none)
             (await db.RecurringTaskSubtasks.AsNoTracking()
-                .CountAsync(s => s.UserId == userId)).Should().Be(0);
+                .CountAsync(s => s.UserId == internalUserId)).Should().Be(0);
 
             // Materialized TaskItems all linked to the series
             var tasks = await db.Tasks.AsNoTracking()
-                .Where(t => t.UserId == userId).ToListAsync();
+                .Where(t => t.UserId == internalUserId).ToListAsync();
             tasks.Should().NotBeEmpty();
             tasks.Should().OnlyContain(t => t.RecurringSeriesId == series.Id);
             tasks.Should().OnlyContain(t => t.CanonicalOccurrenceDate.HasValue);
@@ -104,7 +107,7 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
 
             // One TaskEventType.Created outbox per materialized task.
             var taskCreatedOutboxCount = await db.OutboxMessages.AsNoTracking()
-                .CountAsync(o => o.UserId == userId
+                .CountAsync(o => o.UserId == internalUserId
                               && o.AggregateType == nameof(TaskItem)
                               && o.MessageType == $"{nameof(TaskItem)}.{TaskEventType.Created}");
             taskCreatedOutboxCount.Should().Be(tasks.Count);
@@ -142,11 +145,15 @@ namespace NotesApp.Api.IntegrationTests.RecurringTasks
             using var scope = _factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+            var login = await db.UserLogins.AsNoTracking()
+                .SingleAsync(ul => ul.Provider == "https://test.local" && ul.ExternalId == userId.ToString());
+            var internalUserId = login.UserId;
+
             var series = await db.RecurringTaskSeries.AsNoTracking()
-                .SingleAsync(s => s.UserId == userId);
+                .SingleAsync(s => s.UserId == internalUserId);
 
             var templates = await db.RecurringTaskSubtasks.AsNoTracking()
-                .Where(s => s.UserId == userId).ToListAsync();
+                .Where(s => s.UserId == internalUserId).ToListAsync();
             templates.Should().HaveCount(3);
             templates.Should().OnlyContain(s => s.SeriesId == series.Id);
             templates.Should().OnlyContain(s => s.ExceptionId == null);
