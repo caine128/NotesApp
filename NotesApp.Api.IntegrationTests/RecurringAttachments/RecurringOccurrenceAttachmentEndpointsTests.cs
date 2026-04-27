@@ -240,9 +240,10 @@ namespace NotesApp.Api.IntegrationTests.RecurringAttachments
             // userId is the external claim (oid); look up the internal DB user via UserLogins.
             var login = await db.UserLogins.AsNoTracking()
                 .SingleAsync(ul => ul.Provider == "https://test.local" && ul.ExternalId == userId.ToString());
+            var internalUserId = login.UserId;
             var seriesId = (await db.RecurringTaskSeries.AsNoTracking()
-                .SingleAsync(s => s.UserId == login.UserId)).Id;
-            return (userId, seriesId, client);
+                .SingleAsync(s => s.UserId == internalUserId)).Id;
+            return (internalUserId, seriesId, client);
         }
 
         private async Task<UploadRecurringAttachmentResultDto> UploadSeriesAttachmentAsync(

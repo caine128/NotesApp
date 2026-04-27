@@ -199,7 +199,7 @@ namespace NotesApp.Application.Tests.Attachments
             }, CancellationToken.None);
 
             result.IsFailed.Should().BeTrue();
-            result.Errors.Should().Contain(e => e.Message == "Task.NotFound");
+            result.Errors.Should().Contain(e => e.Message == "Tasks.NotFound");
 
             _blobStorageServiceMock.Verify(
                 s => s.UploadAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(),
@@ -229,7 +229,7 @@ namespace NotesApp.Application.Tests.Attachments
             }, CancellationToken.None);
 
             result.IsFailed.Should().BeTrue();
-            result.Errors.Should().Contain(e => e.Message == "Task.NotFound");
+            result.Errors.Should().Contain(e => e.Message == "Tasks.NotFound");
 
             _blobStorageServiceMock.Verify(
                 s => s.UploadAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(),
