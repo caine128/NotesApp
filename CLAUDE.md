@@ -1,5 +1,8 @@
 # CLAUDE.md
 
+## Skills usage
+Use available Skills (e.g., C# coding standards) when relevant instead of embedding detailed language rules here.
+
 Apply these rules to the whole NotesApp repo.
 See @.claude/research-policy.md
 
