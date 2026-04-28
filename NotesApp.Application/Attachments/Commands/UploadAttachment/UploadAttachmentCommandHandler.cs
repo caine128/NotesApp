@@ -90,8 +90,8 @@ namespace NotesApp.Application.Attachments.Commands.UploadAttachment
 
             if (task is null || task.UserId != userId || task.IsDeleted)
             {
-                return Result.Fail(new Error("Tasks.NotFound")
-                    .WithMetadata("Message", "Task not found."));
+                return Result.Fail(new Error("Task not found.")
+                    .WithMetadata("ErrorCode", "Tasks.NotFound"));
             }
 
             // Validate content type against the configured whitelist (runtime value)
