@@ -132,6 +132,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
                             .WithMetadata("ErrorCode", "Tasks.NotFound"));
                 }
 
+
                 // Apply task field updates.
                 var updateResult = task.Update(title: command.Title,
                                                date: command.OverrideDate ?? task.Date,
@@ -178,6 +179,19 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
 
                 _taskRepository.Update(task);
                 updatedTask = task;
+            }
+            else
+            {
+                // Virtual occurrence — no TaskItem to validate ownership against.
+                // Must verify the series belongs to the current user directly.
+                var series = await _seriesRepository.GetByIdUntrackedAsync(command.SeriesId, cancellationToken);
+
+                if (series is null || series.UserId != userId)
+                {
+                    return Result.Fail<TaskDetailDto>(
+                        new Error("Recurring series not found or does not belong to you.")
+                            .WithMetadata("ErrorCode", "RecurringSeries.NotFound"));
+                }
             }
 
             // Upsert the exception so virtual projection and sync pick up the override.

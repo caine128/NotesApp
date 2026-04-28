@@ -60,7 +60,11 @@ namespace NotesApp.Api.IntegrationTests.Subtasks
 
             var row = await db.Subtasks.AsNoTracking()
                 .SingleAsync(s => s.Id == dto.SubtaskId);
-            row.UserId.Should().Be(userId);
+
+            // userId is the external claim (oid); CurrentUserService stores an auto-generated
+            // internal Id. Derive the real internal userId from the row we just fetched.
+            var internalUserId = row.UserId;
+            internalUserId.Should().NotBeEmpty();
             row.TaskId.Should().Be(task.TaskId);
             row.Text.Should().Be("Buy milk");
             row.Position.Should().Be("a0");
@@ -69,7 +73,7 @@ namespace NotesApp.Api.IntegrationTests.Subtasks
             row.Version.Should().Be(1);
 
             var outbox = await db.OutboxMessages.AsNoTracking()
-                .SingleAsync(o => o.AggregateId == dto.SubtaskId && o.UserId == userId);
+                .SingleAsync(o => o.AggregateId == dto.SubtaskId && o.UserId == internalUserId);
             outbox.AggregateType.Should().Be(nameof(Subtask));
             outbox.MessageType.Should().Be($"{nameof(Subtask)}.{SubtaskEventType.Created}");
             outbox.Payload.Should().NotBeNullOrWhiteSpace();

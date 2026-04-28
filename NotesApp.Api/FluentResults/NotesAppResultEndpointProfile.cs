@@ -45,7 +45,9 @@ namespace NotesApp.Api.FluentResults
             if (errorCodes.Contains("Tasks.NotFound") ||
                 errorCodes.Contains("Notes.NotFound") ||
                 errorCodes.Contains("Attachments.NotFound") ||
-                errorCodes.Contains("Categories.NotFound"))
+                errorCodes.Contains("Categories.NotFound") ||
+                errorCodes.Contains("Subtasks.NotFound") ||
+                errorCodes.Contains("Subtasks.ParentNotFound"))
             {
                 statusCode = StatusCodes.Status404NotFound;
             }

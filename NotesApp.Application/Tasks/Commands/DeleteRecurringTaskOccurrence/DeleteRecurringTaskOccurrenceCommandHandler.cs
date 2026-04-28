@@ -83,9 +83,17 @@ namespace NotesApp.Application.Tasks.Commands.DeleteRecurringTaskOccurrence
                                                      CancellationToken cancellationToken)
         {
             // Check whether an exception already exists for this occurrence (upsert semantics).
+            // Must happen BEFORE loading the TaskItem: on a repeat call the task is already
+            // soft-deleted and GetByIdAsync would return null, causing a false 404.
             var existing = await _exceptionRepository.GetByOccurrenceAsync(command.SeriesId,
                                                                            command.OccurrenceDate,
                                                                            cancellationToken);
+
+            // Idempotent short-circuit: deletion exception already exists — nothing more to do.
+            if (existing is not null && existing.IsDeletion)
+            {
+                return Result.Ok();
+            }
 
             // Determine the materialized TaskItem FK to record in the exception (may be null for virtual).
             Guid? materializedTaskItemId = null;
@@ -113,8 +121,7 @@ namespace NotesApp.Application.Tasks.Commands.DeleteRecurringTaskOccurrence
 
             if (existing is not null)
             {
-                // Convert the existing exception into a deletion in-place (idempotent on already-deletion rows).
-                // Avoids leaving a duplicate (soft-deleted override + new live deletion) row pair.
+                // Convert the existing override exception into a deletion in-place.
                 var convertResult = existing.ConvertToDeletion(materializedTaskItemId, utcNow);
                 if (convertResult.IsFailure)
                 {
