@@ -33,12 +33,14 @@ Workflow:
    - minimal disruption
 7. Do not recommend anything unless you are fully confident it is the best, or clearly one of the best, approaches.
 8. If confidence is not high, do not guess. State exactly what remains uncertain.
+9. When official guidance conflicts significantly with the existing NotesApp pattern, do not silently pick a middle ground. Surface the conflict explicitly so the user can decide.
 
 Output format:
 - Official guidance
 - What to avoid
 - Closest NotesApp pattern
-- Recommended repo-coherent approach
+- Conflicts with codebase: where official guidance and the existing NotesApp pattern diverge — name the tension and explain the tradeoff; do not silently compromise on significant conflicts
+- Recommended repo-coherent approach (only if no significant conflict exists or conflict is already resolved)
 - Confidence
 - Short implementation direction only if confidence is high
 

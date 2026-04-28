@@ -200,7 +200,7 @@ namespace NotesApp.Application.Tests.Attachments
 
             result.IsFailed.Should().BeTrue();
             result.Errors.Should().Contain(e =>
-                e.Metadata.TryGetValue("ErrorCode", out var code) && code.ToString() == "Tasks.NotFound");
+                e.Metadata.ContainsKey("ErrorCode") && e.Metadata["ErrorCode"].ToString() == "Tasks.NotFound");
 
             _blobStorageServiceMock.Verify(
                 s => s.UploadAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(),
@@ -231,7 +231,7 @@ namespace NotesApp.Application.Tests.Attachments
 
             result.IsFailed.Should().BeTrue();
             result.Errors.Should().Contain(e =>
-                e.Metadata.TryGetValue("ErrorCode", out var code) && code.ToString() == "Tasks.NotFound");
+                e.Metadata.ContainsKey("ErrorCode") && e.Metadata["ErrorCode"].ToString() == "Tasks.NotFound");
 
             _blobStorageServiceMock.Verify(
                 s => s.UploadAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(),

@@ -1,102 +1,119 @@
 # CLAUDE.md
 
-## Skills usage
-Use available Skills (e.g., C# coding standards) when relevant instead of embedding detailed language rules here.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Apply these rules to the whole NotesApp repo.
-See @.claude/research-policy.md
+## Skills
+Use `csharp-coding-standards` and `csharp-type-design-performance` when writing or refactoring C#.
+Use `csharp-concurrency-patterns` for Worker concurrency decisions (hosted services, channels, background jobs).
+Use `efcore-patterns` when writing queries, migrations, or repository logic in Infrastructure.
+Use `microsoft-extensions-dependency-injection` when registering or restructuring services.
+Use `microsoft-extensions-configuration` when working with `appsettings`, user secrets, or environment config.
+Use `ilspy-decompile` to inspect third-party NuGet internals when source is unavailable.
+Run `simplify` after implementing a feature to catch unnecessary complexity.
+Run `security-review` when touching auth, device provisioning, Azure Blob, or Entra endpoints.
+Use the `official-docs-researcher` subagent for any framework, SDK, NuGet package, or external API before implementing.
 
-## Core rule
-Follow the existing NotesApp pattern before introducing a new one. Inspect nearby files in the same feature first.
+## Before every coding task
 
-When a task involves framework-specific behavior, SDKs, external APIs, NuGet packages, authentication providers, database-provider behavior, or any third-party package with official documentation, use the `official-docs-researcher` subagent before recommending or implementing anything.
+**This is mandatory. Do not write or edit any file until all four steps are complete.**
 
-If Context7 or another current-doc MCP source is available, use it through the research subagent for library/framework documentation lookup. The research subagent must still prefer creator-owned official documentation when it is available and relevant.
+1. **Codebase research** — run the `codebase-researcher` subagent for the relevant feature area. Read the handler, validator, entity, repository, controller, mappings, and tests. Return a concise terrain summary.
+2. **Docs research** — if the task touches any external framework, NuGet package, SDK, or API, run the `official-docs-researcher` subagent for that specific topic.
+3. **Clarification** — if anything is ambiguous, or if codebase conventions conflict with official best practices, do not silently pick one. Surface the tension, explain the tradeoff, and discuss with the user before proceeding.
+4. **Implementation plan report** — present a structured report of what will be created or modified, in what order, and with what approach. Wait for explicit user approval before writing any code.
 
-Do not propose an approach unless you are fully confident it is the best, or clearly one of the best, options after:
-1. checking the latest official docs from the package/framework creator,
-2. comparing that guidance against the existing NotesApp codebase,
-3. choosing the most coherent high-quality solution for this repo.
+Use `/pre-task <description>` to run all four phases in sequence.
 
-If official docs discourage an approach, do not recommend it.
-If uncertainty remains, state the uncertainty explicitly instead of guessing.
+## Commands
 
-## Confidence gate
-Do not propose or implement a solution unless you are 100% confident it is the best solution, or clearly one of the best solutions, for this repo.
-That confidence must be grounded in all three:
-- current official documentation and best practices
-- the existing NotesApp codebase and local feature patterns
-- coherence with the current architecture, conventions, and style
+```bash
+dotnet build
 
-If that confidence is missing, do not guess and do not present assumptions as recommendations. Inspect more code first. If uncertainty still remains, say exactly what is uncertain and ask only the minimum necessary question.
+dotnet run --project src/NotesApp.Api      # HTTPS localhost:7011 · Scalar UI at /scalar
+dotnet run --project src/NotesApp.Worker
+
+dotnet test                                # all tests
+dotnet test tests/NotesApp.Application.Tests
+dotnet test tests/NotesApp.Api.IntegrationTests
+dotnet test tests/NotesApp.Worker.Tests
+
+# EF migrations — user runs manually, never automatically
+dotnet ef database update --project NotesApp.Infrastructure --startup-project NotesApp.Api
+```
 
 ## Architecture
-- Keep Clean Architecture boundaries intact.
-- Domain: entities, invariants, domain methods, domain results. No framework logic.
-- Application: MediatR commands/queries, validators, mappings, use-case orchestration.
-- Infrastructure: EF Core, repositories, current-user/time/storage/notification implementations.
-- API: thin controllers only.
-- Worker: outbox + reminder processing.
 
-## Request/handler conventions
-- Application handlers return `FluentResults.Result<T>`.
-- Domain entities return `DomainResult` / `DomainResult<T>`.
-- Use the existing conversion helpers instead of inventing new result shapes.
-- Validators live in Application and are executed by the MediatR validation pipeline.
-- **Every command and query handler must have a corresponding validator.** When you add a handler, add its validator in the same folder before considering the task done. No exceptions.
+Clean Architecture: **Domain → Application → Infrastructure | Api | Worker**.
 
-## Command handler pattern
-For update/delete-style handlers, preserve this order:
-1. Resolve current user and current UTC time through abstractions.
-2. Load the entity **untracked**.
-3. Perform ownership / existence / validation checks and return early if needed.
+| Layer | Role |
+|---|---|
+| Domain | Entities, value objects, domain methods, `DomainResult`/`DomainResult<T>`. No framework references. |
+| Application | MediatR commands/queries, FluentValidation validators, DTOs, `*Mappings` files. All handlers return `Result<T>`. |
+| Infrastructure | EF Core + SQL Server, repositories, `ICurrentUserService`, `ISystemClock`, Azure Blob, Entra auth. |
+| Api | Thin controllers: HTTP → MediatR → `ToActionResult()` / `CreatedAtAction()` / `NoContent()`. |
+| Worker | Hosted service: outbox processing and reminder dispatch. |
+
+## Handler conventions
+
+- **Every handler requires a paired validator** in the same folder. Add it before considering the task done.
+- Handlers return `Result<T>`; domain methods return `DomainResult`/`DomainResult<T>`. Use existing conversion helpers.
+- Route IDs overwrite body IDs.
+- Mapping logic belongs in the existing static `*Mappings` files, not in controllers or handlers.
+- DTO names follow: `Detail`, `Summary`, `Overview`, `Sync*`.
+
+### Command handler order (update/delete)
+
+1. Resolve user (`ICurrentUserService`) and time (`ISystemClock`).
+2. Load entity **untracked**.
+3. Ownership / existence checks — return early on failure.
 4. Apply domain methods in memory.
-5. Create the outbox message.
-6. Only then attach with `Repository.Update(...)` or add with `AddAsync(...)`.
-7. Call `UnitOfWork.SaveChangesAsync(...)` once.
+5. Create outbox message.
+6. `Repository.Update(...)` or `AddAsync(...)`.
+7. `UnitOfWork.SaveChangesAsync(...)` once.
 
 Do not attach tracked entities before early-return checks pass.
 
-## Persistence / infra rules
+## Persistence
+
+- Retrieve untracked by default; attach explicitly only after validation passes.
 - Prefer repository methods already present in the feature.
-- Use `AsNoTracking` / untracked retrieval by default in handlers.
-- Respect soft delete, versioning, and row-version concurrency patterns already in place.
-- Use `ISystemClock` and `ICurrentUserService` in application code instead of ad hoc time/user access.
+- Use `ISystemClock` and `ICurrentUserService` — never `DateTime.UtcNow` or raw `HttpContext` in handlers.
+- Preserve soft-delete, versioning, and row-version concurrency patterns.
 
-## Outbox / worker
-- Never use magic strings for domain events when an existing enum exists.
-- Use `OutboxMessage.Create<TAggregate, TEvent>()`.
-- Use `OutboxPayloadBuilder` where a payload builder already exists.
-- Keep entity change + outbox persistence in the same save boundary.
+## Outbox
 
-## API rules
-- Controllers should only translate HTTP to MediatR requests and return `ToActionResult()` / `CreatedAtAction()` / `NoContent()`.
-- Route IDs are the source of truth: overwrite body IDs from route values.
-- Preserve existing auth / policy / debug-device-provisioning behavior when touching sync or secured endpoints.
+- Use `OutboxMessage.Create<TAggregate, TEvent>()` with event-type enums — never magic strings.
+- Use `OutboxPayloadBuilder` where one exists.
+- Save entity change + outbox message in the same `UnitOfWork.SaveChangesAsync` call.
 
-## DTO / mapping rules
-- Keep DTO naming consistent: `Detail`, `Summary`, `Overview`, `Sync*`.
-- Put mapping logic in the existing static `*Mappings` files, not inside controllers or handlers.
+## Sync
 
-## Sync rules
-- Do not refactor sync handlers into nested command dispatch unless the codebase already does so.
-- Preserve current sync semantics: per-item conflict results, version checks, delete-wins behavior, device ownership checks in handlers, and direct orchestration inside sync handlers.
-- Subtasks use fractional-index `Position` strings; do not replace with integer ordering.
+- Preserve per-item conflict results, version checks, delete-wins, and device ownership checks inside sync handlers.
+- Do not dispatch nested commands inside sync handlers.
+- Subtask ordering uses fractional-index `Position` strings — do not replace with integers.
 
-## Domain-specific repo facts to preserve
-- Notes are block-based. Do not reintroduce note content back onto `Note`.
-- `MeetingLink` on tasks is a plain nullable string, normalized by trimming; do not force it into a `Uri` type unless the codebase is changed globally.
+## Domain facts
+
+- Notes are block-based; `Note` has no content field — do not add one.
+- `MeetingLink` on tasks is a nullable trimmed string, not a `Uri`.
 
 ## Tests
-- Add or update tests for every meaningful backend change.
-- Follow existing test naming and style.
-- Prefer the same testing level already used in the area you touch (unit vs integration vs repo-backed handler tests).
+
+Three test projects: `NotesApp.Application.Tests` (unit, Moq), `NotesApp.Api.IntegrationTests` (full HTTP), `NotesApp.Worker.Tests` (unit, Moq).
+
+- Match the testing level already used in the area you touch.
+- Naming: `[Feature][Command|Query]HandlerTests`, `[Entity]RepositoryTests`.
+- Follow the assertion and mock style in the nearest test file.
 
 ## Editing style
-- Keep changes surgical and minimal.
-- Reuse existing naming, error-code style, logging style, and comment style.
-- Preserve `REFACTORED:` markers when editing areas that already use them.
-- Add XML docs for new public APIs when consistent with surrounding code.
 
-## When uncertain
-Do not guess. Inspect the relevant feature’s neighboring files and follow the local convention.
+- Follow the nearest feature's existing pattern before introducing a new one.
+- Preserve `// REFACTORED:` markers.
+- Keep changes surgical and minimal.
+- Add XML docs on new public APIs only when surrounding code already has them.
+
+## Confidence gate
+
+Do not propose or implement unless confident across: current official docs, this codebase's patterns, and architectural coherence. If uncertain, inspect more code first. If uncertainty remains, say exactly what is uncertain.
+
+When codebase conventions and official best practices conflict, do not silently pick one or silently compromise. Name the tension, explain the tradeoff clearly, and resolve it with the user before writing any code.
