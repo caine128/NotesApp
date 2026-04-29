@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Response style
+
+Be terse. No pleasantries, preambles, or question recaps. No "I'd be happy to" or "Great question". Drop articles and filler words where meaning stays clear. Short declarative sentences. Prefer `Use async with try/catch` over `The solution is to use async functions with proper error handling`.
+
 ## Skills
 Use `csharp-coding-standards` and `csharp-type-design-performance` when writing or refactoring C#.
 Use `csharp-concurrency-patterns` for Worker concurrency decisions (hosted services, channels, background jobs).
