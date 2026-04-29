@@ -567,7 +567,12 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     }
                     else if (item.RecurringSeriesId.HasValue && item.RecurringSeriesId.Value != Guid.Empty)
                     {
-                        resolvedSeriesId = item.RecurringSeriesId.Value;
+                        var series = await _recurringSeriesRepository.GetByIdUntrackedAsync(
+                            item.RecurringSeriesId.Value, cancellationToken);
+                        if (series is not null && series.UserId == userId && !series.IsDeleted)
+                        {
+                            resolvedSeriesId = item.RecurringSeriesId.Value;
+                        }
                     }
 
                     if (resolvedSeriesId.HasValue)
@@ -632,7 +637,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 // Load WITHOUT tracking - modifications won't auto-persist
                 var task = await _taskRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
 
-                if (task is null)
+                if (task is null || task.UserId != userId)
                 {
                     results.Add(new TaskUpdatedPushResultDto
                     {
@@ -815,7 +820,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 // Load WITHOUT tracking - modifications won't auto-persist
                 var task = await _taskRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
 
-                if (task is null)
+                if (task is null || task.UserId != userId)
                 {
                     results.Add(new TaskDeletedPushResultDto
                     {
@@ -993,7 +998,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 // Load WITHOUT tracking - modifications won't auto-persist
                 var note = await _noteRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
 
-                if (note is null)
+                if (note is null || note.UserId != userId)
                 {
                     results.Add(new NoteUpdatedPushResultDto
                     {
@@ -1120,7 +1125,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 // Load WITHOUT tracking - modifications won't auto-persist
                 var note = await _noteRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
 
-                if (note is null)
+                if (note is null || note.UserId != userId)
                 {
                     results.Add(new NoteDeletedPushResultDto
                     {
@@ -1234,6 +1239,31 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     });
 
                     continue;
+                }
+
+                // Validate parent note ownership when a direct server-side ParentId was provided.
+                // Within-push client ID mappings (noteClientToServerIds) are implicitly safe because
+                // the note was created by the same user in this push.
+                if (item.ParentId.HasValue && item.ParentId.Value != Guid.Empty)
+                {
+                    var parentNote = await _noteRepository.GetByIdUntrackedAsync(resolvedParentId.Value, cancellationToken);
+                    if (parentNote is null || parentNote.UserId != userId)
+                    {
+                        results.Add(new BlockCreatedPushResultDto
+                        {
+                            ClientId = item.ClientId,
+                            ServerId = Guid.Empty,
+                            Version = 0,
+                            Status = SyncPushCreatedStatus.Failed,
+                            Conflict = new SyncPushConflictDetailDto
+                            {
+                                ConflictType = SyncConflictType.ParentNotFound,
+                                Errors = new[] { "Parent note not found or does not belong to you." }
+                            }
+                        });
+
+                        continue;
+                    }
                 }
 
                 DomainResult<Block> createResult;

@@ -26,6 +26,7 @@ namespace NotesApp.Application.Tests.Sync
         private readonly Mock<ICategoryRepository> _categoryRepositoryMock = new();
         private readonly Mock<ISubtaskRepository> _subtaskRepositoryMock = new();
         private readonly Mock<IAttachmentRepository> _attachmentRepositoryMock = new(); // REFACTORED: added for task-attachments feature
+        private readonly Mock<IRecurringTaskSeriesRepository> _recurringSeriesRepositoryMock = new();
         private readonly Mock<IOutboxRepository> _outboxRepositoryMock = new();
         private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
         private readonly Mock<ISystemClock> _clockMock = new();
@@ -71,7 +72,7 @@ namespace NotesApp.Application.Tests.Sync
                 _attachmentRepositoryMock.Object, // REFACTORED: added for task-attachments feature
                 // REFACTORED: added recurring-task repos for recurring-tasks feature
                 new Mock<IRecurringTaskRootRepository>().Object,
-                new Mock<IRecurringTaskSeriesRepository>().Object,
+                _recurringSeriesRepositoryMock.Object,
                 new Mock<IRecurringTaskSubtaskRepository>().Object,
                 new Mock<IRecurringTaskExceptionRepository>().Object,
                 new Mock<IRecurringTaskAttachmentRepository>().Object, // REFACTORED: added for recurring-task-attachments feature
@@ -643,6 +644,56 @@ namespace NotesApp.Application.Tests.Sync
             capturedTask!.MeetingLink.Should().Be("https://meet.google.com/abc-defg-hij");
         }
 
+        [Fact]
+        public async Task Handle_TaskUpdate_BelongsToDifferentUser_ReturnsFailedWithNotFoundConflict()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var taskId = Guid.NewGuid();
+            var otherUserId = Guid.NewGuid();
+
+            var otherUserTask = CreateTaskItem(otherUserId, _now);
+            SetEntityId(otherUserTask, taskId);
+            SetEntityVersion(otherUserTask, 1L);
+
+            _taskRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(otherUserTask);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Tasks = new SyncPushTasksDto
+                {
+                    Updated = new[]
+                    {
+                        new TaskUpdatedPushItemDto
+                        {
+                            Id = taskId,
+                            ExpectedVersion = 1,
+                            Date = otherUserTask.Date,
+                            Title = "Hijacked Title"
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var taskResult = result.Value.Tasks.Updated.Should().ContainSingle().Subject;
+            taskResult.Status.Should().Be(SyncPushUpdatedStatus.Failed);
+            taskResult.Conflict.Should().NotBeNull();
+            taskResult.Conflict!.ConflictType.Should().Be(SyncConflictType.NotFound);
+
+            _taskRepositoryMock.Verify(r => r.Update(It.IsAny<TaskItem>()), Times.Never);
+            _outboxRepositoryMock.Verify(r => r.AddAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
         #endregion
 
         #region Task Delete Tests
@@ -755,6 +806,45 @@ namespace NotesApp.Application.Tests.Sync
             taskResult.Id.Should().Be(taskId);
             taskResult.Status.Should().Be(SyncPushDeletedStatus.AlreadyDeleted);
             taskResult.Conflict.Should().BeNull(); // Already deleted is idempotent
+        }
+
+        [Fact]
+        public async Task Handle_TaskDelete_BelongsToDifferentUser_ReturnsNotFoundWithoutConflict()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var taskId = Guid.NewGuid();
+            var otherUserId = Guid.NewGuid();
+
+            var otherUserTask = CreateTaskItem(otherUserId, _now);
+            SetEntityId(otherUserTask, taskId);
+
+            _taskRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(otherUserTask);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Tasks = new SyncPushTasksDto
+                {
+                    Deleted = new[] { new TaskDeletedPushItemDto { Id = taskId } }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var taskResult = result.Value.Tasks.Deleted.Should().ContainSingle().Subject;
+            taskResult.Status.Should().Be(SyncPushDeletedStatus.NotFound);
+            taskResult.Conflict.Should().BeNull();
+
+            _taskRepositoryMock.Verify(r => r.Update(It.IsAny<TaskItem>()), Times.Never);
+            _outboxRepositoryMock.Verify(r => r.AddAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         #endregion
@@ -1031,6 +1121,56 @@ namespace NotesApp.Application.Tests.Sync
             noteResult.Conflict.ServerNote.Should().NotBeNull();
         }
 
+        [Fact]
+        public async Task Handle_NoteUpdate_BelongsToDifferentUser_ReturnsFailedWithNotFoundConflict()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var noteId = Guid.NewGuid();
+            var otherUserId = Guid.NewGuid();
+
+            var otherUserNote = CreateNote(otherUserId, _now);
+            SetEntityId(otherUserNote, noteId);
+            SetEntityVersion(otherUserNote, 1L);
+
+            _noteRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(otherUserNote);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Notes = new SyncPushNotesDto
+                {
+                    Updated = new[]
+                    {
+                        new NoteUpdatedPushItemDto
+                        {
+                            Id = noteId,
+                            ExpectedVersion = 1,
+                            Date = otherUserNote.Date,
+                            Title = "Hijacked Title"
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var noteResult = result.Value.Notes.Updated.Should().ContainSingle().Subject;
+            noteResult.Status.Should().Be(SyncPushUpdatedStatus.Failed);
+            noteResult.Conflict.Should().NotBeNull();
+            noteResult.Conflict!.ConflictType.Should().Be(SyncConflictType.NotFound);
+
+            _noteRepositoryMock.Verify(r => r.Update(It.IsAny<Note>()), Times.Never);
+            _outboxRepositoryMock.Verify(r => r.AddAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
         #endregion
 
         #region Note Delete Tests
@@ -1139,6 +1279,45 @@ namespace NotesApp.Application.Tests.Sync
             noteResult.Conflict.Should().BeNull();
         }
 
+        [Fact]
+        public async Task Handle_NoteDelete_BelongsToDifferentUser_ReturnsNotFoundWithoutConflict()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var noteId = Guid.NewGuid();
+            var otherUserId = Guid.NewGuid();
+
+            var otherUserNote = CreateNote(otherUserId, _now);
+            SetEntityId(otherUserNote, noteId);
+
+            _noteRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(otherUserNote);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Notes = new SyncPushNotesDto
+                {
+                    Deleted = new[] { new NoteDeletedPushItemDto { Id = noteId } }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var noteResult = result.Value.Notes.Deleted.Should().ContainSingle().Subject;
+            noteResult.Status.Should().Be(SyncPushDeletedStatus.NotFound);
+            noteResult.Conflict.Should().BeNull();
+
+            _noteRepositoryMock.Verify(r => r.Update(It.IsAny<Note>()), Times.Never);
+            _outboxRepositoryMock.Verify(r => r.AddAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
         #endregion
 
         #region Block Create Tests
@@ -1150,6 +1329,12 @@ namespace NotesApp.Application.Tests.Sync
             var handler = CreateHandler();
             var clientId = Guid.NewGuid();
             var parentNoteId = Guid.NewGuid();
+
+            var parentNote = CreateNote(_userId, _now);
+            SetEntityId(parentNote, parentNoteId);
+            _noteRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(parentNoteId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(parentNote);
 
             var command = new SyncPushCommand
             {
@@ -1197,6 +1382,12 @@ namespace NotesApp.Application.Tests.Sync
             var handler = CreateHandler();
             var clientId = Guid.NewGuid();
             var parentNoteId = Guid.NewGuid();
+
+            var parentNote = CreateNote(_userId, _now);
+            SetEntityId(parentNote, parentNoteId);
+            _noteRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(parentNoteId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(parentNote);
 
             var command = new SyncPushCommand
             {
@@ -1281,6 +1472,12 @@ namespace NotesApp.Application.Tests.Sync
             var handler = CreateHandler();
             var clientId = Guid.NewGuid();
             var parentNoteId = Guid.NewGuid();
+
+            var parentNote = CreateNote(_userId, _now);
+            SetEntityId(parentNote, parentNoteId);
+            _noteRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(parentNoteId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(parentNote);
 
             var command = new SyncPushCommand
             {
@@ -1369,6 +1566,125 @@ namespace NotesApp.Application.Tests.Sync
             var blockResult = result.Value.Blocks.Created.Should().ContainSingle().Subject;
             blockResult.Status.Should().Be(SyncPushCreatedStatus.Created);
             blockResult.Conflict.Should().BeNull();
+        }
+
+        [Fact]
+        public async Task Handle_BlockCreate_ParentNoteBelongsToDifferentUser_ReturnsFailedWithParentNotFoundConflict()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var clientId = Guid.NewGuid();
+            var otherUserNoteId = Guid.NewGuid();
+            var otherUserId = Guid.NewGuid();
+
+            var otherUserNote = CreateNote(otherUserId, _now);
+            SetEntityId(otherUserNote, otherUserNoteId);
+            _noteRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(otherUserNoteId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(otherUserNote);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Blocks = new SyncPushBlocksDto
+                {
+                    Created = new[]
+                    {
+                        new BlockCreatedPushItemDto
+                        {
+                            ClientId = clientId,
+                            ParentId = otherUserNoteId,
+                            ParentType = BlockParentType.Note,
+                            Type = BlockType.Paragraph,
+                            Position = "a0",
+                            TextContent = "Injected content"
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+
+            var blockResult = result.Value.Blocks.Created.Should().ContainSingle().Subject;
+            blockResult.Status.Should().Be(SyncPushCreatedStatus.Failed);
+            blockResult.Conflict.Should().NotBeNull();
+            blockResult.Conflict!.ConflictType.Should().Be(SyncConflictType.ParentNotFound);
+
+            _blockRepositoryMock.Verify(r => r.AddAsync(It.IsAny<Block>(), It.IsAny<CancellationToken>()), Times.Never);
+            _outboxRepositoryMock.Verify(r => r.AddAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task Handle_TaskCreate_RecurringSeriesBelongsToDifferentUser_SkipsSeriesLinkAndStillCreatesTask()
+        {
+            // Arrange
+            var handler = CreateHandler();
+            var clientId = Guid.NewGuid();
+            var otherUserSeriesId = Guid.NewGuid();
+            var otherUserId = Guid.NewGuid();
+
+            var otherUserSeries = RecurringTaskSeries.Create(
+                otherUserId,
+                Guid.NewGuid(),
+                "FREQ=DAILY",
+                new DateOnly(2025, 1, 1),
+                endsBeforeDate: null,
+                title: "Other Series",
+                description: null,
+                startTime: null,
+                endTime: null,
+                location: null,
+                travelTime: null,
+                categoryId: null,
+                priority: TaskPriority.Normal,
+                meetingLink: null,
+                reminderOffsetMinutes: null,
+                materializedUpToDate: new DateOnly(2024, 12, 31),
+                utcNow: _now).Value;
+            SetEntityId(otherUserSeries, otherUserSeriesId);
+
+            _recurringSeriesRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(otherUserSeriesId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(otherUserSeries);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Tasks = new SyncPushTasksDto
+                {
+                    Created = new[]
+                    {
+                        new TaskCreatedPushItemDto
+                        {
+                            ClientId = clientId,
+                            Date = new DateOnly(2025, 1, 5),
+                            Title = "Task claiming another user's series",
+                            RecurringSeriesId = otherUserSeriesId,
+                            CanonicalOccurrenceDate = new DateOnly(2025, 1, 5)
+                        }
+                    }
+                }
+            };
+
+            // Act
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            // Assert — task is created but series link is silently dropped
+            result.IsSuccess.Should().BeTrue();
+
+            var taskResult = result.Value.Tasks.Created.Should().ContainSingle().Subject;
+            taskResult.Status.Should().Be(SyncPushCreatedStatus.Created);
+
+            _taskRepositoryMock.Verify(r => r.AddAsync(It.IsAny<TaskItem>(), It.IsAny<CancellationToken>()), Times.Once);
+            _recurringSeriesRepositoryMock.Verify(
+                r => r.GetByIdUntrackedAsync(otherUserSeriesId, It.IsAny<CancellationToken>()),
+                Times.Once);
         }
 
         #endregion
