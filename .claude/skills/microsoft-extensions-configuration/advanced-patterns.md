@@ -146,130 +146,86 @@ public class DatabaseSettingsValidator : IValidateOptions<DatabaseSettings>
 
 ## Complete Example - Production Settings Class
 
+This example shows a background worker settings class with cross-property and environment-aware `IValidateOptions<T>`:
+
 ```csharp
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Options;
 
-public class AkkaSettings
+public class OutboxSettings
 {
-    public const string SectionName = "AkkaSettings";
+    public const string SectionName = "Outbox";
 
-    [Required]
-    public string ActorSystemName { get; set; } = "MySystem";
+    [Range(1, 3600, ErrorMessage = "PollingIntervalSeconds must be between 1 and 3600")]
+    public int PollingIntervalSeconds { get; set; } = 30;
 
-    public AkkaExecutionMode ExecutionMode { get; set; } = AkkaExecutionMode.LocalTest;
+    [Range(1, 500, ErrorMessage = "BatchSize must be between 1 and 500")]
+    public int BatchSize { get; set; } = 50;
 
-    public bool LogConfigOnStart { get; set; } = false;
+    [Range(1, 10, ErrorMessage = "MaxRetryAttempts must be between 1 and 10")]
+    public int MaxRetryAttempts { get; set; } = 3;
 
-    public RemoteOptions RemoteOptions { get; set; } = new();
-
-    public ClusterOptions ClusterOptions { get; set; } = new();
-
-    public ClusterBootstrapOptions ClusterBootstrapOptions { get; set; } = new();
+    public bool EnableDeadLetterQueue { get; set; } = true;
 }
 
-public enum AkkaExecutionMode
-{
-    LocalTest,   // No remoting, no clustering
-    Clustered    // Full cluster with sharding, distributed pub/sub
-}
-
-public class AkkaSettingsValidator : IValidateOptions<AkkaSettings>
+public class OutboxSettingsValidator : IValidateOptions<OutboxSettings>
 {
     private readonly IHostEnvironment _environment;
 
-    public AkkaSettingsValidator(IHostEnvironment environment)
+    public OutboxSettingsValidator(IHostEnvironment environment)
     {
         _environment = environment;
     }
 
-    public ValidateOptionsResult Validate(string? name, AkkaSettings options)
+    public ValidateOptionsResult Validate(string? name, OutboxSettings options)
     {
         var failures = new List<string>();
 
-        // Basic validation
-        if (string.IsNullOrWhiteSpace(options.ActorSystemName))
+        // Cross-property validation: high batch size needs slower polling
+        if (options.BatchSize > 100 && options.PollingIntervalSeconds < 5)
         {
-            failures.Add("ActorSystemName is required");
-        }
-
-        // Mode-specific validation
-        if (options.ExecutionMode == AkkaExecutionMode.Clustered)
-        {
-            ValidateClusteredMode(options, failures);
+            failures.Add(
+                "When BatchSize exceeds 100, PollingIntervalSeconds must be at least 5 " +
+                "to avoid overwhelming the database.");
         }
 
         // Environment-specific validation
-        if (_environment.IsProduction() && options.ExecutionMode == AkkaExecutionMode.LocalTest)
+        if (_environment.IsProduction() && options.PollingIntervalSeconds > 60)
         {
-            failures.Add("LocalTest execution mode is not allowed in production");
+            failures.Add(
+                "Production outbox polling interval should not exceed 60 seconds.");
+        }
+
+        if (_environment.IsProduction() && !options.EnableDeadLetterQueue)
+        {
+            failures.Add("Dead letter queue must be enabled in production.");
         }
 
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)
             : ValidateOptionsResult.Success;
     }
-
-    private void ValidateClusteredMode(AkkaSettings options, List<string> failures)
-    {
-        if (string.IsNullOrEmpty(options.RemoteOptions.PublicHostName))
-        {
-            failures.Add("RemoteOptions.PublicHostName is required in Clustered mode");
-        }
-
-        if (options.RemoteOptions.Port is null or < 0)
-        {
-            failures.Add("RemoteOptions.Port must be >= 0 in Clustered mode");
-        }
-
-        if (options.ClusterBootstrapOptions.Enabled)
-        {
-            ValidateClusterBootstrap(options.ClusterBootstrapOptions, failures);
-        }
-        else if (options.ClusterOptions.SeedNodes?.Length == 0)
-        {
-            failures.Add("Either ClusterBootstrap must be enabled or SeedNodes must be specified");
-        }
-    }
-
-    private void ValidateClusterBootstrap(ClusterBootstrapOptions options, List<string> failures)
-    {
-        if (string.IsNullOrEmpty(options.ServiceName))
-        {
-            failures.Add("ClusterBootstrapOptions.ServiceName is required");
-        }
-
-        if (options.RequiredContactPointsNr <= 0)
-        {
-            failures.Add("ClusterBootstrapOptions.RequiredContactPointsNr must be > 0");
-        }
-
-        switch (options.DiscoveryMethod)
-        {
-            case DiscoveryMethod.Config:
-                if (options.ConfigServiceEndpoints?.Length == 0)
-                {
-                    failures.Add("ConfigServiceEndpoints required for Config discovery");
-                }
-                break;
-
-            case DiscoveryMethod.AzureTableStorage:
-                if (options.AzureDiscoveryOptions == null)
-                {
-                    failures.Add("AzureDiscoveryOptions required for Azure discovery");
-                }
-                break;
-        }
-    }
 }
 
 // Registration
-builder.Services.AddOptions<AkkaSettings>()
-    .BindConfiguration(AkkaSettings.SectionName)
+builder.Services.AddOptions<OutboxSettings>()
+    .BindConfiguration(OutboxSettings.SectionName)
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
-builder.Services.AddSingleton<IValidateOptions<AkkaSettings>, AkkaSettingsValidator>();
+builder.Services.AddSingleton<IValidateOptions<OutboxSettings>, OutboxSettingsValidator>();
+```
+
+```json
+// appsettings.json
+{
+  "Outbox": {
+    "PollingIntervalSeconds": 30,
+    "BatchSize": 50,
+    "MaxRetryAttempts": 3,
+    "EnableDeadLetterQueue": true
+  }
+}
 ```
 
 ## Testing Configuration Validators

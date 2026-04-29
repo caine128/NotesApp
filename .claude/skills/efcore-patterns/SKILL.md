@@ -1,6 +1,6 @@
 ---
 name: efcore-patterns
-description: Entity Framework Core best practices including NoTracking by default, query splitting for navigation collections, migration management, dedicated migration services, and common pitfalls to avoid.
+description: Entity Framework Core best practices including NoTracking by default, query splitting for navigation collections, migration management, execution strategy retries, and common pitfalls to avoid.
 invocable: false
 ---
 
@@ -12,7 +12,6 @@ Use this skill when:
 - Setting up EF Core in a new project
 - Optimizing query performance
 - Managing database migrations
-- Integrating EF Core with .NET Aspire
 - Debugging change tracking issues
 - Loading multiple navigation collections efficiently (query splitting)
 
@@ -20,9 +19,8 @@ Use this skill when:
 
 1. **NoTracking by Default** - Most queries are read-only; opt-in to tracking
 2. **Never Edit Migrations Manually** - Always use CLI commands
-3. **Dedicated Migration Service** - Separate migration execution from application startup
-4. **ExecutionStrategy for Retries** - Handle transient database failures
-5. **Explicit Updates** - When NoTracking, explicitly mark entities for update
+3. **ExecutionStrategy for Retries** - Handle transient database failures
+4. **Explicit Updates** - When NoTracking, explicitly mark entities for update
 
 ---
 
@@ -200,143 +198,7 @@ dotnet ef migrations script \
 
 ---
 
-## Pattern 3: Dedicated Migration Service with Aspire
-
-Separate migration execution from your main application using a dedicated migration service. This ensures:
-- Migrations complete before the app starts
-- Clean separation of concerns
-- Controlled seeding in test environments
-
-### Project Structure
-
-```
-src/
-├── MyApp.AppHost/           # Aspire orchestration
-├── MyApp.Api/               # Main application
-├── MyApp.Infrastructure/    # DbContext and migrations
-└── MyApp.MigrationService/  # Dedicated migration runner
-```
-
-### MigrationService Program.cs
-
-```csharp
-using MyApp.Infrastructure.Data;
-using MyApp.MigrationService;
-using Microsoft.EntityFrameworkCore;
-
-var builder = Host.CreateApplicationBuilder(args);
-
-// Add Aspire service defaults
-builder.AddServiceDefaults();
-
-// Add PostgreSQL DbContext
-var connectionString = builder.Configuration.GetConnectionString("appdb")
-    ?? throw new InvalidOperationException("Connection string 'appdb' not found.");
-
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseNpgsql(connectionString, npgsqlOptions =>
-        npgsqlOptions.MigrationsAssembly("MyApp.Infrastructure")));
-
-// Add the migration worker
-builder.Services.AddHostedService<MigrationWorker>();
-
-var host = builder.Build();
-host.Run();
-```
-
-### MigrationWorker.cs
-
-```csharp
-public class MigrationWorker : BackgroundService
-{
-    private readonly IServiceProvider _serviceProvider;
-    private readonly IHostApplicationLifetime _hostApplicationLifetime;
-    private readonly ILogger<MigrationWorker> _logger;
-
-    public MigrationWorker(
-        IServiceProvider serviceProvider,
-        IHostApplicationLifetime hostApplicationLifetime,
-        ILogger<MigrationWorker> logger)
-    {
-        _serviceProvider = serviceProvider;
-        _hostApplicationLifetime = hostApplicationLifetime;
-        _logger = logger;
-    }
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        _logger.LogInformation("Migration service starting...");
-
-        try
-        {
-            using var scope = _serviceProvider.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-            await RunMigrationsAsync(dbContext, stoppingToken);
-
-            _logger.LogInformation("Migration service completed successfully.");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Migration service failed: {Error}", ex.Message);
-            throw;
-        }
-        finally
-        {
-            // Stop the application after migrations complete
-            _hostApplicationLifetime.StopApplication();
-        }
-    }
-
-    private async Task RunMigrationsAsync(ApplicationDbContext dbContext, CancellationToken ct)
-    {
-        // Use execution strategy for transient failure handling
-        var strategy = dbContext.Database.CreateExecutionStrategy();
-
-        await strategy.ExecuteAsync(async () =>
-        {
-            var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync(ct);
-
-            if (pendingMigrations.Any())
-            {
-                _logger.LogInformation("Applying {Count} pending migrations...",
-                    pendingMigrations.Count());
-
-                await dbContext.Database.MigrateAsync(ct);
-
-                _logger.LogInformation("Migrations applied successfully.");
-            }
-            else
-            {
-                _logger.LogInformation("No pending migrations. Database is up to date.");
-            }
-        });
-    }
-}
-```
-
-### AppHost Configuration
-
-```csharp
-var builder = DistributedApplication.CreateBuilder(args);
-
-var postgres = builder.AddPostgres("postgres");
-var db = postgres.AddDatabase("appdb");
-
-// Migrations run first, then exit
-var migrations = builder.AddProject<Projects.MyApp_MigrationService>("migrations")
-    .WaitFor(db)
-    .WithReference(db);
-
-// API waits for migrations to complete
-var api = builder.AddProject<Projects.MyApp_Api>("api")
-    .WaitForCompletion(migrations)  // Key: waits for migrations to finish
-    .WithReference(db);
-```
-
----
-
-## Pattern 4: ExecutionStrategy for Transient Failures
+## Pattern 3: ExecutionStrategy for Transient Failures
 
 Always use `CreateExecutionStrategy()` for operations that might fail transiently:
 
@@ -385,7 +247,7 @@ await strategy.ExecuteAsync(async () =>
 
 ---
 
-## Pattern 5: Bulk Operations with ExecuteUpdate/ExecuteDelete
+## Pattern 4: Bulk Operations with ExecuteUpdate/ExecuteDelete
 
 For bulk operations, use EF Core 7+ `ExecuteUpdateAsync` and `ExecuteDeleteAsync` instead of loading entities:
 
@@ -518,35 +380,36 @@ public class MyBackgroundService : BackgroundService
 }
 ```
 
-### Actors / Long-Lived Objects (Factory Pattern)
+### Long-Lived / Singleton Services (Factory Pattern)
+
+Use `IDbContextFactory<T>` when a singleton or long-lived service needs fresh contexts per operation:
 
 ```csharp
-public class OrderActor : ReceiveActor
+public class ReportService
 {
     private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
 
-    public OrderActor(IDbContextFactory<ApplicationDbContext> dbFactory)
+    public ReportService(IDbContextFactory<ApplicationDbContext> dbFactory)
     {
         _dbFactory = dbFactory;
+    }
 
-        ReceiveAsync<GetOrder>(async msg =>
-        {
-            // Create fresh context for each operation
-            await using var db = await _dbFactory.CreateDbContextAsync();
-            var order = await db.Orders.FindAsync(msg.OrderId);
-            Sender.Tell(order);
-        });
+    public async Task<Report> GenerateAsync(Guid reportId, CancellationToken ct)
+    {
+        // Each operation gets a fresh, short-lived context
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.Reports.Where(r => r.Id == reportId).FirstOrDefaultAsync(ct);
     }
 }
 
 // Registration
 builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseSqlServer(connectionString));
 ```
 
 ---
 
-## Pattern 6: Query Splitting to Prevent Cartesian Explosion
+## Pattern 5: Query Splitting to Prevent Cartesian Explosion
 
 When you load multiple navigation collections via `Include()`, EF Core generates a single query that can cause cartesian explosion. If you have 10 orders with 10 items each, you get 100 rows instead of 10 + 10.
 
@@ -613,17 +476,17 @@ using var context = new ApplicationDbContext(options);
 
 ### Real Database with TestContainers (Integration Tests)
 
-See the `testcontainers-integration-tests` skill for proper database testing.
+See the `testcontainers` skill for proper database testing.
 
 ```csharp
-// Use real PostgreSQL in container
-var container = new PostgreSqlBuilder()
-    .WithImage("postgres:16-alpine")
+// Use real SQL Server in container
+var container = new MsSqlBuilder()
+    .WithImage("mcr.microsoft.com/mssql/server:2022-latest")
     .Build();
 
 await container.StartAsync();
 
 var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-    .UseNpgsql(container.GetConnectionString())
+    .UseSqlServer(container.GetConnectionString())
     .Options;
 ```

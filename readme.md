@@ -25,7 +25,7 @@ NotesApp is designed as a local-first system with enterprise-grade architecture,
 - **FluentValidation** for request validation
 - **FluentResults** for consistent error handling
 - **Azure Blob Storage** for asset management (with Managed Identity in production)
-- **SQL Server** for relational data with support for vector embeddings
+- **SQL Server** for relational data
 - **Polly** for resilience patterns (retry, circuit breaker, timeout) in worker processes
 
 ### Frontend
@@ -53,13 +53,9 @@ NotesApp.Worker              → Background jobs and message processing
 
 ## Development Guidelines
 
-**All developers should read [CODING_PRINCIPLES.md](./CODING_PRINCIPLES.md) before contributing code.**
-
-This document outlines:
+The coding standards and conventions for this project are defined in `CLAUDE.md` at the repository root. All contributors should familiarise themselves with:
 - Code quality standards and framework best practices
 - Entity retrieval patterns and database practices
-- Self-documenting code expectations
-- Refactoring guidelines
 - Architecture and design patterns used across the project
 
 ## Project Structure
@@ -75,9 +71,9 @@ NotesApp/
 │
 ├── *Tests/                          # Unit and integration tests
 │
-├── CODING_PRINCIPLES.md             # Development standards and conventions
+├── CLAUDE.md                        # Development standards and conventions
 ├── README.md                        # This file
-├── NotesApp.sinx                    # Visual Studio Solution file
+├── NotesApp.slnx                    # Visual Studio Solution file
 ├── .gitignore                       # Git ignore rules
 └── .gitattributes                   # Git attributes
 ```
@@ -103,10 +99,7 @@ NotesApp/
 2. **Open the solution**
    ```bash
    # Using Visual Studio
-   start NotesApp.sln
-   
-   # Or using command line
-   dotnet open NotesApp.sln
+   start NotesApp.slnx
    ```
 
 3. **Configure local database**
@@ -125,7 +118,7 @@ NotesApp/
    ```bash
    dotnet run --project NotesApp.Api
    ```
-   The API will be available at `https://localhost:7001` (or configured port)
+   The API will be available at `https://localhost:7011` (or configured port)
 
 6. **Run background worker** (in a separate terminal)
    ```bash
@@ -142,15 +135,13 @@ NotesApp follows a **command-query segregation** pattern with background process
 2. **CQRS Handler** → MediatR routes to Command/Query handler in Application layer
 3. **Validation** → FluentValidation pipeline validates request
 4. **Persistence** → EF Core writes entity changes + outbox messages in atomic transaction
-5. **Cache Invalidation** → Calendar cache is invalidated for consistency
-6. **Background Worker** → Separate worker process polls for outbox messages
-7. **Async Processing** → Worker processes messages (e.g., AI summaries, embeddings)
+5. **Background Worker** → Separate worker process polls for outbox messages
+6. **Async Processing** → Worker processes messages (reminders, recurring task scheduling)
 
 **Example: Creating a Task**
 - Frontend sends `POST /api/tasks` (optimistic UI shows task immediately)
 - Backend validates, creates TaskItem entity + "TaskCreated" outbox message
 - Both are saved atomically in a single transaction
-- Cache is invalidated so next month view request rebuilds accurate counts
 - Worker eventually processes "TaskCreated" message (if any background work is configured)
 
 ### Local-First Architecture
@@ -175,7 +166,6 @@ The synchronization system ensures data consistency across devices:
 - Entity versions track changes for conflict detection
 - Reminders are tracked separately to prevent blocking
 - **Outbox pattern** ensures reliable background processing: every command creates outbox messages alongside entity changes in a single atomic transaction
-- **Cache abstraction** (ICalendarCache) provides in-process or distributed caching for calendar views
 - Worker processes continuously poll for unprocessed outbox messages and execute background work
 
 ## Building for Production
@@ -201,14 +191,15 @@ dotnet test
 
 Run specific project tests:
 ```bash
-dotnet test NotesApp.Application.Tests
-dotnet test NotesApp.Worker.Tests
+dotnet test tests/NotesApp.Application.Tests
+dotnet test tests/NotesApp.Api.IntegrationTests
+dotnet test tests/NotesApp.Worker.Tests
 ```
 
 ## Contributing
 
 1. Create a feature branch
-2. Ensure your code follows [CODING_PRINCIPLES.md](./CODING_PRINCIPLES.md)
+2. Ensure your code follows the standards documented in `CLAUDE.md`
 3. Write tests for new functionality
 4. Submit a pull request with a clear description of changes
 5. Ensure all tests pass and code is reviewed before merging
@@ -218,13 +209,17 @@ dotnet test NotesApp.Worker.Tests
 ### In Progress
 - Push notifications via FCM/APNs
 - Enhanced conflict resolution with per-field merging
-- Comprehensive observability (OpenTelemetry, Serilog)
 
-### Planned
+### V2 — Planned
 - Semantic search with Azure OpenAI embeddings
 - Intelligent note summarization
+- AI-powered background processing (outbox worker AI integration)
 - Infrastructure as Code (Bicep templates)
 - API rate limiting and versioning
+
+### V3 — Future
+- Comprehensive observability (OpenTelemetry, Serilog, distributed tracing)
+- Distributed calendar caching layer
 - Advanced operational monitoring
 
 ## Troubleshooting
@@ -247,7 +242,7 @@ dotnet test NotesApp.Worker.Tests
 ## Support
 
 For questions or issues:
-1. Check the [CODING_PRINCIPLES.md](./CODING_PRINCIPLES.md) for development standards
+1. Review `CLAUDE.md` for development standards
 2. Review relevant documentation in `/docs` (when created)
 3. Open an issue in the repository
 4. Contact the development team
