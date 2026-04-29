@@ -117,3 +117,15 @@ Three test projects: `NotesApp.Application.Tests` (unit, Moq), `NotesApp.Api.Int
 Do not propose or implement unless confident across: current official docs, this codebase's patterns, and architectural coherence. If uncertain, inspect more code first. If uncertainty remains, say exactly what is uncertain.
 
 When codebase conventions and official best practices conflict, do not silently pick one or silently compromise. Name the tension, explain the tradeoff clearly, and resolve it with the user before writing any code.
+
+### Mandatory stop-and-ask triggers
+
+Stop immediately and ask before proceeding in any of these four situations:
+
+1. **Data deletion or irreversible state change** — any task that deletes records, drops columns, removes stored files, or produces state that cannot be rolled back. State the exact scope of what will be lost and wait for explicit confirmation.
+
+2. **Ownership or auth boundary ambiguity** — when it is unclear which user role owns an entity, which users are permitted to perform an operation, or how an authorization check should be enforced. Do not infer ownership rules from surrounding code; ask.
+
+3. **Two equally valid patterns exist in the codebase** — when two feature areas implement the same concern differently and both are legitimate (e.g. two valid validator styles, two outbox payload shapes). Name both patterns, state the tradeoff, and let the user choose which to follow.
+
+4. **Feature area has no existing tests** — when the code being added or changed has no test coverage and the appropriate testing level (unit vs integration) is not obvious from context. Ask which level matches intent before writing any test.
