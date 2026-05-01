@@ -87,6 +87,7 @@ namespace NotesApp.Api.Controllers
                 RecurringSeries = payload.RecurringSeries,
                 RecurringSeriesSubtasks = payload.RecurringSeriesSubtasks,
                 RecurringExceptions = payload.RecurringExceptions,
+                RecurringAttachments = payload.RecurringAttachments,  // REFACTORED: added recurring-attachment push support
             };
 
             var result = await _mediator.Send(command, cancellationToken);

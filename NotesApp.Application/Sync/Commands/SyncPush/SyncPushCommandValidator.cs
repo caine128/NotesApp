@@ -22,12 +22,13 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
     /// Validates:
     /// - DeviceId must be non-empty
     /// - ClientSyncTimestampUtc must not be default
-    /// - Per-collection limits for Tasks, Notes, and Blocks
+    /// - Per-collection limits for all sync-able entity families
     /// - Total item limit across all collections
     /// - Individual item validation for creates, updates, and deletes
-    /// 
+    ///
     /// Strategy: Reuses existing Create*/Update*/Delete* command validators for field-level rules
-    /// to maintain consistency between direct API calls and sync operations.
+    /// where they exist (Tasks, Notes, Blocks). Newer entity families (Categories, Subtasks,
+    /// recurring entities, attachments) carry their own inline rules.
     /// </summary>
     public sealed class SyncPushCommandValidator : AbstractValidator<SyncPushCommand>
     {
@@ -52,48 +53,48 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             // ─────────────────────────────────────────────────────────────────
 
             RuleFor(x => x.Tasks.Created)
-                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
-                .WithMessage($"Tasks.Created cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+                .Must(list => list.Count <= SyncLimits.PushMaxTasks)
+                .WithMessage($"Tasks.Created cannot contain more than {SyncLimits.PushMaxTasks} items.");
 
             RuleFor(x => x.Tasks.Updated)
-                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
-                .WithMessage($"Tasks.Updated cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+                .Must(list => list.Count <= SyncLimits.PushMaxTasks)
+                .WithMessage($"Tasks.Updated cannot contain more than {SyncLimits.PushMaxTasks} items.");
 
             RuleFor(x => x.Tasks.Deleted)
-                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
-                .WithMessage($"Tasks.Deleted cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+                .Must(list => list.Count <= SyncLimits.PushMaxTasks)
+                .WithMessage($"Tasks.Deleted cannot contain more than {SyncLimits.PushMaxTasks} items.");
 
             // ─────────────────────────────────────────────────────────────────
             // Per-collection size limits: Notes
             // ─────────────────────────────────────────────────────────────────
 
             RuleFor(x => x.Notes.Created)
-                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
-                .WithMessage($"Notes.Created cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+                .Must(list => list.Count <= SyncLimits.PushMaxNotes)
+                .WithMessage($"Notes.Created cannot contain more than {SyncLimits.PushMaxNotes} items.");
 
             RuleFor(x => x.Notes.Updated)
-                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
-                .WithMessage($"Notes.Updated cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+                .Must(list => list.Count <= SyncLimits.PushMaxNotes)
+                .WithMessage($"Notes.Updated cannot contain more than {SyncLimits.PushMaxNotes} items.");
 
             RuleFor(x => x.Notes.Deleted)
-                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
-                .WithMessage($"Notes.Deleted cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+                .Must(list => list.Count <= SyncLimits.PushMaxNotes)
+                .WithMessage($"Notes.Deleted cannot contain more than {SyncLimits.PushMaxNotes} items.");
 
             // ─────────────────────────────────────────────────────────────────
             // Per-collection size limits: Blocks
             // ─────────────────────────────────────────────────────────────────
 
             RuleFor(x => x.Blocks.Created)
-                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
-                .WithMessage($"Blocks.Created cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+                .Must(list => list.Count <= SyncLimits.PushMaxBlocks)
+                .WithMessage($"Blocks.Created cannot contain more than {SyncLimits.PushMaxBlocks} items.");
 
             RuleFor(x => x.Blocks.Updated)
-                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
-                .WithMessage($"Blocks.Updated cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+                .Must(list => list.Count <= SyncLimits.PushMaxBlocks)
+                .WithMessage($"Blocks.Updated cannot contain more than {SyncLimits.PushMaxBlocks} items.");
 
             RuleFor(x => x.Blocks.Deleted)
-                .Must(list => list.Count <= SyncLimits.PushMaxItemsPerEntity)
-                .WithMessage($"Blocks.Deleted cannot contain more than {SyncLimits.PushMaxItemsPerEntity} items.");
+                .Must(list => list.Count <= SyncLimits.PushMaxBlocks)
+                .WithMessage($"Blocks.Deleted cannot contain more than {SyncLimits.PushMaxBlocks} items.");
 
             // ─────────────────────────────────────────────────────────────────
             // REFACTORED: Per-collection size limits: Categories
@@ -110,6 +111,98 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             RuleFor(x => x.Categories.Deleted)
                 .Must(list => list.Count <= SyncLimits.PushMaxCategories)
                 .WithMessage($"Categories.Deleted cannot contain more than {SyncLimits.PushMaxCategories} items.");
+
+            // ─────────────────────────────────────────────────────────────────
+            // Per-collection size limits: Subtasks
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleFor(x => x.Subtasks.Created)
+                .Must(list => list.Count <= SyncLimits.PushMaxSubtasks)
+                .WithMessage($"Subtasks.Created cannot contain more than {SyncLimits.PushMaxSubtasks} items.");
+
+            RuleFor(x => x.Subtasks.Updated)
+                .Must(list => list.Count <= SyncLimits.PushMaxSubtasks)
+                .WithMessage($"Subtasks.Updated cannot contain more than {SyncLimits.PushMaxSubtasks} items.");
+
+            RuleFor(x => x.Subtasks.Deleted)
+                .Must(list => list.Count <= SyncLimits.PushMaxSubtasks)
+                .WithMessage($"Subtasks.Deleted cannot contain more than {SyncLimits.PushMaxSubtasks} items.");
+
+            // ─────────────────────────────────────────────────────────────────
+            // Per-collection size limits: Attachments
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleFor(x => x.Attachments.Deleted)
+                .Must(list => list.Count <= SyncLimits.PushMaxAttachmentDeletes)
+                .WithMessage($"Attachments.Deleted cannot contain more than {SyncLimits.PushMaxAttachmentDeletes} items.");
+
+            // ─────────────────────────────────────────────────────────────────
+            // Per-collection size limits: RecurringRoots
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleFor(x => x.RecurringRoots.Created)
+                .Must(list => list.Count <= SyncLimits.PushMaxRecurringRoots)
+                .WithMessage($"RecurringRoots.Created cannot contain more than {SyncLimits.PushMaxRecurringRoots} items.");
+
+            RuleFor(x => x.RecurringRoots.Deleted)
+                .Must(list => list.Count <= SyncLimits.PushMaxRecurringRoots)
+                .WithMessage($"RecurringRoots.Deleted cannot contain more than {SyncLimits.PushMaxRecurringRoots} items.");
+
+            // ─────────────────────────────────────────────────────────────────
+            // Per-collection size limits: RecurringSeries
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleFor(x => x.RecurringSeries.Created)
+                .Must(list => list.Count <= SyncLimits.PushMaxRecurringSeries)
+                .WithMessage($"RecurringSeries.Created cannot contain more than {SyncLimits.PushMaxRecurringSeries} items.");
+
+            RuleFor(x => x.RecurringSeries.Updated)
+                .Must(list => list.Count <= SyncLimits.PushMaxRecurringSeries)
+                .WithMessage($"RecurringSeries.Updated cannot contain more than {SyncLimits.PushMaxRecurringSeries} items.");
+
+            RuleFor(x => x.RecurringSeries.Deleted)
+                .Must(list => list.Count <= SyncLimits.PushMaxRecurringSeries)
+                .WithMessage($"RecurringSeries.Deleted cannot contain more than {SyncLimits.PushMaxRecurringSeries} items.");
+
+            // ─────────────────────────────────────────────────────────────────
+            // Per-collection size limits: RecurringSeriesSubtasks
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleFor(x => x.RecurringSeriesSubtasks.Created)
+                .Must(list => list.Count <= SyncLimits.PushMaxRecurringSeriesSubtasks)
+                .WithMessage($"RecurringSeriesSubtasks.Created cannot contain more than {SyncLimits.PushMaxRecurringSeriesSubtasks} items.");
+
+            RuleFor(x => x.RecurringSeriesSubtasks.Updated)
+                .Must(list => list.Count <= SyncLimits.PushMaxRecurringSeriesSubtasks)
+                .WithMessage($"RecurringSeriesSubtasks.Updated cannot contain more than {SyncLimits.PushMaxRecurringSeriesSubtasks} items.");
+
+            RuleFor(x => x.RecurringSeriesSubtasks.Deleted)
+                .Must(list => list.Count <= SyncLimits.PushMaxRecurringSeriesSubtasks)
+                .WithMessage($"RecurringSeriesSubtasks.Deleted cannot contain more than {SyncLimits.PushMaxRecurringSeriesSubtasks} items.");
+
+            // ─────────────────────────────────────────────────────────────────
+            // Per-collection size limits: RecurringExceptions
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleFor(x => x.RecurringExceptions.Created)
+                .Must(list => list.Count <= SyncLimits.PushMaxRecurringExceptions)
+                .WithMessage($"RecurringExceptions.Created cannot contain more than {SyncLimits.PushMaxRecurringExceptions} items.");
+
+            RuleFor(x => x.RecurringExceptions.Updated)
+                .Must(list => list.Count <= SyncLimits.PushMaxRecurringExceptions)
+                .WithMessage($"RecurringExceptions.Updated cannot contain more than {SyncLimits.PushMaxRecurringExceptions} items.");
+
+            RuleFor(x => x.RecurringExceptions.Deleted)
+                .Must(list => list.Count <= SyncLimits.PushMaxRecurringExceptions)
+                .WithMessage($"RecurringExceptions.Deleted cannot contain more than {SyncLimits.PushMaxRecurringExceptions} items.");
+
+            // ─────────────────────────────────────────────────────────────────
+            // Per-collection size limits: RecurringAttachments
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleFor(x => x.RecurringAttachments.Deleted)
+                .Must(list => list.Count <= SyncLimits.PushMaxRecurringAttachmentDeletes)
+                .WithMessage($"RecurringAttachments.Deleted cannot contain more than {SyncLimits.PushMaxRecurringAttachmentDeletes} items.");
 
 
             // ─────────────────────────────────────────────────────────────────
@@ -129,10 +222,25 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                         cmd.Blocks.Created.Count +
                         cmd.Blocks.Updated.Count +
                         cmd.Blocks.Deleted.Count +
-                        // REFACTORED: include category counts in total items limit
                         cmd.Categories.Created.Count +
                         cmd.Categories.Updated.Count +
-                        cmd.Categories.Deleted.Count;
+                        cmd.Categories.Deleted.Count +
+                        cmd.Subtasks.Created.Count +
+                        cmd.Subtasks.Updated.Count +
+                        cmd.Subtasks.Deleted.Count +
+                        cmd.Attachments.Deleted.Count +
+                        cmd.RecurringRoots.Created.Count +
+                        cmd.RecurringRoots.Deleted.Count +
+                        cmd.RecurringSeries.Created.Count +
+                        cmd.RecurringSeries.Updated.Count +
+                        cmd.RecurringSeries.Deleted.Count +
+                        cmd.RecurringSeriesSubtasks.Created.Count +
+                        cmd.RecurringSeriesSubtasks.Updated.Count +
+                        cmd.RecurringSeriesSubtasks.Deleted.Count +
+                        cmd.RecurringExceptions.Created.Count +
+                        cmd.RecurringExceptions.Updated.Count +
+                        cmd.RecurringExceptions.Deleted.Count +
+                        cmd.RecurringAttachments.Deleted.Count;
 
                     return total <= SyncLimits.PushMaxTotalItems;
                 })
@@ -189,6 +297,82 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
             RuleForEach(x => x.Categories.Deleted)
                 .SetValidator(new CategoryDeletedPushItemValidator());
+
+            // ─────────────────────────────────────────────────────────────────
+            // Individual item validation: Subtasks
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleForEach(x => x.Subtasks.Created)
+                .SetValidator(new SubtaskCreatedPushItemValidator());
+
+            RuleForEach(x => x.Subtasks.Updated)
+                .SetValidator(new SubtaskUpdatedPushItemValidator());
+
+            RuleForEach(x => x.Subtasks.Deleted)
+                .SetValidator(new SubtaskDeletedPushItemValidator());
+
+            // ─────────────────────────────────────────────────────────────────
+            // Individual item validation: Attachments
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleForEach(x => x.Attachments.Deleted)
+                .SetValidator(new AttachmentDeletedPushItemValidator());
+
+            // ─────────────────────────────────────────────────────────────────
+            // Individual item validation: RecurringRoots
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleForEach(x => x.RecurringRoots.Created)
+                .SetValidator(new RecurringRootCreatedPushItemValidator());
+
+            RuleForEach(x => x.RecurringRoots.Deleted)
+                .SetValidator(new RecurringRootDeletedPushItemValidator());
+
+            // ─────────────────────────────────────────────────────────────────
+            // Individual item validation: RecurringSeries
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleForEach(x => x.RecurringSeries.Created)
+                .SetValidator(new RecurringSeriesCreatedPushItemValidator());
+
+            RuleForEach(x => x.RecurringSeries.Updated)
+                .SetValidator(new RecurringSeriesUpdatedPushItemValidator());
+
+            RuleForEach(x => x.RecurringSeries.Deleted)
+                .SetValidator(new RecurringSeriesDeletedPushItemValidator());
+
+            // ─────────────────────────────────────────────────────────────────
+            // Individual item validation: RecurringSeriesSubtasks
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleForEach(x => x.RecurringSeriesSubtasks.Created)
+                .SetValidator(new RecurringSeriesSubtaskCreatedPushItemValidator());
+
+            RuleForEach(x => x.RecurringSeriesSubtasks.Updated)
+                .SetValidator(new RecurringSeriesSubtaskUpdatedPushItemValidator());
+
+            RuleForEach(x => x.RecurringSeriesSubtasks.Deleted)
+                .SetValidator(new RecurringSeriesSubtaskDeletedPushItemValidator());
+
+            // ─────────────────────────────────────────────────────────────────
+            // Individual item validation: RecurringExceptions
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleForEach(x => x.RecurringExceptions.Created)
+                .SetValidator(new RecurringExceptionCreatedPushItemValidator());
+
+            RuleForEach(x => x.RecurringExceptions.Updated)
+                .SetValidator(new RecurringExceptionUpdatedPushItemValidator());
+
+            RuleForEach(x => x.RecurringExceptions.Deleted)
+                .SetValidator(new RecurringExceptionDeletedPushItemValidator());
+
+            // ─────────────────────────────────────────────────────────────────
+            // Individual item validation: RecurringAttachments
+            // ─────────────────────────────────────────────────────────────────
+
+            RuleForEach(x => x.RecurringAttachments.Deleted)
+                .SetValidator(new RecurringAttachmentDeletedPushItemValidator());
         }
 
 
@@ -626,6 +810,315 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 RuleFor(x => x.Id)
                     .NotEmpty()
                     .WithMessage("Id is required for deleted categories.");
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // SUBTASK VALIDATORS
+        // ════════════════════════════════════════════════════════════════════
+
+        private sealed class SubtaskCreatedPushItemValidator : AbstractValidator<SubtaskCreatedPushItemDto>
+        {
+            public SubtaskCreatedPushItemValidator()
+            {
+                RuleFor(x => x.ClientId)
+                    .NotEmpty()
+                    .WithMessage("ClientId is required for created subtasks.");
+
+                // Sync-specific: must have either TaskId (existing task) OR TaskClientId (created in same push)
+                RuleFor(x => x)
+                    .Must(x => x.TaskId.HasValue && x.TaskId != Guid.Empty ||
+                               x.TaskClientId.HasValue && x.TaskClientId != Guid.Empty)
+                    .WithMessage("Either TaskId or TaskClientId must be provided.");
+
+                RuleFor(x => x.Text)
+                    .NotEmpty()
+                    .WithMessage("Subtask text is required.")
+                    .MaximumLength(Subtask.MaxTextLength)
+                    .WithMessage($"Subtask text cannot exceed {Subtask.MaxTextLength} characters.");
+
+                RuleFor(x => x.Position)
+                    .NotEmpty()
+                    .WithMessage("Position is required.")
+                    .MaximumLength(Subtask.MaxPositionLength)
+                    .WithMessage($"Position cannot exceed {Subtask.MaxPositionLength} characters.");
+            }
+        }
+
+        private sealed class SubtaskUpdatedPushItemValidator : AbstractValidator<SubtaskUpdatedPushItemDto>
+        {
+            public SubtaskUpdatedPushItemValidator()
+            {
+                RuleFor(x => x.Id)
+                    .NotEmpty()
+                    .WithMessage("Id is required for updated subtasks.");
+
+                RuleFor(x => x.ExpectedVersion)
+                    .GreaterThanOrEqualTo(1)
+                    .WithMessage("ExpectedVersion must be at least 1.");
+
+                // Null means "no change"; non-null must be valid
+                RuleFor(x => x.Text)
+                    .NotEmpty()
+                    .WithMessage("Subtask text cannot be empty.")
+                    .MaximumLength(Subtask.MaxTextLength)
+                    .WithMessage($"Subtask text cannot exceed {Subtask.MaxTextLength} characters.")
+                    .When(x => x.Text is not null);
+
+                RuleFor(x => x.Position)
+                    .NotEmpty()
+                    .WithMessage("Position cannot be empty.")
+                    .MaximumLength(Subtask.MaxPositionLength)
+                    .WithMessage($"Position cannot exceed {Subtask.MaxPositionLength} characters.")
+                    .When(x => x.Position is not null);
+            }
+        }
+
+        private sealed class SubtaskDeletedPushItemValidator : AbstractValidator<SubtaskDeletedPushItemDto>
+        {
+            public SubtaskDeletedPushItemValidator()
+            {
+                RuleFor(x => x.Id)
+                    .NotEmpty()
+                    .WithMessage("Id is required for deleted subtasks.");
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // ATTACHMENT VALIDATORS
+        // ════════════════════════════════════════════════════════════════════
+
+        private sealed class AttachmentDeletedPushItemValidator : AbstractValidator<AttachmentDeletedPushItemDto>
+        {
+            public AttachmentDeletedPushItemValidator()
+            {
+                RuleFor(x => x.Id)
+                    .NotEmpty()
+                    .WithMessage("Id is required for deleted attachments.");
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // RECURRING ROOT VALIDATORS
+        // ════════════════════════════════════════════════════════════════════
+
+        private sealed class RecurringRootCreatedPushItemValidator : AbstractValidator<RecurringRootCreatedPushItemDto>
+        {
+            public RecurringRootCreatedPushItemValidator()
+            {
+                RuleFor(x => x.ClientId)
+                    .NotEmpty()
+                    .WithMessage("ClientId is required for created recurring roots.");
+            }
+        }
+
+        private sealed class RecurringRootDeletedPushItemValidator : AbstractValidator<RecurringRootDeletedPushItemDto>
+        {
+            public RecurringRootDeletedPushItemValidator()
+            {
+                RuleFor(x => x.Id)
+                    .NotEmpty()
+                    .WithMessage("Id is required for deleted recurring roots.");
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // RECURRING SERIES VALIDATORS
+        // ════════════════════════════════════════════════════════════════════
+
+        private sealed class RecurringSeriesCreatedPushItemValidator : AbstractValidator<RecurringSeriesCreatedPushItemDto>
+        {
+            public RecurringSeriesCreatedPushItemValidator()
+            {
+                RuleFor(x => x.ClientId)
+                    .NotEmpty()
+                    .WithMessage("ClientId is required for created recurring series.");
+
+                // Sync-specific: must have either RootId (existing root) OR RootClientId (created in same push)
+                RuleFor(x => x)
+                    .Must(x => x.RootId.HasValue && x.RootId != Guid.Empty ||
+                               x.RootClientId.HasValue && x.RootClientId != Guid.Empty)
+                    .WithMessage("Either RootId or RootClientId must be provided.");
+
+                RuleFor(x => x.RRuleString)
+                    .NotEmpty()
+                    .WithMessage("RRuleString is required.")
+                    .MaximumLength(RecurringTaskSeries.MaxRRuleStringLength)
+                    .WithMessage($"RRuleString cannot exceed {RecurringTaskSeries.MaxRRuleStringLength} characters.");
+
+                RuleFor(x => x.StartsOnDate)
+                    .Must(d => d != default)
+                    .WithMessage("StartsOnDate must be a valid date.");
+
+                RuleFor(x => x.Title)
+                    .NotEmpty()
+                    .WithMessage("Title is required.")
+                    .MaximumLength(RecurringTaskSeries.MaxTitleLength)
+                    .WithMessage($"Title cannot exceed {RecurringTaskSeries.MaxTitleLength} characters.");
+            }
+        }
+
+        private sealed class RecurringSeriesUpdatedPushItemValidator : AbstractValidator<RecurringSeriesUpdatedPushItemDto>
+        {
+            public RecurringSeriesUpdatedPushItemValidator()
+            {
+                RuleFor(x => x.Id)
+                    .NotEmpty()
+                    .WithMessage("Id is required for updated recurring series.");
+
+                RuleFor(x => x.ExpectedVersion)
+                    .GreaterThanOrEqualTo(1)
+                    .WithMessage("ExpectedVersion must be at least 1.");
+
+                RuleFor(x => x.Title)
+                    .NotEmpty()
+                    .WithMessage("Title is required.")
+                    .MaximumLength(RecurringTaskSeries.MaxTitleLength)
+                    .WithMessage($"Title cannot exceed {RecurringTaskSeries.MaxTitleLength} characters.");
+            }
+        }
+
+        private sealed class RecurringSeriesDeletedPushItemValidator : AbstractValidator<RecurringSeriesDeletedPushItemDto>
+        {
+            public RecurringSeriesDeletedPushItemValidator()
+            {
+                RuleFor(x => x.Id)
+                    .NotEmpty()
+                    .WithMessage("Id is required for deleted recurring series.");
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // RECURRING SERIES SUBTASK VALIDATORS
+        // ════════════════════════════════════════════════════════════════════
+
+        private sealed class RecurringSeriesSubtaskCreatedPushItemValidator : AbstractValidator<RecurringSubtaskCreatedPushItemDto>
+        {
+            public RecurringSeriesSubtaskCreatedPushItemValidator()
+            {
+                RuleFor(x => x.ClientId)
+                    .NotEmpty()
+                    .WithMessage("ClientId is required for created recurring subtasks.");
+
+                // Sync-specific: must have either (SeriesId or SeriesClientId) OR ExceptionId —
+                // exactly one FK must be present (enforced by DB check constraint on the entity)
+                RuleFor(x => x)
+                    .Must(x =>
+                        x.SeriesId.HasValue && x.SeriesId != Guid.Empty ||
+                        x.SeriesClientId.HasValue && x.SeriesClientId != Guid.Empty ||
+                        x.ExceptionId.HasValue && x.ExceptionId != Guid.Empty)
+                    .WithMessage("Either SeriesId/SeriesClientId or ExceptionId must be provided.");
+
+                RuleFor(x => x.Text)
+                    .NotEmpty()
+                    .WithMessage("Subtask text is required.")
+                    .MaximumLength(RecurringTaskSubtask.MaxTextLength)
+                    .WithMessage($"Subtask text cannot exceed {RecurringTaskSubtask.MaxTextLength} characters.");
+
+                RuleFor(x => x.Position)
+                    .NotEmpty()
+                    .WithMessage("Position is required.")
+                    .MaximumLength(RecurringTaskSubtask.MaxPositionLength)
+                    .WithMessage($"Position cannot exceed {RecurringTaskSubtask.MaxPositionLength} characters.");
+            }
+        }
+
+        private sealed class RecurringSeriesSubtaskUpdatedPushItemValidator : AbstractValidator<RecurringSubtaskUpdatedPushItemDto>
+        {
+            public RecurringSeriesSubtaskUpdatedPushItemValidator()
+            {
+                RuleFor(x => x.Id)
+                    .NotEmpty()
+                    .WithMessage("Id is required for updated recurring subtasks.");
+
+                RuleFor(x => x.ExpectedVersion)
+                    .GreaterThanOrEqualTo(1)
+                    .WithMessage("ExpectedVersion must be at least 1.");
+
+                // Null means "no change"; non-null must be valid
+                RuleFor(x => x.Text)
+                    .NotEmpty()
+                    .WithMessage("Subtask text cannot be empty.")
+                    .MaximumLength(RecurringTaskSubtask.MaxTextLength)
+                    .WithMessage($"Subtask text cannot exceed {RecurringTaskSubtask.MaxTextLength} characters.")
+                    .When(x => x.Text is not null);
+
+                RuleFor(x => x.Position)
+                    .NotEmpty()
+                    .WithMessage("Position cannot be empty.")
+                    .MaximumLength(RecurringTaskSubtask.MaxPositionLength)
+                    .WithMessage($"Position cannot exceed {RecurringTaskSubtask.MaxPositionLength} characters.")
+                    .When(x => x.Position is not null);
+            }
+        }
+
+        private sealed class RecurringSeriesSubtaskDeletedPushItemValidator : AbstractValidator<RecurringSubtaskDeletedPushItemDto>
+        {
+            public RecurringSeriesSubtaskDeletedPushItemValidator()
+            {
+                RuleFor(x => x.Id)
+                    .NotEmpty()
+                    .WithMessage("Id is required for deleted recurring subtasks.");
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // RECURRING EXCEPTION VALIDATORS
+        // ════════════════════════════════════════════════════════════════════
+
+        private sealed class RecurringExceptionCreatedPushItemValidator : AbstractValidator<RecurringExceptionCreatedPushItemDto>
+        {
+            public RecurringExceptionCreatedPushItemValidator()
+            {
+                RuleFor(x => x.ClientId)
+                    .NotEmpty()
+                    .WithMessage("ClientId is required for created recurring exceptions.");
+
+                RuleFor(x => x.SeriesId)
+                    .NotEmpty()
+                    .WithMessage("SeriesId is required for created recurring exceptions.");
+
+                RuleFor(x => x.OccurrenceDate)
+                    .Must(d => d != default)
+                    .WithMessage("OccurrenceDate must be a valid date.");
+            }
+        }
+
+        private sealed class RecurringExceptionUpdatedPushItemValidator : AbstractValidator<RecurringExceptionUpdatedPushItemDto>
+        {
+            public RecurringExceptionUpdatedPushItemValidator()
+            {
+                RuleFor(x => x.Id)
+                    .NotEmpty()
+                    .WithMessage("Id is required for updated recurring exceptions.");
+
+                RuleFor(x => x.ExpectedVersion)
+                    .GreaterThanOrEqualTo(1)
+                    .WithMessage("ExpectedVersion must be at least 1.");
+            }
+        }
+
+        private sealed class RecurringExceptionDeletedPushItemValidator : AbstractValidator<RecurringExceptionDeletedPushItemDto>
+        {
+            public RecurringExceptionDeletedPushItemValidator()
+            {
+                RuleFor(x => x.Id)
+                    .NotEmpty()
+                    .WithMessage("Id is required for deleted recurring exceptions.");
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // RECURRING ATTACHMENT VALIDATORS
+        // ════════════════════════════════════════════════════════════════════
+
+        private sealed class RecurringAttachmentDeletedPushItemValidator : AbstractValidator<RecurringAttachmentDeletedPushItemDto>
+        {
+            public RecurringAttachmentDeletedPushItemValidator()
+            {
+                RuleFor(x => x.Id)
+                    .NotEmpty()
+                    .WithMessage("Id is required for deleted recurring attachments.");
             }
         }
     }
