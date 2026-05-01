@@ -15,14 +15,15 @@ Use `microsoft-extensions-configuration` when working with `appsettings`, user s
 Use `ilspy-decompile` to inspect third-party NuGet internals when source is unavailable.
 Run `simplify` after implementing a feature to catch unnecessary complexity.
 Run `security-review` when touching auth, device provisioning, Azure Blob, or Entra endpoints.
+Use `code-audit-debugger` when investigating a specific audit finding — paste the finding into the Goal section and run all six phases.
 Use the `official-docs-researcher` subagent for any framework, SDK, NuGet package, or external API before implementing.
 
 ## Before every coding task
 
 **This is mandatory. Do not write or edit any file until all four steps are complete.**
 
-1. **Codebase research** — run the `codebase-researcher` subagent for the relevant feature area. Read the handler, validator, entity, repository, controller, mappings, and tests. Return a concise terrain summary.
-2. **Docs research** — if the task touches any external framework, NuGet package, SDK, or API, run the `official-docs-researcher` subagent for that specific topic.
+1. **Codebase research** — run the `codebase-researcher` subagent for the relevant feature area. Read the handler, validator, entity, repository, controller, mappings, and tests. Return a concise terrain summary. This is not skippable based on familiarity with the codebase — memory of a pattern is not the same as reading it.
+2. **Docs research** — if the task touches any framework, SDK, NuGet package, or external API that has official documentation, run the `official-docs-researcher` subagent for that specific topic. This is not conditional on confidence level. Training knowledge of a framework does not substitute for a current docs check.
 3. **Clarification** — if anything is ambiguous, or if codebase conventions conflict with official best practices, do not silently pick one. Surface the tension, explain the tradeoff, and discuss with the user before proceeding.
 4. **Implementation plan report** — present a structured report of what will be created or modified, in what order, and with what approach. Wait for explicit user approval before writing any code.
 
@@ -118,7 +119,9 @@ Three test projects: `NotesApp.Application.Tests` (unit, Moq), `NotesApp.Api.Int
 
 ## Confidence gate
 
-Do not propose or implement unless confident across: current official docs, this codebase's patterns, and architectural coherence. If uncertain, inspect more code first. If uncertainty remains, say exactly what is uncertain.
+The pre-task research steps above are not optional and are not conditional on confidence level. Subjective confidence in training knowledge is not a substitute for running `codebase-researcher` and `official-docs-researcher`. If either step was skipped, stop and run it before proceeding.
+
+Any factual claim about what the code currently does must be verified by reading the source. This includes — but is not limited to — what fields a class exposes, what a method contains, which properties are mapped, how many items exist in a collection, and what a test asserts. Memory, conversation summaries, and earlier reads are starting points, not ground truth. If you have not read the relevant code in the current session, read it before stating anything about it.
 
 When codebase conventions and official best practices conflict, do not silently pick one or silently compromise. Name the tension, explain the tradeoff clearly, and resolve it with the user before writing any code.
 
