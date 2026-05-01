@@ -78,7 +78,7 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
             {
                 // Initial sync: return all non-deleted subtasks for the user.
                 return await _context.Subtasks
-                    .Where(s => s.UserId == userId)
+                    .Where(s => s.UserId == userId && !s.IsDeleted)
                     .ToListAsync(cancellationToken);
             }
 

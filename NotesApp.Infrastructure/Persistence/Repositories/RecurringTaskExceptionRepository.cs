@@ -92,7 +92,7 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
             if (since is null)
             {
                 return await _context.RecurringTaskExceptions
-                    .Where(e => e.UserId == userId)
+                    .Where(e => e.UserId == userId && !e.IsDeleted)
                     .ToListAsync(cancellationToken);
             }
 

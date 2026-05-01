@@ -3,6 +3,7 @@ using FluentResults;
 using Microsoft.Extensions.Logging;
 using Moq;
 using NotesApp.Application.Abstractions.Persistence;
+using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Sync.Models;
 using NotesApp.Application.Sync.Queries;
@@ -37,6 +38,7 @@ namespace NotesApp.Application.Tests.Sync
         // REFACTORED: added recurring attachment repository mock for recurring-task-attachments feature
         private readonly Mock<IRecurringTaskAttachmentRepository> _recurringAttachmentRepositoryMock = new();
         private readonly Mock<ICurrentUserService> _currentUserServiceMock = new();
+        private readonly Mock<ISystemClock> _clockMock = new();
         private readonly Mock<ILogger<GetSyncChangesQueryHandler>> _loggerMock = new();
 
         private readonly Guid _userId = Guid.NewGuid();
@@ -46,6 +48,10 @@ namespace NotesApp.Application.Tests.Sync
             _currentUserServiceMock
                 .Setup(s => s.GetUserIdAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(_userId);
+
+            _clockMock
+                .Setup(c => c.UtcNow)
+                .Returns(new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc));
 
             // Setup empty returns for block, asset and category repositories
             _blockRepositoryMock
@@ -105,6 +111,7 @@ namespace NotesApp.Application.Tests.Sync
                 _recurringExceptionRepositoryMock.Object,
                 _recurringAttachmentRepositoryMock.Object, // REFACTORED: added for recurring-task-attachments feature
                 _currentUserServiceMock.Object,
+                _clockMock.Object,
                 _loggerMock.Object);
         }
 
@@ -880,6 +887,848 @@ namespace NotesApp.Application.Tests.Sync
             }
 
             return asset;
+        }
+
+        // -----------------------------------------------------------------------
+        // Subtasks
+        // -----------------------------------------------------------------------
+
+        [Fact]
+        public async Task Handle_initial_sync_includes_subtasks_as_created()
+        {
+            var since = (DateTime?)null;
+            var now = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var subtask = CreateSubtask(_userId, Guid.NewGuid(), now, now, isDeleted: false);
+            _subtaskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<Subtask> { subtask });
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: null, DeviceId: null, MaxItemsPerEntity: null),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.Subtasks.Created.Should().ContainSingle(s => s.Id == subtask.Id);
+            result.Value.Subtasks.Updated.Should().BeEmpty();
+            result.Value.Subtasks.Deleted.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Handle_incremental_sync_categorises_subtasks_into_created_updated_deleted()
+        {
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            var taskId = Guid.NewGuid();
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var createdSubtask = CreateSubtask(_userId, taskId, since.AddMinutes(1), since.AddMinutes(1), isDeleted: false);
+            var updatedSubtask = CreateSubtask(_userId, taskId, since.AddMinutes(-10), since.AddMinutes(2), isDeleted: false);
+            var deletedSubtask = CreateSubtask(_userId, taskId, since.AddMinutes(-20), since.AddMinutes(3), isDeleted: true);
+
+            _subtaskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<Subtask> { createdSubtask, updatedSubtask, deletedSubtask });
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: null),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.Subtasks.Created.Should().ContainSingle(s => s.Id == createdSubtask.Id);
+            result.Value.Subtasks.Updated.Should().ContainSingle(s => s.Id == updatedSubtask.Id);
+            result.Value.Subtasks.Deleted.Should().ContainSingle(s => s.Id == deletedSubtask.Id);
+            result.Value.Subtasks.Deleted[0].DeletedAtUtc.Should().Be(deletedSubtask.UpdatedAtUtc);
+        }
+
+        // -----------------------------------------------------------------------
+        // Attachments (immutable — Created + Deleted only)
+        // -----------------------------------------------------------------------
+
+        [Fact]
+        public async Task Handle_initial_sync_includes_attachments_as_created()
+        {
+            var since = (DateTime?)null;
+            var now = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var attachment = CreateAttachment(_userId, Guid.NewGuid(), now, now, isDeleted: false);
+            _attachmentRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<Attachment> { attachment });
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: null, DeviceId: null, MaxItemsPerEntity: null),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.Attachments.Created.Should().ContainSingle(a => a.Id == attachment.Id);
+            result.Value.Attachments.Deleted.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Handle_incremental_sync_categorises_attachments_into_created_and_deleted_only()
+        {
+            // Attachments are immutable — no Updated bucket.
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            var taskId = Guid.NewGuid();
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var createdAttachment = CreateAttachment(_userId, taskId, since.AddMinutes(1), since.AddMinutes(1), isDeleted: false);
+            var deletedAttachment = CreateAttachment(_userId, taskId, since.AddMinutes(-20), since.AddMinutes(3), isDeleted: true);
+
+            _attachmentRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<Attachment> { createdAttachment, deletedAttachment });
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: null),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.Attachments.Created.Should().ContainSingle(a => a.Id == createdAttachment.Id);
+            result.Value.Attachments.Deleted.Should().ContainSingle(a => a.Id == deletedAttachment.Id);
+            result.Value.Attachments.Deleted[0].DeletedAtUtc.Should().Be(deletedAttachment.UpdatedAtUtc);
+        }
+
+        // -----------------------------------------------------------------------
+        // RecurringRoots (immutable — Created + Deleted only)
+        // -----------------------------------------------------------------------
+
+        [Fact]
+        public async Task Handle_initial_sync_includes_recurring_roots_as_created()
+        {
+            var since = (DateTime?)null;
+            var now = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var root = CreateRecurringRoot(_userId, now, now, isDeleted: false);
+            _recurringRootRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskRoot> { root });
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: null, DeviceId: null, MaxItemsPerEntity: null),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.RecurringRoots.Created.Should().ContainSingle(r => r.Id == root.Id);
+            result.Value.RecurringRoots.Deleted.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Handle_incremental_sync_categorises_recurring_roots_into_created_and_deleted_only()
+        {
+            // RecurringTaskRoot is immutable — no domain update method, no Updated bucket.
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var createdRoot = CreateRecurringRoot(_userId, since.AddMinutes(1), since.AddMinutes(1), isDeleted: false);
+            var deletedRoot = CreateRecurringRoot(_userId, since.AddMinutes(-20), since.AddMinutes(3), isDeleted: true);
+
+            _recurringRootRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskRoot> { createdRoot, deletedRoot });
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: null),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.RecurringRoots.Created.Should().ContainSingle(r => r.Id == createdRoot.Id);
+            result.Value.RecurringRoots.Deleted.Should().ContainSingle(r => r.Id == deletedRoot.Id);
+            result.Value.RecurringRoots.Deleted[0].DeletedAtUtc.Should().Be(deletedRoot.UpdatedAtUtc);
+        }
+
+        // -----------------------------------------------------------------------
+        // RecurringSeries
+        // -----------------------------------------------------------------------
+
+        [Fact]
+        public async Task Handle_initial_sync_includes_recurring_series_as_created()
+        {
+            var since = (DateTime?)null;
+            var now = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var series = CreateRecurringSeries(_userId, now, now, isDeleted: false);
+            _recurringSeriesRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskSeries> { series });
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: null, DeviceId: null, MaxItemsPerEntity: null),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.RecurringSeries.Created.Should().ContainSingle(s => s.Id == series.Id);
+            result.Value.RecurringSeries.Updated.Should().BeEmpty();
+            result.Value.RecurringSeries.Deleted.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Handle_incremental_sync_categorises_recurring_series_into_created_updated_deleted()
+        {
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var createdSeries = CreateRecurringSeries(_userId, since.AddMinutes(1), since.AddMinutes(1), isDeleted: false);
+            var updatedSeries = CreateRecurringSeries(_userId, since.AddMinutes(-10), since.AddMinutes(2), isDeleted: false);
+            var deletedSeries = CreateRecurringSeries(_userId, since.AddMinutes(-20), since.AddMinutes(3), isDeleted: true);
+
+            _recurringSeriesRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskSeries> { createdSeries, updatedSeries, deletedSeries });
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: null),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.RecurringSeries.Created.Should().ContainSingle(s => s.Id == createdSeries.Id);
+            result.Value.RecurringSeries.Updated.Should().ContainSingle(s => s.Id == updatedSeries.Id);
+            result.Value.RecurringSeries.Deleted.Should().ContainSingle(s => s.Id == deletedSeries.Id);
+            result.Value.RecurringSeries.Deleted[0].DeletedAtUtc.Should().Be(deletedSeries.UpdatedAtUtc);
+        }
+
+        // -----------------------------------------------------------------------
+        // RecurringSeriesSubtasks
+        // -----------------------------------------------------------------------
+
+        [Fact]
+        public async Task Handle_initial_sync_includes_recurring_series_subtasks_as_created()
+        {
+            var since = (DateTime?)null;
+            var now = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var seriesSubtask = CreateRecurringSeriesSubtask(_userId, Guid.NewGuid(), now, now, isDeleted: false);
+            _recurringSeriesSubtaskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskSubtask> { seriesSubtask });
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: null, DeviceId: null, MaxItemsPerEntity: null),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.RecurringSeriesSubtasks.Created.Should().ContainSingle(s => s.Id == seriesSubtask.Id);
+            result.Value.RecurringSeriesSubtasks.Updated.Should().BeEmpty();
+            result.Value.RecurringSeriesSubtasks.Deleted.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Handle_incremental_sync_categorises_recurring_series_subtasks_into_created_updated_deleted()
+        {
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            var seriesId = Guid.NewGuid();
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var created = CreateRecurringSeriesSubtask(_userId, seriesId, since.AddMinutes(1), since.AddMinutes(1), isDeleted: false);
+            var updated = CreateRecurringSeriesSubtask(_userId, seriesId, since.AddMinutes(-10), since.AddMinutes(2), isDeleted: false);
+            var deleted = CreateRecurringSeriesSubtask(_userId, seriesId, since.AddMinutes(-20), since.AddMinutes(3), isDeleted: true);
+
+            _recurringSeriesSubtaskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskSubtask> { created, updated, deleted });
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: null),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.RecurringSeriesSubtasks.Created.Should().ContainSingle(s => s.Id == created.Id);
+            result.Value.RecurringSeriesSubtasks.Updated.Should().ContainSingle(s => s.Id == updated.Id);
+            result.Value.RecurringSeriesSubtasks.Deleted.Should().ContainSingle(s => s.Id == deleted.Id);
+            result.Value.RecurringSeriesSubtasks.Deleted[0].DeletedAtUtc.Should().Be(deleted.UpdatedAtUtc);
+        }
+
+        // -----------------------------------------------------------------------
+        // RecurringExceptions — inline subtask behaviour
+        // -----------------------------------------------------------------------
+
+        [Fact]
+        public async Task Handle_initial_sync_inlines_exception_subtasks_into_recurring_exceptions()
+        {
+            // On initial sync, override exceptions include their subtasks inline.
+            var since = (DateTime?)null;
+            var now = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var overrideException = CreateRecurringOverrideException(_userId, Guid.NewGuid(), now, now, isDeleted: false);
+            var exceptionSubtask = CreateRecurringExceptionSubtask(_userId, overrideException.Id, now, now, isDeleted: false);
+
+            _recurringExceptionRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskException> { overrideException });
+
+            // Batch-load called with the override exception's ID
+            _recurringSeriesSubtaskRepositoryMock
+                .Setup(r => r.GetByExceptionIdsAsync(
+                    It.IsAny<IReadOnlyList<Guid>>(),
+                    _userId,
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskSubtask> { exceptionSubtask });
+
+            // Safety net: attachment batch-load returns empty (HasAttachmentOverride is false)
+            _recurringAttachmentRepositoryMock
+                .Setup(r => r.GetByExceptionIdsAsync(
+                    It.IsAny<IReadOnlyList<Guid>>(),
+                    _userId,
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskAttachment>());
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: null, DeviceId: null, MaxItemsPerEntity: null),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            var exceptionDto = result.Value.RecurringExceptions.Created
+                .Should().ContainSingle(e => e.Id == overrideException.Id)
+                .Which;
+            exceptionDto.Subtasks.Should().ContainSingle(s => s.Id == exceptionSubtask.Id);
+        }
+
+        [Fact]
+        public async Task Handle_incremental_sync_exception_inline_subtasks_are_empty()
+        {
+            // On incremental sync the inline lists are always empty;
+            // exception subtask changes arrive via the top-level RecurringSeriesSubtasks bucket.
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var overrideException = CreateRecurringOverrideException(
+                _userId, Guid.NewGuid(), since.AddMinutes(1), since.AddMinutes(1), isDeleted: false);
+
+            _recurringExceptionRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskException> { overrideException });
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: null),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+
+            // GetByExceptionIdsAsync must NOT be called on incremental sync
+            _recurringSeriesSubtaskRepositoryMock.Verify(
+                r => r.GetByExceptionIdsAsync(
+                    It.IsAny<IReadOnlyList<Guid>>(),
+                    It.IsAny<Guid>(),
+                    It.IsAny<CancellationToken>()),
+                Times.Never);
+
+            var exceptionDto = result.Value.RecurringExceptions.Created
+                .Should().ContainSingle(e => e.Id == overrideException.Id)
+                .Which;
+            exceptionDto.Subtasks.Should().BeEmpty();
+        }
+
+        // -----------------------------------------------------------------------
+        // RecurringAttachments (immutable — Created + Deleted only)
+        // -----------------------------------------------------------------------
+
+        [Fact]
+        public async Task Handle_initial_sync_includes_recurring_attachments_as_created()
+        {
+            var since = (DateTime?)null;
+            var now = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var attachment = CreateRecurringAttachment(_userId, Guid.NewGuid(), now, now, isDeleted: false);
+            _recurringAttachmentRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskAttachment> { attachment });
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: null, DeviceId: null, MaxItemsPerEntity: null),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.RecurringAttachments.Created.Should().ContainSingle(a => a.Id == attachment.Id);
+            result.Value.RecurringAttachments.Deleted.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Handle_incremental_sync_categorises_recurring_attachments_into_created_and_deleted_only()
+        {
+            // RecurringTaskAttachment is immutable — no Updated bucket.
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            var seriesId = Guid.NewGuid();
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var createdAttachment = CreateRecurringAttachment(_userId, seriesId, since.AddMinutes(1), since.AddMinutes(1), isDeleted: false);
+            var deletedAttachment = CreateRecurringAttachment(_userId, seriesId, since.AddMinutes(-20), since.AddMinutes(3), isDeleted: true);
+
+            _recurringAttachmentRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<RecurringTaskAttachment> { createdAttachment, deletedAttachment });
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: null),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.RecurringAttachments.Created.Should().ContainSingle(a => a.Id == createdAttachment.Id);
+            result.Value.RecurringAttachments.Deleted.Should().ContainSingle(a => a.Id == deletedAttachment.Id);
+            result.Value.RecurringAttachments.Deleted[0].DeletedAtUtc.Should().Be(deletedAttachment.UpdatedAtUtc);
+        }
+
+        // -----------------------------------------------------------------------
+        // Pagination — HasMore flags for entities added in this feature set
+        // -----------------------------------------------------------------------
+
+        [Fact]
+        public async Task Handle_with_MaxItemsPerEntity_truncates_assets_and_sets_HasMoreAssets_true()
+        {
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            const int maxItems = 2;
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            // 3 assets → total 3 > max 2 → HasMoreAssets
+            var assets = Enumerable.Range(0, 3)
+                .Select(i => CreateAsset(_userId, since.AddMinutes(i + 1), since.AddMinutes(i + 1), isDeleted: false))
+                .ToList();
+
+            _assetRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(assets);
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: maxItems),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.HasMoreAssets.Should().BeTrue();
+            (result.Value.Assets.Created.Count + result.Value.Assets.Deleted.Count)
+                .Should().BeLessThanOrEqualTo(maxItems);
+        }
+
+        [Fact]
+        public async Task Handle_with_MaxItemsPerEntity_truncates_attachments_and_sets_HasMoreAttachments_true()
+        {
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            const int maxItems = 2;
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var taskId = Guid.NewGuid();
+            var attachments = Enumerable.Range(0, 3)
+                .Select(i => CreateAttachment(_userId, taskId, since.AddMinutes(i + 1), since.AddMinutes(i + 1), isDeleted: false))
+                .ToList();
+
+            _attachmentRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(attachments);
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: maxItems),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.HasMoreAttachments.Should().BeTrue();
+            (result.Value.Attachments.Created.Count + result.Value.Attachments.Deleted.Count)
+                .Should().BeLessThanOrEqualTo(maxItems);
+        }
+
+        [Fact]
+        public async Task Handle_with_MaxItemsPerEntity_sets_HasMoreRecurringRoots_when_exceeded()
+        {
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            const int maxItems = 2;
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var roots = Enumerable.Range(0, 3)
+                .Select(i => CreateRecurringRoot(_userId, since.AddMinutes(i + 1), since.AddMinutes(i + 1), isDeleted: false))
+                .ToList();
+
+            _recurringRootRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(roots);
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: maxItems),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.HasMoreRecurringRoots.Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task Handle_with_MaxItemsPerEntity_sets_HasMoreRecurringSeries_when_exceeded()
+        {
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            const int maxItems = 2;
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var seriesList = Enumerable.Range(0, 3)
+                .Select(i => CreateRecurringSeries(_userId, since.AddMinutes(i + 1), since.AddMinutes(i + 1), isDeleted: false))
+                .ToList();
+
+            _recurringSeriesRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(seriesList);
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: maxItems),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.HasMoreRecurringSeries.Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task Handle_with_MaxItemsPerEntity_sets_HasMoreRecurringSeriesSubtasks_when_exceeded()
+        {
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            const int maxItems = 2;
+            var seriesId = Guid.NewGuid();
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var subtasks = Enumerable.Range(0, 3)
+                .Select(i => CreateRecurringSeriesSubtask(_userId, seriesId, since.AddMinutes(i + 1), since.AddMinutes(i + 1), isDeleted: false))
+                .ToList();
+
+            _recurringSeriesSubtaskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(subtasks);
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: maxItems),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.HasMoreRecurringSeriesSubtasks.Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task Handle_with_MaxItemsPerEntity_sets_HasMoreRecurringExceptions_when_exceeded()
+        {
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            const int maxItems = 2;
+            var seriesId = Guid.NewGuid();
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            // 3 exceptions using CreateDeletion (simplest factory; IsDeletion=true is valid for bucket tests)
+            var exceptions = Enumerable.Range(0, 3)
+                .Select(i => CreateRecurringException(_userId, seriesId, since.AddMinutes(i + 1), since.AddMinutes(i + 1), isDeleted: false))
+                .ToList();
+
+            _recurringExceptionRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(exceptions);
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: maxItems),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.HasMoreRecurringExceptions.Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task Handle_with_MaxItemsPerEntity_sets_HasMoreRecurringAttachments_when_exceeded()
+        {
+            var since = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            const int maxItems = 2;
+            var seriesId = Guid.NewGuid();
+
+            _taskRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<TaskItem>>(new List<TaskItem>()));
+            _noteRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult<IReadOnlyList<Note>>(new List<Note>()));
+
+            var handler = CreateHandler();
+
+            var attachments = Enumerable.Range(0, 3)
+                .Select(i => CreateRecurringAttachment(_userId, seriesId, since.AddMinutes(i + 1), since.AddMinutes(i + 1), isDeleted: false))
+                .ToList();
+
+            _recurringAttachmentRepositoryMock
+                .Setup(r => r.GetChangedSinceAsync(_userId, since, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(attachments);
+
+            var result = await handler.Handle(
+                new GetSyncChangesQuery(SinceUtc: since, DeviceId: null, MaxItemsPerEntity: maxItems),
+                CancellationToken.None);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.HasMoreRecurringAttachments.Should().BeTrue();
+        }
+
+        // -----------------------------------------------------------------------
+        // Factory helpers for new entity types
+        // -----------------------------------------------------------------------
+
+        private static Subtask CreateSubtask(Guid userId, Guid taskId, DateTime createdAt, DateTime updatedAt, bool isDeleted)
+        {
+            var result = Subtask.Create(userId, taskId, "Item", "a0", createdAt);
+            result.IsSuccess.Should().BeTrue();
+            var subtask = result.Value!;
+            typeof(Subtask).GetProperty(nameof(Subtask.CreatedAtUtc))!.SetValue(subtask, createdAt);
+            typeof(Subtask).GetProperty(nameof(Subtask.UpdatedAtUtc))!.SetValue(subtask, updatedAt);
+            if (isDeleted) typeof(Subtask).GetProperty(nameof(Subtask.IsDeleted))!.SetValue(subtask, true);
+            return subtask;
+        }
+
+        private static Attachment CreateAttachment(Guid userId, Guid taskId, DateTime createdAt, DateTime updatedAt, bool isDeleted)
+        {
+            var result = Attachment.Create(Guid.NewGuid(), userId, taskId, "file.pdf", "application/pdf", 1024, "path/blob", 1, createdAt);
+            result.IsSuccess.Should().BeTrue();
+            var attachment = result.Value!;
+            typeof(Attachment).GetProperty(nameof(Attachment.CreatedAtUtc))!.SetValue(attachment, createdAt);
+            typeof(Attachment).GetProperty(nameof(Attachment.UpdatedAtUtc))!.SetValue(attachment, updatedAt);
+            if (isDeleted) typeof(Attachment).GetProperty(nameof(Attachment.IsDeleted))!.SetValue(attachment, true);
+            return attachment;
+        }
+
+        private static RecurringTaskRoot CreateRecurringRoot(Guid userId, DateTime createdAt, DateTime updatedAt, bool isDeleted)
+        {
+            var result = RecurringTaskRoot.Create(userId, createdAt);
+            result.IsSuccess.Should().BeTrue();
+            var root = result.Value!;
+            typeof(RecurringTaskRoot).GetProperty(nameof(RecurringTaskRoot.CreatedAtUtc))!.SetValue(root, createdAt);
+            typeof(RecurringTaskRoot).GetProperty(nameof(RecurringTaskRoot.UpdatedAtUtc))!.SetValue(root, updatedAt);
+            if (isDeleted) typeof(RecurringTaskRoot).GetProperty(nameof(RecurringTaskRoot.IsDeleted))!.SetValue(root, true);
+            return root;
+        }
+
+        private static RecurringTaskSeries CreateRecurringSeries(Guid userId, DateTime createdAt, DateTime updatedAt, bool isDeleted)
+        {
+            var result = RecurringTaskSeries.Create(
+                userId, Guid.NewGuid(), "FREQ=DAILY",
+                new DateOnly(2025, 1, 1), null,
+                "Series", null, null, null, null, null, null,
+                TaskPriority.Normal, null, null,
+                new DateOnly(2025, 1, 1), createdAt);
+            result.IsSuccess.Should().BeTrue();
+            var series = result.Value!;
+            typeof(RecurringTaskSeries).GetProperty(nameof(RecurringTaskSeries.CreatedAtUtc))!.SetValue(series, createdAt);
+            typeof(RecurringTaskSeries).GetProperty(nameof(RecurringTaskSeries.UpdatedAtUtc))!.SetValue(series, updatedAt);
+            if (isDeleted) typeof(RecurringTaskSeries).GetProperty(nameof(RecurringTaskSeries.IsDeleted))!.SetValue(series, true);
+            return series;
+        }
+
+        private static RecurringTaskSubtask CreateRecurringSeriesSubtask(Guid userId, Guid seriesId, DateTime createdAt, DateTime updatedAt, bool isDeleted)
+        {
+            var result = RecurringTaskSubtask.CreateForSeries(userId, seriesId, "Item", "a0", createdAt);
+            result.IsSuccess.Should().BeTrue();
+            var subtask = result.Value!;
+            typeof(RecurringTaskSubtask).GetProperty(nameof(RecurringTaskSubtask.CreatedAtUtc))!.SetValue(subtask, createdAt);
+            typeof(RecurringTaskSubtask).GetProperty(nameof(RecurringTaskSubtask.UpdatedAtUtc))!.SetValue(subtask, updatedAt);
+            if (isDeleted) typeof(RecurringTaskSubtask).GetProperty(nameof(RecurringTaskSubtask.IsDeleted))!.SetValue(subtask, true);
+            return subtask;
+        }
+
+        private static RecurringTaskSubtask CreateRecurringExceptionSubtask(Guid userId, Guid exceptionId, DateTime createdAt, DateTime updatedAt, bool isDeleted)
+        {
+            var result = RecurringTaskSubtask.CreateForException(userId, exceptionId, "Item", "a0", false, createdAt);
+            result.IsSuccess.Should().BeTrue();
+            var subtask = result.Value!;
+            typeof(RecurringTaskSubtask).GetProperty(nameof(RecurringTaskSubtask.CreatedAtUtc))!.SetValue(subtask, createdAt);
+            typeof(RecurringTaskSubtask).GetProperty(nameof(RecurringTaskSubtask.UpdatedAtUtc))!.SetValue(subtask, updatedAt);
+            if (isDeleted) typeof(RecurringTaskSubtask).GetProperty(nameof(RecurringTaskSubtask.IsDeleted))!.SetValue(subtask, true);
+            return subtask;
+        }
+
+        private static RecurringTaskException CreateRecurringException(Guid userId, Guid seriesId, DateTime createdAt, DateTime updatedAt, bool isDeleted)
+        {
+            var result = RecurringTaskException.CreateDeletion(
+                userId, seriesId, new DateOnly(2025, 2, 1), null, createdAt);
+            result.IsSuccess.Should().BeTrue();
+            var exception = result.Value!;
+            typeof(RecurringTaskException).GetProperty(nameof(RecurringTaskException.CreatedAtUtc))!.SetValue(exception, createdAt);
+            typeof(RecurringTaskException).GetProperty(nameof(RecurringTaskException.UpdatedAtUtc))!.SetValue(exception, updatedAt);
+            if (isDeleted) typeof(RecurringTaskException).GetProperty(nameof(RecurringTaskException.IsDeleted))!.SetValue(exception, true);
+            return exception;
+        }
+
+        private static RecurringTaskException CreateRecurringOverrideException(Guid userId, Guid seriesId, DateTime createdAt, DateTime updatedAt, bool isDeleted)
+        {
+            // IsDeletion == false; eligible for subtask inlining on initial sync.
+            var result = RecurringTaskException.CreateOverride(
+                userId, seriesId, new DateOnly(2025, 2, 1),
+                null, null, null, null, null, null, null, null, null, null, null,
+                false, null, createdAt);
+            result.IsSuccess.Should().BeTrue();
+            var exception = result.Value!;
+            typeof(RecurringTaskException).GetProperty(nameof(RecurringTaskException.CreatedAtUtc))!.SetValue(exception, createdAt);
+            typeof(RecurringTaskException).GetProperty(nameof(RecurringTaskException.UpdatedAtUtc))!.SetValue(exception, updatedAt);
+            if (isDeleted) typeof(RecurringTaskException).GetProperty(nameof(RecurringTaskException.IsDeleted))!.SetValue(exception, true);
+            return exception;
+        }
+
+        private static RecurringTaskAttachment CreateRecurringAttachment(Guid userId, Guid seriesId, DateTime createdAt, DateTime updatedAt, bool isDeleted)
+        {
+            var result = RecurringTaskAttachment.CreateForSeries(
+                Guid.NewGuid(), userId, seriesId, "file.pdf", "application/pdf", 1024, "path/blob", 1, createdAt);
+            result.IsSuccess.Should().BeTrue();
+            var attachment = result.Value!;
+            typeof(RecurringTaskAttachment).GetProperty(nameof(RecurringTaskAttachment.CreatedAtUtc))!.SetValue(attachment, createdAt);
+            typeof(RecurringTaskAttachment).GetProperty(nameof(RecurringTaskAttachment.UpdatedAtUtc))!.SetValue(attachment, updatedAt);
+            if (isDeleted) typeof(RecurringTaskAttachment).GetProperty(nameof(RecurringTaskAttachment.IsDeleted))!.SetValue(attachment, true);
+            return attachment;
         }
     }
 }

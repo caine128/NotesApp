@@ -166,7 +166,7 @@ namespace NotesApp.Worker
             // Batch-load exception subtasks to avoid N+1 queries.
             var exceptionIds = exceptions.Select(e => e.Id).ToList();
             IReadOnlyList<RecurringTaskSubtask> allExSubtasks = exceptionIds.Count > 0
-                ? await subtaskRepo.GetByExceptionIdsAsync(exceptionIds, cancellationToken)
+                ? await subtaskRepo.GetByExceptionIdsAsync(exceptionIds, series.UserId, cancellationToken)
                 : [];
 
             // Group exception subtasks by ExceptionId for O(1) lookup in the materializer.

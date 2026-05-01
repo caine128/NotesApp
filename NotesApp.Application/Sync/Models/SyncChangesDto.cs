@@ -59,8 +59,21 @@ namespace NotesApp.Application.Sync.Models
         /// </summary>
         public bool HasMoreBlocks { get; init; }
         /// <summary>
+        /// True when the server had more asset changes than were included
+        /// in this response (based on MaxItemsPerEntity).
+        /// </summary>
+        public bool HasMoreAssets { get; init; }
+
+        // REFACTORED: added attachment pagination flag for task-attachments feature
+        /// <summary>
+        /// True when the server had more attachment changes than were included
+        /// in this response (based on MaxItemsPerEntity).
+        /// </summary>
+        public bool HasMoreAttachments { get; init; }
+
+        /// <summary>
         /// True when the server had more category changes than were included
-        /// in this response (based on DefaultPullMaxCategories).
+        /// in this response (based on MaxItemsPerEntity).
         /// </summary>
         // REFACTORED: added HasMoreCategories pagination flag
         public bool HasMoreCategories { get; init; }
@@ -355,10 +368,13 @@ namespace NotesApp.Application.Sync.Models
 
     // REFACTORED: added recurring-task sync DTOs for recurring-tasks feature
 
+    /// <summary>
+    /// RecurringTaskRoot is an immutable identity anchor — no update domain method exists.
+    /// Push supports Created + Deleted only; pull mirrors this.
+    /// </summary>
     public sealed record SyncRecurringRootsChangesDto
     {
         public IReadOnlyList<RecurringRootSyncItemDto> Created { get; init; } = Array.Empty<RecurringRootSyncItemDto>();
-        public IReadOnlyList<RecurringRootSyncItemDto> Updated { get; init; } = Array.Empty<RecurringRootSyncItemDto>();
         public IReadOnlyList<DeletedSyncItemDto> Deleted { get; init; } = Array.Empty<DeletedSyncItemDto>();
     }
 

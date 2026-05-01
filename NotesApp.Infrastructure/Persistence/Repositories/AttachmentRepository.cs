@@ -87,7 +87,7 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
             {
                 // Initial sync: return all non-deleted attachments for the user.
                 return await _context.Attachments
-                    .Where(a => a.UserId == userId)
+                    .Where(a => a.UserId == userId && !a.IsDeleted)
                     .ToListAsync(cancellationToken);
             }
 

@@ -78,7 +78,7 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
             {
                 // Initial sync: return all non-deleted categories for the user.
                 return await _context.TaskCategories
-                    .Where(c => c.UserId == userId)
+                    .Where(c => c.UserId == userId && !c.IsDeleted)
                     .ToListAsync(cancellationToken);
             }
 

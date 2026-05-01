@@ -139,6 +139,7 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
         /// <inheritdoc />
         public async Task<IReadOnlyList<RecurringTaskAttachment>> GetByExceptionIdsAsync(
             IReadOnlyList<Guid> exceptionIds,
+            Guid userId,
             CancellationToken cancellationToken = default)
         {
             if (exceptionIds.Count == 0)
@@ -147,7 +148,9 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
             }
 
             return await _context.RecurringTaskAttachments
-                .Where(a => a.ExceptionId != null && exceptionIds.Contains(a.ExceptionId.Value))
+                .Where(a => a.UserId == userId
+                            && a.ExceptionId != null
+                            && exceptionIds.Contains(a.ExceptionId.Value))
                 .OrderBy(a => a.DisplayOrder)
                 .ToListAsync(cancellationToken);
         }
@@ -162,7 +165,7 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
             {
                 // Initial sync: return all non-deleted attachments for the user.
                 return await _context.RecurringTaskAttachments
-                    .Where(a => a.UserId == userId)
+                    .Where(a => a.UserId == userId && !a.IsDeleted)
                     .ToListAsync(cancellationToken);
             }
 

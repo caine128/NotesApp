@@ -70,10 +70,12 @@ namespace NotesApp.Application.Abstractions.Persistence
         /// <summary>
         /// Batch-loads non-deleted exception attachment overrides for a set of exception IDs.
         /// Returns an empty list when <paramref name="exceptionIds"/> is empty.
+        /// Only rows whose UserId matches <paramref name="userId"/> are returned (ownership guard).
         /// Used by sync pull to avoid N+1 queries.
         /// </summary>
         Task<IReadOnlyList<RecurringTaskAttachment>> GetByExceptionIdsAsync(
             IReadOnlyList<Guid> exceptionIds,
+            Guid userId,
             CancellationToken cancellationToken = default);
 
         /// <summary>

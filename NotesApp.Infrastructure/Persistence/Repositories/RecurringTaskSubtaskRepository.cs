@@ -80,6 +80,7 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
         /// <inheritdoc />
         public async Task<IReadOnlyList<RecurringTaskSubtask>> GetByExceptionIdsAsync(
             IReadOnlyList<Guid> exceptionIds,
+            Guid userId,
             CancellationToken cancellationToken = default)
         {
             if (exceptionIds.Count == 0)
@@ -88,7 +89,9 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
             }
 
             return await _context.RecurringTaskSubtasks
-                .Where(s => s.ExceptionId != null && exceptionIds.Contains(s.ExceptionId.Value))
+                .Where(s => s.UserId == userId
+                            && s.ExceptionId != null
+                            && exceptionIds.Contains(s.ExceptionId.Value))
                 .OrderBy(s => s.Position)
                 .ToListAsync(cancellationToken);
         }
@@ -102,7 +105,7 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
             if (since is null)
             {
                 return await _context.RecurringTaskSubtasks
-                    .Where(s => s.UserId == userId)
+                    .Where(s => s.UserId == userId && !s.IsDeleted)
                     .ToListAsync(cancellationToken);
             }
 

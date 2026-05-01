@@ -26,6 +26,12 @@ namespace NotesApp.Application.Sync
         // Push (/api/sync/push) — per-entity collection limits
 
         /// <summary>
+        /// Maximum total number of items allowed across all push collections
+        /// in a single /sync/push call.
+        /// </summary>
+        public const int PushMaxTotalItems = 2000;
+
+        /// <summary>
         /// Maximum number of task items allowed in each push collection
         /// (Tasks.Created, Tasks.Updated, Tasks.Deleted).
         /// </summary>
@@ -48,12 +54,6 @@ namespace NotesApp.Application.Sync
         /// (Categories.Created, Categories.Updated, Categories.Deleted).
         /// </summary>
         public const int PushMaxCategories = 500;
-
-        /// <summary>
-        /// Maximum total number of items allowed across all push collections
-        /// in a single /sync/push call.
-        /// </summary>
-        public const int PushMaxTotalItems = 2000;
 
         // Subtasks
 

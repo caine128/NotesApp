@@ -41,10 +41,12 @@ namespace NotesApp.Application.Abstractions.Persistence
 
         /// <summary>
         /// Batch-loads all non-deleted exception subtask overrides for multiple exceptions in one query.
-        /// Used by the materializer to avoid N+1 queries when processing many exceptions.
+        /// Used by the materializer and sync pull to avoid N+1 queries when processing many exceptions.
+        /// Only rows whose UserId matches <paramref name="userId"/> are returned (ownership guard).
         /// Caller groups results by ExceptionId into a dictionary.
         /// </summary>
         Task<IReadOnlyList<RecurringTaskSubtask>> GetByExceptionIdsAsync(IReadOnlyList<Guid> exceptionIds,
+                                                                         Guid userId,
                                                                          CancellationToken cancellationToken = default);
 
         // -------------------------

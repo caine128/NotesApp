@@ -107,7 +107,7 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
             if (since is null)
             {
                 return await _context.RecurringTaskSeries
-                    .Where(s => s.UserId == userId)
+                    .Where(s => s.UserId == userId && !s.IsDeleted)
                     .ToListAsync(cancellationToken);
             }
 

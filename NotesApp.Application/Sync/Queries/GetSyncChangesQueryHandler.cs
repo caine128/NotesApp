@@ -1,7 +1,8 @@
-﻿using FluentResults;
+using FluentResults;
 using MediatR;
 using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
+using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.RecurringAttachments;
 using NotesApp.Application.Sync.Models;
@@ -15,8 +16,8 @@ namespace NotesApp.Application.Sync.Queries
     /// <summary>
     /// Handles sync pull requests from client devices.
     ///
-    /// Returns all changes (tasks, notes, blocks, assets) since a given timestamp:
-    /// - Initial sync (SinceUtc = null): Returns all non-deleted entities
+    /// Returns all changes since a given timestamp:
+    /// - Initial sync (SinceUtc = null): Returns all non-deleted entities as Created
     /// - Incremental sync: Categorises entities into created/updated/deleted buckets
     ///   based on CreatedAtUtc vs SinceUtc comparison
     ///
@@ -25,8 +26,14 @@ namespace NotesApp.Application.Sync.Queries
     /// - Pagination via MaxItemsPerEntity (separate limits per entity type)
     /// - HasMore indicators for truncated results
     ///
-    /// Asset download URLs are NOT included in the sync response.
-    /// Use GET /api/assets/{id}/download-url to obtain a pre-signed URL on demand.
+    /// Exception subtask/attachment inlining:
+    /// - Initial sync only: RecurringExceptions items include Subtasks and Attachments inline
+    ///   for a complete one-shot snapshot. On incremental sync the inline lists are empty;
+    ///   exception subtask/attachment changes are delivered via the top-level
+    ///   RecurringSeriesSubtasks and RecurringAttachments buckets exclusively.
+    ///
+    /// Asset / attachment download URLs are NOT included in the sync response.
+    /// Use the dedicated download-url endpoints to obtain pre-signed URLs on demand.
     ///
     /// Note: This is a read-only query - no outbox messages are emitted.
     /// </summary>
@@ -49,6 +56,7 @@ namespace NotesApp.Application.Sync.Queries
         // REFACTORED: added for recurring-task-attachments feature
         private readonly IRecurringTaskAttachmentRepository _recurringAttachmentRepository;
         private readonly ICurrentUserService _currentUserService;
+        private readonly ISystemClock _clock;
         private readonly ILogger<GetSyncChangesQueryHandler> _logger;
 
         public GetSyncChangesQueryHandler(ITaskRepository taskRepository,
@@ -65,6 +73,7 @@ namespace NotesApp.Application.Sync.Queries
                                           IRecurringTaskExceptionRepository recurringExceptionRepository,
                                           IRecurringTaskAttachmentRepository recurringAttachmentRepository,
                                           ICurrentUserService currentUserService,
+                                          ISystemClock clock,
                                           ILogger<GetSyncChangesQueryHandler> logger)
         {
             _taskRepository = taskRepository;
@@ -82,6 +91,7 @@ namespace NotesApp.Application.Sync.Queries
             _recurringExceptionRepository = recurringExceptionRepository;
             _recurringAttachmentRepository = recurringAttachmentRepository; // REFACTORED: added for recurring-task-attachments feature
             _currentUserService = currentUserService;
+            _clock = clock;
             _logger = logger;
         }
 
@@ -103,6 +113,10 @@ namespace NotesApp.Application.Sync.Queries
                     return Result.Fail(new Error("Device.NotFound"));
                 }
             }
+
+            // Capture before any DB reads so concurrent writes during the query
+            // have UpdatedAtUtc > serverTimestampUtc and appear on the next pull.
+            var serverTimestampUtc = _clock.UtcNow;
 
             _logger.LogInformation("Sync pull requested for user {UserId} since {SinceUtc} with device {DeviceId}",
                                    userId,
@@ -162,42 +176,51 @@ namespace NotesApp.Application.Sync.Queries
             var recurringAttachments = await _recurringAttachmentRepository.GetChangedSinceAsync(
                 userId, request.SinceUtc, cancellationToken);
 
-            // Batch-load exception subtasks for inlining in RecurringExceptionSyncItemDto.Subtasks.
-            // Only non-deleted exceptions can have subtasks worth inlining.
-            var nonDeletedExceptionIds = recurringExceptions
-                .Where(e => !e.IsDeleted && !e.IsDeletion)
-                .Select(e => e.Id)
-                .ToList();
+            // Batch-load exception subtasks and attachments for inlining in RecurringExceptionSyncItemDto.
+            // Only performed on initial sync (SinceUtc == null) to provide a complete one-shot snapshot.
+            // On incremental sync the inline lists are empty; changes arrive via the top-level
+            // RecurringSeriesSubtasks and RecurringAttachments buckets, avoiding double delivery.
+            Dictionary<Guid, IReadOnlyList<RecurringSubtaskSyncItemDto>> exceptionSubtasksByExceptionId;
+            Dictionary<Guid, IReadOnlyList<RecurringAttachmentSyncItemDto>> exceptionAttachmentsByExceptionId;
 
-            var allExceptionSubtasks = nonDeletedExceptionIds.Count > 0
-                ? await _recurringSubtaskRepository.GetByExceptionIdsAsync(nonDeletedExceptionIds, cancellationToken)
-                : (IReadOnlyList<RecurringTaskSubtask>)Array.Empty<RecurringTaskSubtask>();
+            if (request.SinceUtc is null)
+            {
+                var nonDeletedExceptionIds = recurringExceptions
+                    .Where(e => !e.IsDeleted && !e.IsDeletion)
+                    .Select(e => e.Id)
+                    .ToList();
 
-            // Group exception subtasks by ExceptionId for O(1) lookup during mapping.
-            var exceptionSubtasksByExceptionId = allExceptionSubtasks
-                .GroupBy(s => s.ExceptionId!.Value)
-                .ToDictionary(
-                    g => g.Key,
-                    g => (IReadOnlyList<RecurringSubtaskSyncItemDto>)g.Select(s => s.ToSyncDto()).ToList());
+                var allExceptionSubtasks = nonDeletedExceptionIds.Count > 0
+                    ? await _recurringSubtaskRepository.GetByExceptionIdsAsync(nonDeletedExceptionIds, userId, cancellationToken)
+                    : (IReadOnlyList<RecurringTaskSubtask>)Array.Empty<RecurringTaskSubtask>();
 
-            // Batch-load exception attachments for inlining in RecurringExceptionSyncItemDto.Attachments.
-            // Only non-deleted, HasAttachmentOverride exceptions have exception-scoped attachments.
-            var overrideExceptionIds = recurringExceptions
-                .Where(e => !e.IsDeleted && !e.IsDeletion && e.HasAttachmentOverride)
-                .Select(e => e.Id)
-                .ToList();
+                exceptionSubtasksByExceptionId = allExceptionSubtasks
+                    .GroupBy(s => s.ExceptionId!.Value)
+                    .ToDictionary(
+                        g => g.Key,
+                        g => (IReadOnlyList<RecurringSubtaskSyncItemDto>)g.Select(s => s.ToSyncDto()).ToList());
 
-            var allExceptionAttachments = overrideExceptionIds.Count > 0
-                ? await _recurringAttachmentRepository.GetByExceptionIdsAsync(overrideExceptionIds, cancellationToken)
-                : (IReadOnlyList<RecurringTaskAttachment>)Array.Empty<RecurringTaskAttachment>();
+                var overrideExceptionIds = recurringExceptions
+                    .Where(e => !e.IsDeleted && !e.IsDeletion && e.HasAttachmentOverride)
+                    .Select(e => e.Id)
+                    .ToList();
 
-            var exceptionAttachmentsByExceptionId = allExceptionAttachments
-                .GroupBy(a => a.ExceptionId!.Value)
-                .ToDictionary(
-                    g => g.Key,
-                    g => (IReadOnlyList<RecurringAttachmentSyncItemDto>)g.Select(a => a.ToSyncDto()).ToList());
+                var allExceptionAttachments = overrideExceptionIds.Count > 0
+                    ? await _recurringAttachmentRepository.GetByExceptionIdsAsync(overrideExceptionIds, userId, cancellationToken)
+                    : (IReadOnlyList<RecurringTaskAttachment>)Array.Empty<RecurringTaskAttachment>();
 
-            var serverTimestampUtc = DateTime.UtcNow;
+                exceptionAttachmentsByExceptionId = allExceptionAttachments
+                    .GroupBy(a => a.ExceptionId!.Value)
+                    .ToDictionary(
+                        g => g.Key,
+                        g => (IReadOnlyList<RecurringAttachmentSyncItemDto>)g.Select(a => a.ToSyncDto()).ToList());
+            }
+            else
+            {
+                // Incremental sync: no inlining — avoid double delivery with top-level buckets.
+                exceptionSubtasksByExceptionId = new Dictionary<Guid, IReadOnlyList<RecurringSubtaskSyncItemDto>>();
+                exceptionAttachmentsByExceptionId = new Dictionary<Guid, IReadOnlyList<RecurringAttachmentSyncItemDto>>();
+            }
 
             // Categorise entities into buckets
             var tasksBuckets = CategoriseTasks(tasks, request.SinceUtc);
@@ -234,6 +257,9 @@ namespace NotesApp.Application.Sync.Queries
             var assetCreated = assetsBuckets.Created.ToList();
             var assetDeleted = assetsBuckets.Deleted.ToList();
 
+            var attachmentCreated = attachmentsBuckets.Created.ToList();
+            var attachmentDeleted = attachmentsBuckets.Deleted.ToList();
+
             // REFACTORED: materialise category lists for pagination
             var categoryCreated = categoriesBuckets.Created.ToList();
             var categoryUpdated = categoriesBuckets.Updated.ToList();
@@ -246,7 +272,6 @@ namespace NotesApp.Application.Sync.Queries
 
             // REFACTORED: materialise recurring-task lists for pagination (recurring-tasks feature)
             var recurringRootCreated = recurringRootsBuckets.Created.ToList();
-            var recurringRootUpdated = recurringRootsBuckets.Updated.ToList();
             var recurringRootDeleted = recurringRootsBuckets.Deleted.ToList();
 
             var recurringSeriesCreated = recurringSeriesBuckets.Created.ToList();
@@ -269,18 +294,25 @@ namespace NotesApp.Application.Sync.Queries
             var totalTaskChanges = taskCreated.Count + taskUpdated.Count + taskDeleted.Count;
             var totalNoteChanges = noteCreated.Count + noteUpdated.Count + noteDeleted.Count;
             var totalBlockChanges = blockCreated.Count + blockUpdated.Count + blockDeleted.Count;
+            var totalAssetChanges = assetCreated.Count + assetDeleted.Count;
+            var totalAttachmentChanges = attachmentCreated.Count + attachmentDeleted.Count;
             var totalCategoryChanges = categoryCreated.Count + categoryUpdated.Count + categoryDeleted.Count; // REFACTORED
             var totalSubtaskChanges = subtaskCreated.Count + subtaskUpdated.Count + subtaskDeleted.Count; // REFACTORED
 
             // REFACTORED: totals for recurring-task entities (recurring-tasks feature)
-            var totalRecurringRootChanges = recurringRootCreated.Count + recurringRootUpdated.Count + recurringRootDeleted.Count;
+            // RecurringRoots are immutable — no Updated bucket.
+            var totalRecurringRootChanges = recurringRootCreated.Count + recurringRootDeleted.Count;
             var totalRecurringSeriesChanges = recurringSeriesCreated.Count + recurringSeriesUpdated.Count + recurringSeriesDeleted.Count;
             var totalRecurringSubtaskChanges = recurringSubtaskCreated.Count + recurringSubtaskUpdated.Count + recurringSubtaskDeleted.Count;
             var totalRecurringExceptionChanges = recurringExceptionCreated.Count + recurringExceptionUpdated.Count + recurringExceptionDeleted.Count;
+            // REFACTORED: recurring attachments are immutable — no Updated bucket.
+            var totalRecurringAttachmentChanges = recurringAttachmentCreated.Count + recurringAttachmentDeleted.Count;
 
             var hasMoreTasks = totalTaskChanges > effectiveMax;
             var hasMoreNotes = totalNoteChanges > effectiveMax;
             var hasMoreBlocks = totalBlockChanges > effectiveMax;
+            var hasMoreAssets = totalAssetChanges > effectiveMax;
+            var hasMoreAttachments = totalAttachmentChanges > effectiveMax;
             var hasMoreCategories = totalCategoryChanges > effectiveMax; // REFACTORED: aligned with convention
             var hasMoreSubtasks = totalSubtaskChanges > effectiveMax; // REFACTORED: subtasks pagination flag
             // REFACTORED: recurring-task pagination flags (recurring-tasks feature)
@@ -288,9 +320,8 @@ namespace NotesApp.Application.Sync.Queries
             var hasMoreRecurringSeries = totalRecurringSeriesChanges > effectiveMax;
             var hasMoreRecurringSeriesSubtasks = totalRecurringSubtaskChanges > effectiveMax;
             var hasMoreRecurringExceptions = totalRecurringExceptionChanges > effectiveMax;
-            // REFACTORED: recurring attachment pagination (recurring-task-attachments feature)
-            // Volume is bounded by MaxAttachmentsPerTask × series count; follow the no-limit pattern of Attachments.
-            var hasMoreRecurringAttachments = false;
+            // REFACTORED: recurring attachments pagination (recurring-task-attachments feature)
+            var hasMoreRecurringAttachments = totalRecurringAttachmentChanges > effectiveMax;
 
             static List<T> LimitList<T>(List<T> source, ref int remaining)
             {
@@ -326,16 +357,15 @@ namespace NotesApp.Application.Sync.Queries
             var limitedBlockUpdated = LimitList(blockUpdated, ref blockRemaining);
             var limitedBlockDeleted = LimitList(blockDeleted, ref blockRemaining);
 
-            // Assets don't have a limit currently (they're typically fewer and essential)
-            var limitedAssetCreated = assetCreated;
-            var limitedAssetDeleted = assetDeleted;
+            // Assets: apply limit consistently with all other entity types
+            var assetRemaining = effectiveMax;
+            var limitedAssetCreated = LimitList(assetCreated, ref assetRemaining);
+            var limitedAssetDeleted = LimitList(assetDeleted, ref assetRemaining);
 
-            // REFACTORED: attachments follow the same no-limit pattern as assets;
-            // volume is bounded by MaxAttachmentsPerTask per task
-            var attachmentCreated = attachmentsBuckets.Created.ToList();
-            var attachmentDeleted = attachmentsBuckets.Deleted.ToList();
-            var limitedAttachmentCreated = attachmentCreated;
-            var limitedAttachmentDeleted = attachmentDeleted;
+            // REFACTORED: attachments apply limit consistently with all other entity types
+            var attachmentRemaining = effectiveMax;
+            var limitedAttachmentCreated = LimitList(attachmentCreated, ref attachmentRemaining);
+            var limitedAttachmentDeleted = LimitList(attachmentDeleted, ref attachmentRemaining);
 
             // REFACTORED: categories use the same effectiveMax as all other entity types
             var categoryRemaining = effectiveMax;
@@ -350,9 +380,9 @@ namespace NotesApp.Application.Sync.Queries
             var limitedSubtaskDeleted = LimitList(subtaskDeleted, ref subtaskRemaining);
 
             // REFACTORED: recurring-task entities use the same effectiveMax (recurring-tasks feature)
+            // RecurringRoots are immutable — only Created + Deleted buckets.
             var recurringRootRemaining = effectiveMax;
             var limitedRecurringRootCreated = LimitList(recurringRootCreated, ref recurringRootRemaining);
-            var limitedRecurringRootUpdated = LimitList(recurringRootUpdated, ref recurringRootRemaining);
             var limitedRecurringRootDeleted = LimitList(recurringRootDeleted, ref recurringRootRemaining);
 
             var recurringSeriesRemaining = effectiveMax;
@@ -369,6 +399,11 @@ namespace NotesApp.Application.Sync.Queries
             var limitedRecurringExceptionCreated = LimitList(recurringExceptionCreated, ref recurringExceptionRemaining);
             var limitedRecurringExceptionUpdated = LimitList(recurringExceptionUpdated, ref recurringExceptionRemaining);
             var limitedRecurringExceptionDeleted = LimitList(recurringExceptionDeleted, ref recurringExceptionRemaining);
+
+            // REFACTORED: recurring attachments are immutable — only Created + Deleted buckets.
+            var recurringAttachmentRemaining = effectiveMax;
+            var limitedRecurringAttachmentCreated = LimitList(recurringAttachmentCreated, ref recurringAttachmentRemaining);
+            var limitedRecurringAttachmentDeleted = LimitList(recurringAttachmentDeleted, ref recurringAttachmentRemaining);
 
             var limitedTasksBuckets = new SyncTasksChangesDto
             {
@@ -421,10 +456,10 @@ namespace NotesApp.Application.Sync.Queries
             };
 
             // REFACTORED: build limited recurring-task buckets (recurring-tasks feature)
+            // RecurringRoots are immutable — no Updated bucket.
             var limitedRecurringRootsBuckets = new SyncRecurringRootsChangesDto
             {
                 Created = limitedRecurringRootCreated,
-                Updated = limitedRecurringRootUpdated,
                 Deleted = limitedRecurringRootDeleted
             };
 
@@ -450,10 +485,11 @@ namespace NotesApp.Application.Sync.Queries
             };
 
             // REFACTORED: build limited recurring attachments bucket (recurring-task-attachments feature)
+            // RecurringAttachments are immutable — no Updated bucket.
             var limitedRecurringAttachmentsBuckets = new SyncRecurringAttachmentsChangesDto
             {
-                Created = recurringAttachmentCreated,
-                Deleted = recurringAttachmentDeleted
+                Created = limitedRecurringAttachmentCreated,
+                Deleted = limitedRecurringAttachmentDeleted
             };
 
             var dto = new SyncChangesDto
@@ -476,6 +512,8 @@ namespace NotesApp.Application.Sync.Queries
                 HasMoreTasks = hasMoreTasks,
                 HasMoreNotes = hasMoreNotes,
                 HasMoreBlocks = hasMoreBlocks,
+                HasMoreAssets = hasMoreAssets,
+                HasMoreAttachments = hasMoreAttachments,
                 HasMoreCategories = hasMoreCategories, // REFACTORED: added categories pagination flag
                 HasMoreSubtasks = hasMoreSubtasks, // REFACTORED: added subtasks pagination flag
                 // REFACTORED: recurring-task pagination flags (recurring-tasks feature)
@@ -693,8 +731,6 @@ namespace NotesApp.Application.Sync.Queries
         /// Categorises category changes into created/updated/deleted buckets.
         /// Mirrors <see cref="CategoriseTasks"/> — uses <c>CreatedAtUtc &gt; sinceUtc</c>
         /// to distinguish created from updated, and <c>IsDeleted</c> for the deleted bucket.
-        /// Categories are typically small per-user lists, so a separate
-        /// <see cref="SyncLimits.DefaultPullMaxCategories"/> ceiling is applied by the caller.
         /// </summary>
         private static SyncCategoriesChangesDto CategoriseCategories(
             IReadOnlyList<TaskCategory> categories, DateTime? sinceUtc)
@@ -847,6 +883,11 @@ namespace NotesApp.Application.Sync.Queries
 
         // REFACTORED: recurring-task categorise methods for recurring-tasks feature
 
+        /// <summary>
+        /// Categorises recurring root changes into created/deleted buckets.
+        /// RecurringTaskRoot is an immutable identity anchor — no update domain method exists,
+        /// so there is no "updated" bucket. Mirrors push contract (Created + Deleted only).
+        /// </summary>
         private static SyncRecurringRootsChangesDto CategoriseRecurringRoots(
             IReadOnlyList<RecurringTaskRoot> roots, DateTime? sinceUtc)
         {
@@ -861,13 +902,11 @@ namespace NotesApp.Application.Sync.Queries
                 return new SyncRecurringRootsChangesDto
                 {
                     Created = created,
-                    Updated = Array.Empty<RecurringRootSyncItemDto>(),
                     Deleted = Array.Empty<DeletedSyncItemDto>()
                 };
             }
 
             var createdList = new List<RecurringRootSyncItemDto>();
-            var updatedList = new List<RecurringRootSyncItemDto>();
             var deletedList = new List<DeletedSyncItemDto>();
 
             foreach (var root in roots.OrderBy(r => r.UpdatedAtUtc))
@@ -878,16 +917,12 @@ namespace NotesApp.Application.Sync.Queries
                     continue;
                 }
 
-                if (root.CreatedAtUtc > sinceUtc.Value)
-                    createdList.Add(root.ToSyncDto());
-                else
-                    updatedList.Add(root.ToSyncDto());
+                createdList.Add(root.ToSyncDto());
             }
 
             return new SyncRecurringRootsChangesDto
             {
                 Created = createdList,
-                Updated = updatedList,
                 Deleted = deletedList
             };
         }
@@ -1037,6 +1072,8 @@ namespace NotesApp.Application.Sync.Queries
                     continue;
                 }
 
+                // On incremental sync the lookup dictionaries are empty — Subtasks and Attachments
+                // inline lists will be empty. Changes arrive via the top-level buckets.
                 var subtasks = GetSubtasks(exception, exceptionSubtasksById);
                 var attachments = GetAttachments(exception, exceptionAttachmentsById);
 
