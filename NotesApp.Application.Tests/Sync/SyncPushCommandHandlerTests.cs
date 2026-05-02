@@ -3036,7 +3036,7 @@ namespace NotesApp.Application.Tests.Sync
 
             var series = BuildSeries(_userId, seriesId);
             _recurringSeriesRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(seriesId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(seriesId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(series);
 
             _categoryRepositoryMock
@@ -3171,7 +3171,7 @@ namespace NotesApp.Application.Tests.Sync
 
             var exception = BuildException(_userId, exceptionId, seriesId);
             _recurringExceptionRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(exceptionId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(exceptionId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(exception);
 
             _categoryRepositoryMock
