@@ -32,7 +32,7 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
                                                      CancellationToken cancellationToken = default)
         {
             return await _context.Attachments
-                .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+                .FirstOrDefaultAsync(a => a.Id == id && !a.IsDeleted, cancellationToken);
         }
 
         public async Task<Attachment?> GetByIdUntrackedAsync(Guid id,
@@ -40,6 +40,15 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
         {
             return await _context.Attachments
                 .AsNoTracking()
+                .FirstOrDefaultAsync(a => a.Id == id && !a.IsDeleted, cancellationToken);
+        }
+
+        public async Task<Attachment?> GetByIdIgnoringQueryFiltersUntrackedAsync(
+            Guid id, CancellationToken cancellationToken = default)
+        {
+            return await _context.Attachments
+                .AsNoTracking()
+                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
         }
 

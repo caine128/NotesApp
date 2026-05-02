@@ -432,23 +432,15 @@ namespace NotesApp.Application.Tests.Sync
         public async Task Handle_with_deleted_device_returns_DeviceNotFound_error()
         {
             // Arrange
+            // The global EF query filter on UserDevice (HasQueryFilter(d => !d.IsDeleted))
+            // means GetByIdAsync returns null for any soft-deleted device. This test mocks
+            // that production behavior — a deleted device is invisible to the repository.
             var handler = CreateHandler();
             var deviceId = Guid.NewGuid();
 
-            var device = UserDevice.Create(
-                _userId,
-                "token-456",
-                DevicePlatform.IOS,
-                "My device",
-                DateTime.UtcNow).Value!;
-
-            // Mark device as deleted via soft-delete
-            typeof(UserDevice).GetProperty(nameof(UserDevice.IsDeleted))!
-                .SetValue(device, true);
-
             _deviceRepositoryMock
                 .Setup(r => r.GetByIdAsync(deviceId, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(device);
+                .ReturnsAsync((UserDevice?)null);
 
             var query = new GetSyncChangesQuery(SinceUtc: null, DeviceId: deviceId, MaxItemsPerEntity: null);
 

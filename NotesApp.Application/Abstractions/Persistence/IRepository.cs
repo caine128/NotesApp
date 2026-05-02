@@ -23,6 +23,14 @@ namespace NotesApp.Application.Abstractions.Persistence
         /// </summary>
         Task<TEntity?> GetByIdUntrackedAsync(Guid id, CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Retrieves an entity by ID without change tracking, bypassing all EF Core
+        /// global query filters (including the soft-delete <c>!IsDeleted</c> filter).
+        /// Use this when the caller needs to inspect a soft-deleted row — for example,
+        /// in sync push to detect "deleted on server" / "already deleted" conflicts.
+        /// </summary>
+        Task<TEntity?> GetByIdIgnoringQueryFiltersUntrackedAsync(Guid id, CancellationToken cancellationToken = default);
+
         Task AddAsync(TEntity entity, CancellationToken cancellationToken = default);
 
         /// <summary>

@@ -15,7 +15,7 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
                                                     CancellationToken cancellationToken = default)
         {
             return await _context.UserDevices
-                .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
+                .FirstOrDefaultAsync(d => d.Id == id && !d.IsDeleted, cancellationToken);
         }
 
         public async Task<UserDevice?> GetByIdUntrackedAsync(Guid id,
@@ -23,6 +23,15 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
         {
             return await _context.UserDevices
                 .AsNoTracking()
+                .FirstOrDefaultAsync(d => d.Id == id && !d.IsDeleted, cancellationToken);
+        }
+
+        public async Task<UserDevice?> GetByIdIgnoringQueryFiltersUntrackedAsync(
+            Guid id, CancellationToken cancellationToken = default)
+        {
+            return await _context.UserDevices
+                .AsNoTracking()
+                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
         }
 

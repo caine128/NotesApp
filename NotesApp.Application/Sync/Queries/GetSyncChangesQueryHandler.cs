@@ -103,12 +103,13 @@ namespace NotesApp.Application.Sync.Queries
             // Optional device ownership / status check
             if (request.DeviceId is Guid deviceId)
             {
+                // GetByIdAsync respects the soft-delete query filter, so a deleted
+                // device is already returned as null — no explicit IsDeleted check needed.
                 var device = await _deviceRepository.GetByIdAsync(deviceId, cancellationToken);
 
                 if (device is null ||
                     device.UserId != userId ||
-                    !device.IsActive ||
-                    device.IsDeleted)
+                    !device.IsActive)
                 {
                     return Result.Fail(new Error("Device.NotFound"));
                 }

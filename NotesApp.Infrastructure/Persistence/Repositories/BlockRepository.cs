@@ -45,6 +45,15 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
                 .FirstOrDefaultAsync(b => b.Id == id && !b.IsDeleted, cancellationToken);
         }
 
+        public async Task<Block?> GetByIdIgnoringQueryFiltersUntrackedAsync(
+            Guid id, CancellationToken cancellationToken = default)
+        {
+            return await _dbContext.Blocks
+                .AsNoTracking()
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+        }
+
         public async Task AddAsync(Block entity,
                                    CancellationToken cancellationToken = default)
         {

@@ -573,10 +573,11 @@ namespace NotesApp.Application.Tests.Sync
         }
 
         [Fact]
-        public async Task Handle_SubtaskDelete_when_subtask_already_gone_returns_not_found()
+        public async Task Handle_SubtaskDelete_when_subtask_already_gone_returns_already_deleted()
         {
-            // With the global query filter applied, GetByIdUntrackedAsync returns null for
-            // a soft-deleted subtask, so the handler returns NotFound (idempotent).
+            // SyncPush bypasses the global query filter (GetByIdIgnoringQueryFiltersUntrackedAsync)
+            // so it can distinguish "never existed" (NotFound) from "exists but soft-deleted"
+            // (AlreadyDeleted). This preserves delete-wins semantics for offline clients.
             await using var context = SqlServerAppDbContextFactory.CreateContext();
             var (userId, deviceId) = await SeedUserAndDeviceAsync(context, _now);
             var task = await SeedTaskAsync(context, userId, _now.AddHours(-1));
@@ -605,9 +606,9 @@ namespace NotesApp.Application.Tests.Sync
             var result = await handler.Handle(command, CancellationToken.None);
 
             result.IsSuccess.Should().BeTrue();
-            // Global query filter means GetByIdUntrackedAsync returns null → NotFound status.
             result.Value.Subtasks.Deleted.Should().ContainSingle(r =>
-                r.Id == subtask.Id && r.Status == SyncPushDeletedStatus.NotFound);
+                r.Id == subtask.Id && r.Status == SyncPushDeletedStatus.AlreadyDeleted,
+                "soft-deleted subtasks must be reported as AlreadyDeleted, not NotFound");
         }
 
         // -----------------------------------------------------------------------

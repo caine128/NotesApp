@@ -378,11 +378,11 @@ namespace NotesApp.Application.Tests.Sync
         }
 
         [Fact]
-        public async Task Handle_CategoryDelete_when_category_already_gone_returns_not_found()
+        public async Task Handle_CategoryDelete_when_category_already_gone_returns_already_deleted()
         {
-            // In real DB with the global query filter applied, a previously soft-deleted
-            // category is returned as null by GetByIdUntrackedAsync, so the handler returns
-            // NotFound (not AlreadyDeleted which is the unit-test mock path).
+            // SyncPush bypasses the global query filter (GetByIdIgnoringQueryFiltersUntrackedAsync)
+            // so it can distinguish "never existed" (NotFound) from "exists but soft-deleted"
+            // (AlreadyDeleted). This preserves delete-wins semantics for offline clients.
             await using var context = SqlServerAppDbContextFactory.CreateContext();
             var (userId, deviceId) = await SeedUserAndDeviceAsync(context, _now);
             var category = await SeedCategoryAsync(context, userId, "Work", _now.AddHours(-1));
@@ -410,9 +410,9 @@ namespace NotesApp.Application.Tests.Sync
             var result = await handler.Handle(command, CancellationToken.None);
 
             result.IsSuccess.Should().BeTrue();
-            // Global query filter means GetByIdUntrackedAsync returns null → NotFound status.
             result.Value.Categories.Deleted.Should().ContainSingle(r =>
-                r.Id == category.Id && r.Status == SyncPushDeletedStatus.NotFound);
+                r.Id == category.Id && r.Status == SyncPushDeletedStatus.AlreadyDeleted,
+                "soft-deleted categories must be reported as AlreadyDeleted, not NotFound");
         }
 
         // -----------------------------------------------------------------------
