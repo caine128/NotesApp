@@ -210,12 +210,14 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                      recurringSeriesCreateResults,
                                                      rootClientToServerIds,
                                                      seriesClientToServerIds,
+                                                     categoryClientToServerIds, // REFACTORED: tenant-boundary hardening — resolve CategoryId
                                                      cancellationToken);
 
             await ProcessRecurringSeriesUpdatesAsync(userId,
                                                      request,
                                                      utcNow,
                                                      recurringSeriesUpdateResults,
+                                                     categoryClientToServerIds, // REFACTORED: tenant-boundary hardening — resolve CategoryId
                                                      cancellationToken);
 
             await ProcessRecurringSeriesDeletesAsync(userId,
@@ -247,12 +249,14 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                                         request,
                                                         utcNow,
                                                         recurringExceptionCreateResults,
+                                                        categoryClientToServerIds, // REFACTORED: tenant-boundary hardening — resolve OverrideCategoryId
                                                         cancellationToken);
 
             await ProcessRecurringExceptionUpdatesAsync(userId,
                                                         request,
                                                         utcNow,
                                                         recurringExceptionUpdateResults,
+                                                        categoryClientToServerIds, // REFACTORED: tenant-boundary hardening — resolve OverrideCategoryId
                                                         cancellationToken);
 
             await ProcessRecurringExceptionDeletesAsync(userId,
@@ -492,6 +496,65 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     }
                 }
 
+                // REFACTORED: resolve recurring-series link with same-push-then-server-side fail-hard
+                // ownership check, mirroring the CategoryId pattern above (tenant-boundary hardening).
+                // Hoisted before TaskItem.Create so a rejected reference does not allocate domain
+                // state or downstream side-effects. The validator (B1) guarantees that
+                // CanonicalOccurrenceDate is set iff exactly one of {RecurringSeriesId,
+                // RecurringSeriesClientId} is non-empty; the handler keeps the gate as
+                // defense-in-depth.
+                Guid? resolvedSeriesId = null;
+                if (item.CanonicalOccurrenceDate.HasValue)
+                {
+                    if (item.RecurringSeriesClientId.HasValue && item.RecurringSeriesClientId.Value != Guid.Empty)
+                    {
+                        if (!seriesClientToServerIds.TryGetValue(item.RecurringSeriesClientId.Value, out var mappedSeriesId)
+                            || mappedSeriesId == Guid.Empty)
+                        {
+                            results.Add(new TaskCreatedPushResultDto
+                            {
+                                ClientId = item.ClientId,
+                                ServerId = Guid.Empty,
+                                Version = 0,
+                                Status = SyncPushCreatedStatus.Failed,
+                                Conflict = new SyncPushConflictDetailDto
+                                {
+                                    ConflictType = SyncConflictType.ValidationFailed,
+                                    Errors = new[] { "Recurring series not found in this push." }
+                                }
+                            });
+
+                            continue;
+                        }
+
+                        resolvedSeriesId = mappedSeriesId;
+                    }
+                    else if (item.RecurringSeriesId.HasValue && item.RecurringSeriesId.Value != Guid.Empty)
+                    {
+                        var series = await _recurringSeriesRepository.GetByIdUntrackedAsync(
+                            item.RecurringSeriesId.Value, cancellationToken);
+                        if (series is null || series.UserId != userId || series.IsDeleted)
+                        {
+                            results.Add(new TaskCreatedPushResultDto
+                            {
+                                ClientId = item.ClientId,
+                                ServerId = Guid.Empty,
+                                Version = 0,
+                                Status = SyncPushCreatedStatus.Failed,
+                                Conflict = new SyncPushConflictDetailDto
+                                {
+                                    ConflictType = SyncConflictType.ValidationFailed,
+                                    Errors = new[] { "Recurring series not found or does not belong to you." }
+                                }
+                            });
+
+                            continue;
+                        }
+
+                        resolvedSeriesId = item.RecurringSeriesId.Value;
+                    }
+                }
+
                 var createResult = TaskItem.Create(userId,
                                                    item.Date,
                                                    item.Title,
@@ -549,36 +612,12 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     }
                 }
 
-                // REFACTORED: link to recurring series if provided (recurring-tasks feature).
-                // Called here — after task creation and before outbox — so the series link is
-                // persisted atomically with the task row. LinkToSeries() throws if called twice.
-                if (item.CanonicalOccurrenceDate.HasValue)
+                // REFACTORED: link to recurring series if a valid reference was resolved above.
+                // Resolution + tenant-boundary check happen before TaskItem.Create; this call only
+                // runs when both the date and a verified series id are present.
+                if (resolvedSeriesId.HasValue)
                 {
-                    Guid? resolvedSeriesId = null;
-
-                    if (item.RecurringSeriesClientId.HasValue && item.RecurringSeriesClientId.Value != Guid.Empty)
-                    {
-                        // Series was created in the same push — resolve via mapping.
-                        if (seriesClientToServerIds.TryGetValue(item.RecurringSeriesClientId.Value, out var mapped)
-                            && mapped != Guid.Empty)
-                        {
-                            resolvedSeriesId = mapped;
-                        }
-                    }
-                    else if (item.RecurringSeriesId.HasValue && item.RecurringSeriesId.Value != Guid.Empty)
-                    {
-                        var series = await _recurringSeriesRepository.GetByIdUntrackedAsync(
-                            item.RecurringSeriesId.Value, cancellationToken);
-                        if (series is not null && series.UserId == userId && !series.IsDeleted)
-                        {
-                            resolvedSeriesId = item.RecurringSeriesId.Value;
-                        }
-                    }
-
-                    if (resolvedSeriesId.HasValue)
-                    {
-                        task.LinkToSeries(resolvedSeriesId.Value, item.CanonicalOccurrenceDate.Value);
-                    }
+                    task.LinkToSeries(resolvedSeriesId.Value, item.CanonicalOccurrenceDate!.Value);
                 }
 
                 // Create outbox message BEFORE adding task to repository
@@ -2798,6 +2837,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             List<RecurringSeriesCreatedPushResultDto> results,
             Dictionary<Guid, Guid> rootClientToServerIds,
             Dictionary<Guid, Guid> seriesClientToServerIds,
+            Dictionary<Guid, Guid> categoryClientToServerIds, // REFACTORED: tenant-boundary hardening
             CancellationToken cancellationToken)
         {
             foreach (var item in request.RecurringSeries.Created)
@@ -2841,6 +2881,41 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
+                // REFACTORED: resolve CategoryId with same-push-then-server-side fail-hard ownership
+                // check, mirroring ProcessTaskCreatesAsync (tenant-boundary hardening).
+                Guid? resolvedCategoryId = null;
+                if (item.CategoryId.HasValue)
+                {
+                    if (categoryClientToServerIds.TryGetValue(item.CategoryId.Value, out var mappedCategoryId))
+                    {
+                        resolvedCategoryId = mappedCategoryId;
+                    }
+                    else
+                    {
+                        var category = await _categoryRepository.GetByIdUntrackedAsync(
+                            item.CategoryId.Value, cancellationToken);
+                        if (category is null || category.UserId != userId)
+                        {
+                            results.Add(new RecurringSeriesCreatedPushResultDto
+                            {
+                                ClientId = item.ClientId,
+                                ServerId = Guid.Empty,
+                                Version = 0,
+                                Status = SyncPushCreatedStatus.Failed,
+                                Conflict = new SyncPushConflictDetailDto
+                                {
+                                    ConflictType = SyncConflictType.ValidationFailed,
+                                    Errors = new[] { "Category not found or does not belong to you." }
+                                }
+                            });
+
+                            continue;
+                        }
+
+                        resolvedCategoryId = item.CategoryId.Value;
+                    }
+                }
+
                 // MaterializedUpToDate = StartsOnDate − 1 day.
                 // The mobile pushes individual Task.Created items for its already-materialized
                 // occurrences (with RecurringSeriesId set), so the horizon worker will find those
@@ -2859,7 +2934,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     item.EndTime,
                     item.Location,
                     item.TravelTime,
-                    item.CategoryId,
+                    resolvedCategoryId, // REFACTORED: pass tenant-checked CategoryId
                     item.Priority,
                     item.MeetingLink,
                     item.ReminderOffsetMinutes,
@@ -2946,6 +3021,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             SyncPushCommand request,
             DateTime utcNow,
             List<RecurringSeriesUpdatedPushResultDto> results,
+            Dictionary<Guid, Guid> categoryClientToServerIds, // REFACTORED: tenant-boundary hardening
             CancellationToken cancellationToken)
         {
             foreach (var item in request.RecurringSeries.Updated)
@@ -3002,6 +3078,42 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
+                // REFACTORED: resolve CategoryId with same-push-then-server-side fail-hard ownership
+                // check (tenant-boundary hardening). Null clears the category.
+                Guid? resolvedCategoryId = null;
+                if (item.CategoryId.HasValue)
+                {
+                    if (categoryClientToServerIds.TryGetValue(item.CategoryId.Value, out var mappedCategoryId))
+                    {
+                        resolvedCategoryId = mappedCategoryId;
+                    }
+                    else
+                    {
+                        var category = await _categoryRepository.GetByIdUntrackedAsync(
+                            item.CategoryId.Value, cancellationToken);
+                        if (category is null || category.UserId != userId)
+                        {
+                            results.Add(new RecurringSeriesUpdatedPushResultDto
+                            {
+                                Id = item.Id,
+                                NewVersion = null,
+                                Status = SyncPushUpdatedStatus.Failed,
+                                Conflict = new SyncPushConflictDetailDto
+                                {
+                                    ConflictType = SyncConflictType.ValidationFailed,
+                                    ClientVersion = item.ExpectedVersion,
+                                    ServerVersion = series.Version,
+                                    Errors = new[] { "Category not found or does not belong to you." }
+                                }
+                            });
+
+                            continue;
+                        }
+
+                        resolvedCategoryId = item.CategoryId.Value;
+                    }
+                }
+
                 var updateResult = series.UpdateTemplate(
                     item.Title,
                     item.Description,
@@ -3009,7 +3121,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     item.EndTime,
                     item.Location,
                     item.TravelTime,
-                    item.CategoryId,
+                    resolvedCategoryId, // REFACTORED: pass tenant-checked CategoryId
                     item.Priority,
                     item.MeetingLink,
                     item.ReminderOffsetMinutes,
@@ -3634,6 +3746,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             SyncPushCommand request,
             DateTime utcNow,
             List<RecurringExceptionCreatedPushResultDto> results,
+            Dictionary<Guid, Guid> categoryClientToServerIds, // REFACTORED: tenant-boundary hardening
             CancellationToken cancellationToken)
         {
             foreach (var item in request.RecurringExceptions.Created)
@@ -3660,6 +3773,43 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
+                // REFACTORED: resolve OverrideCategoryId with same-push-then-server-side fail-hard
+                // ownership check (tenant-boundary hardening). Skipped when this is a deletion
+                // tombstone — CreateDeletion ignores override fields, and validator B2 guarantees
+                // they are null in that case.
+                Guid? resolvedOverrideCategoryId = null;
+                if (!item.IsDeletion && item.OverrideCategoryId.HasValue)
+                {
+                    if (categoryClientToServerIds.TryGetValue(item.OverrideCategoryId.Value, out var mappedCategoryId))
+                    {
+                        resolvedOverrideCategoryId = mappedCategoryId;
+                    }
+                    else
+                    {
+                        var category = await _categoryRepository.GetByIdUntrackedAsync(
+                            item.OverrideCategoryId.Value, cancellationToken);
+                        if (category is null || category.UserId != userId)
+                        {
+                            results.Add(new RecurringExceptionCreatedPushResultDto
+                            {
+                                ClientId = item.ClientId,
+                                ServerId = Guid.Empty,
+                                Version = 0,
+                                Status = SyncPushCreatedStatus.Failed,
+                                Conflict = new SyncPushConflictDetailDto
+                                {
+                                    ConflictType = SyncConflictType.ValidationFailed,
+                                    Errors = new[] { "Category not found or does not belong to you." }
+                                }
+                            });
+
+                            continue;
+                        }
+
+                        resolvedOverrideCategoryId = item.OverrideCategoryId.Value;
+                    }
+                }
+
                 // Create the new exception domain object.
                 DomainResult<RecurringTaskException> createResult;
 
@@ -3680,7 +3830,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                         item.OverrideEndTime,
                         item.OverrideLocation,
                         item.OverrideTravelTime,
-                        item.OverrideCategoryId,
+                        resolvedOverrideCategoryId, // REFACTORED: pass tenant-checked OverrideCategoryId
                         item.OverridePriority,
                         item.OverrideMeetingLink,
                         item.OverrideReminderAtUtc,
@@ -3782,6 +3932,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             SyncPushCommand request,
             DateTime utcNow,
             List<RecurringExceptionUpdatedPushResultDto> results,
+            Dictionary<Guid, Guid> categoryClientToServerIds, // REFACTORED: tenant-boundary hardening
             CancellationToken cancellationToken)
         {
             foreach (var item in request.RecurringExceptions.Updated)
@@ -3839,6 +3990,42 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     continue;
                 }
 
+                // REFACTORED: resolve OverrideCategoryId with same-push-then-server-side fail-hard
+                // ownership check (tenant-boundary hardening). Null clears the override.
+                Guid? resolvedOverrideCategoryId = null;
+                if (item.OverrideCategoryId.HasValue)
+                {
+                    if (categoryClientToServerIds.TryGetValue(item.OverrideCategoryId.Value, out var mappedCategoryId))
+                    {
+                        resolvedOverrideCategoryId = mappedCategoryId;
+                    }
+                    else
+                    {
+                        var category = await _categoryRepository.GetByIdUntrackedAsync(
+                            item.OverrideCategoryId.Value, cancellationToken);
+                        if (category is null || category.UserId != userId)
+                        {
+                            results.Add(new RecurringExceptionUpdatedPushResultDto
+                            {
+                                Id = item.Id,
+                                NewVersion = null,
+                                Status = SyncPushUpdatedStatus.Failed,
+                                Conflict = new SyncPushConflictDetailDto
+                                {
+                                    ConflictType = SyncConflictType.ValidationFailed,
+                                    ClientVersion = item.ExpectedVersion,
+                                    ServerVersion = exception.Version,
+                                    Errors = new[] { "Category not found or does not belong to you." }
+                                }
+                            });
+
+                            continue;
+                        }
+
+                        resolvedOverrideCategoryId = item.OverrideCategoryId.Value;
+                    }
+                }
+
                 var updateResult = exception.UpdateOverride(
                     item.OverrideTitle,
                     item.OverrideDescription,
@@ -3847,7 +4034,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     item.OverrideEndTime,
                     item.OverrideLocation,
                     item.OverrideTravelTime,
-                    item.OverrideCategoryId,
+                    resolvedOverrideCategoryId, // REFACTORED: pass tenant-checked OverrideCategoryId
                     item.OverridePriority,
                     item.OverrideMeetingLink,
                     item.OverrideReminderAtUtc,

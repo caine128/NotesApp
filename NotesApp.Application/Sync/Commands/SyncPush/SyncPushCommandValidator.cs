@@ -393,6 +393,26 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     .NotEmpty()
                     .WithMessage("ClientId is required for created items.");
 
+                // REFACTORED: payload-shape rule (B1) — recurring-series link fields must be
+                // mutually consistent. CanonicalOccurrenceDate is set iff exactly one of
+                // {RecurringSeriesId, RecurringSeriesClientId} is non-empty. At most one of the
+                // two id fields may be set. Closes the silent-drop gap in the handler.
+                RuleFor(x => x)
+                    .Must(x => !(x.RecurringSeriesId.HasValue && x.RecurringSeriesId.Value != Guid.Empty
+                                 && x.RecurringSeriesClientId.HasValue && x.RecurringSeriesClientId.Value != Guid.Empty))
+                    .WithMessage("Only one of RecurringSeriesId or RecurringSeriesClientId may be set.");
+
+                RuleFor(x => x)
+                    .Must(x =>
+                    {
+                        var hasSeriesId = x.RecurringSeriesId.HasValue && x.RecurringSeriesId.Value != Guid.Empty;
+                        var hasSeriesClientId = x.RecurringSeriesClientId.HasValue && x.RecurringSeriesClientId.Value != Guid.Empty;
+                        var hasSeriesRef = hasSeriesId || hasSeriesClientId;
+                        var hasCanonical = x.CanonicalOccurrenceDate.HasValue;
+                        return hasSeriesRef == hasCanonical;
+                    })
+                    .WithMessage("CanonicalOccurrenceDate must be set together with a recurring series reference.");
+
                 // Delegate field-level validation to existing command validator
                 var innerValidator = new CreateTaskCommandValidator();
 
@@ -630,12 +650,18 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     .NotEmpty()
                     .WithMessage("ClientId is required for created blocks.");
 
-                // Sync-specific: must have either ParentId OR ParentClientId
-                // (ParentClientId is used when parent is also being created in this sync)
+                // Sync-specific: must have exactly one of ParentId OR ParentClientId
+                // (ParentClientId is used when parent is also being created in this sync).
+                // REFACTORED (B4): tightened from OR to exactly-one to close the silent-pick gap
+                // where both being set caused the handler to silently prefer ParentId.
                 RuleFor(x => x)
-                    .Must(x => x.ParentId.HasValue && x.ParentId != Guid.Empty ||
-                               x.ParentClientId.HasValue && x.ParentClientId != Guid.Empty)
-                    .WithMessage("Either ParentId or ParentClientId must be provided.");
+                    .Must(x =>
+                    {
+                        var hasParentId = x.ParentId.HasValue && x.ParentId.Value != Guid.Empty;
+                        var hasParentClientId = x.ParentClientId.HasValue && x.ParentClientId.Value != Guid.Empty;
+                        return hasParentId ^ hasParentClientId;
+                    })
+                    .WithMessage("Exactly one of ParentId or ParentClientId must be provided.");
 
                 // Delegate field-level validation to CreateBlockCommandValidator
                 var innerValidator = new CreateBlockCommandValidator();
@@ -825,11 +851,18 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     .NotEmpty()
                     .WithMessage("ClientId is required for created subtasks.");
 
-                // Sync-specific: must have either TaskId (existing task) OR TaskClientId (created in same push)
+                // Sync-specific: must have exactly one of TaskId (existing task) OR TaskClientId
+                // (created in same push).
+                // REFACTORED (B5): tightened from OR to exactly-one to close the silent-pick gap
+                // where both being set caused the handler to silently prefer TaskClientId.
                 RuleFor(x => x)
-                    .Must(x => x.TaskId.HasValue && x.TaskId != Guid.Empty ||
-                               x.TaskClientId.HasValue && x.TaskClientId != Guid.Empty)
-                    .WithMessage("Either TaskId or TaskClientId must be provided.");
+                    .Must(x =>
+                    {
+                        var hasTaskId = x.TaskId.HasValue && x.TaskId.Value != Guid.Empty;
+                        var hasTaskClientId = x.TaskClientId.HasValue && x.TaskClientId.Value != Guid.Empty;
+                        return hasTaskId ^ hasTaskClientId;
+                    })
+                    .WithMessage("Exactly one of TaskId or TaskClientId must be provided.");
 
                 RuleFor(x => x.Text)
                     .NotEmpty()
@@ -1000,14 +1033,21 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     .NotEmpty()
                     .WithMessage("ClientId is required for created recurring subtasks.");
 
-                // Sync-specific: must have either (SeriesId or SeriesClientId) OR ExceptionId —
-                // exactly one FK must be present (enforced by DB check constraint on the entity)
+                // Sync-specific: must have exactly one of {SeriesId, SeriesClientId, ExceptionId}.
+                // REFACTORED (B3): tightened from OR (any) to exactly-one to close the silent-pick
+                // gap where the handler silently prefers ExceptionId, then SeriesClientId, then
+                // SeriesId. The DB check constraint on the entity already enforces this; the
+                // validator now rejects malformed payloads at intake instead.
                 RuleFor(x => x)
                     .Must(x =>
-                        x.SeriesId.HasValue && x.SeriesId != Guid.Empty ||
-                        x.SeriesClientId.HasValue && x.SeriesClientId != Guid.Empty ||
-                        x.ExceptionId.HasValue && x.ExceptionId != Guid.Empty)
-                    .WithMessage("Either SeriesId/SeriesClientId or ExceptionId must be provided.");
+                    {
+                        var hasSeriesId = x.SeriesId.HasValue && x.SeriesId.Value != Guid.Empty;
+                        var hasSeriesClientId = x.SeriesClientId.HasValue && x.SeriesClientId.Value != Guid.Empty;
+                        var hasExceptionId = x.ExceptionId.HasValue && x.ExceptionId.Value != Guid.Empty;
+                        var count = (hasSeriesId ? 1 : 0) + (hasSeriesClientId ? 1 : 0) + (hasExceptionId ? 1 : 0);
+                        return count == 1;
+                    })
+                    .WithMessage("Exactly one of SeriesId, SeriesClientId, or ExceptionId must be provided.");
 
                 RuleFor(x => x.Text)
                     .NotEmpty()
@@ -1081,6 +1121,24 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 RuleFor(x => x.OccurrenceDate)
                     .Must(d => d != default)
                     .WithMessage("OccurrenceDate must be a valid date.");
+
+                // REFACTORED (B2): payload-shape rule — when IsDeletion is true, all Override*
+                // fields must be null. CreateDeletion ignores them in the handler, but the
+                // validator should reject malformed payloads at intake.
+                RuleFor(x => x)
+                    .Must(x => !x.IsDeletion ||
+                               (x.OverrideTitle is null
+                                && x.OverrideDescription is null
+                                && x.OverrideDate is null
+                                && x.OverrideStartTime is null
+                                && x.OverrideEndTime is null
+                                && x.OverrideLocation is null
+                                && x.OverrideTravelTime is null
+                                && x.OverrideCategoryId is null
+                                && x.OverridePriority is null
+                                && x.OverrideMeetingLink is null
+                                && x.OverrideReminderAtUtc is null))
+                    .WithMessage("Override fields must be null when IsDeletion is true.");
             }
         }
 

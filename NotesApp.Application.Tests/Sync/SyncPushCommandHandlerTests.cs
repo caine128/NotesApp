@@ -27,6 +27,8 @@ namespace NotesApp.Application.Tests.Sync
         private readonly Mock<ISubtaskRepository> _subtaskRepositoryMock = new();
         private readonly Mock<IAttachmentRepository> _attachmentRepositoryMock = new(); // REFACTORED: added for task-attachments feature
         private readonly Mock<IRecurringTaskSeriesRepository> _recurringSeriesRepositoryMock = new();
+        private readonly Mock<IRecurringTaskRootRepository> _recurringRootRepositoryMock = new();
+        private readonly Mock<IRecurringTaskExceptionRepository> _recurringExceptionRepositoryMock = new();
         private readonly Mock<IOutboxRepository> _outboxRepositoryMock = new();
         private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
         private readonly Mock<ISystemClock> _clockMock = new();
@@ -71,10 +73,10 @@ namespace NotesApp.Application.Tests.Sync
                 _subtaskRepositoryMock.Object,
                 _attachmentRepositoryMock.Object, // REFACTORED: added for task-attachments feature
                 // REFACTORED: added recurring-task repos for recurring-tasks feature
-                new Mock<IRecurringTaskRootRepository>().Object,
+                _recurringRootRepositoryMock.Object,
                 _recurringSeriesRepositoryMock.Object,
                 new Mock<IRecurringTaskSubtaskRepository>().Object,
-                new Mock<IRecurringTaskExceptionRepository>().Object,
+                _recurringExceptionRepositoryMock.Object,
                 new Mock<IRecurringTaskAttachmentRepository>().Object, // REFACTORED: added for recurring-task-attachments feature
                 _outboxRepositoryMock.Object,
                 _unitOfWorkMock.Object,
@@ -1619,34 +1621,17 @@ namespace NotesApp.Application.Tests.Sync
             _outboxRepositoryMock.Verify(r => r.AddAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
+        // REFACTORED: tenant-boundary hardening — cross-tenant RecurringSeriesId now fails hard
+        // with a ValidationFailed conflict instead of silently dropping the series link.
         [Fact]
-        public async Task Handle_TaskCreate_RecurringSeriesBelongsToDifferentUser_SkipsSeriesLinkAndStillCreatesTask()
+        public async Task Handle_TaskCreate_RecurringSeriesBelongsToDifferentUser_ReturnsValidationFailedConflict()
         {
-            // Arrange
             var handler = CreateHandler();
             var clientId = Guid.NewGuid();
             var otherUserSeriesId = Guid.NewGuid();
             var otherUserId = Guid.NewGuid();
 
-            var otherUserSeries = RecurringTaskSeries.Create(
-                otherUserId,
-                Guid.NewGuid(),
-                "FREQ=DAILY",
-                new DateOnly(2025, 1, 1),
-                endsBeforeDate: null,
-                title: "Other Series",
-                description: null,
-                startTime: null,
-                endTime: null,
-                location: null,
-                travelTime: null,
-                categoryId: null,
-                priority: TaskPriority.Normal,
-                meetingLink: null,
-                reminderOffsetMinutes: null,
-                materializedUpToDate: new DateOnly(2024, 12, 31),
-                utcNow: _now).Value;
-            SetEntityId(otherUserSeries, otherUserSeriesId);
+            var otherUserSeries = BuildSeries(otherUserId, otherUserSeriesId);
 
             _recurringSeriesRepositoryMock
                 .Setup(r => r.GetByIdUntrackedAsync(otherUserSeriesId, It.IsAny<CancellationToken>()))
@@ -1672,19 +1657,181 @@ namespace NotesApp.Application.Tests.Sync
                 }
             };
 
-            // Act
             var result = await handler.Handle(command, CancellationToken.None);
 
-            // Assert — task is created but series link is silently dropped
             result.IsSuccess.Should().BeTrue();
+            var taskResult = result.Value.Tasks.Created.Should().ContainSingle().Subject;
+            taskResult.Status.Should().Be(SyncPushCreatedStatus.Failed);
+            taskResult.Conflict.Should().NotBeNull();
+            taskResult.Conflict!.ConflictType.Should().Be(SyncConflictType.ValidationFailed);
+            taskResult.Conflict.Errors.Should().Contain("Recurring series not found or does not belong to you.");
+
+            _taskRepositoryMock.Verify(r => r.AddAsync(It.IsAny<TaskItem>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task Handle_TaskCreate_RecurringSeriesIdNotFound_ReturnsValidationFailedConflict()
+        {
+            var handler = CreateHandler();
+            var clientId = Guid.NewGuid();
+            var unknownSeriesId = Guid.NewGuid();
+
+            _recurringSeriesRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(unknownSeriesId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((RecurringTaskSeries?)null);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Tasks = new SyncPushTasksDto
+                {
+                    Created = new[]
+                    {
+                        new TaskCreatedPushItemDto
+                        {
+                            ClientId = clientId,
+                            Date = new DateOnly(2025, 1, 5),
+                            Title = "Task referencing missing series",
+                            RecurringSeriesId = unknownSeriesId,
+                            CanonicalOccurrenceDate = new DateOnly(2025, 1, 5)
+                        }
+                    }
+                }
+            };
+
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            var taskResult = result.Value.Tasks.Created.Should().ContainSingle().Subject;
+            taskResult.Status.Should().Be(SyncPushCreatedStatus.Failed);
+            taskResult.Conflict!.ConflictType.Should().Be(SyncConflictType.ValidationFailed);
+            _taskRepositoryMock.Verify(r => r.AddAsync(It.IsAny<TaskItem>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task Handle_TaskCreate_RecurringSeriesIsSoftDeleted_ReturnsValidationFailedConflict()
+        {
+            var handler = CreateHandler();
+            var clientId = Guid.NewGuid();
+            var seriesId = Guid.NewGuid();
+
+            var deletedSeries = BuildSeries(_userId, seriesId);
+            deletedSeries!.SoftDelete(_now);
+
+            _recurringSeriesRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(seriesId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(deletedSeries);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Tasks = new SyncPushTasksDto
+                {
+                    Created = new[]
+                    {
+                        new TaskCreatedPushItemDto
+                        {
+                            ClientId = clientId,
+                            Date = new DateOnly(2025, 1, 5),
+                            Title = "Task referencing soft-deleted series",
+                            RecurringSeriesId = seriesId,
+                            CanonicalOccurrenceDate = new DateOnly(2025, 1, 5)
+                        }
+                    }
+                }
+            };
+
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            var taskResult = result.Value.Tasks.Created.Should().ContainSingle().Subject;
+            taskResult.Status.Should().Be(SyncPushCreatedStatus.Failed);
+            taskResult.Conflict!.ConflictType.Should().Be(SyncConflictType.ValidationFailed);
+            _taskRepositoryMock.Verify(r => r.AddAsync(It.IsAny<TaskItem>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task Handle_TaskCreate_RecurringSeriesClientIdMissingFromPushMap_ReturnsValidationFailedConflict()
+        {
+            var handler = CreateHandler();
+            var clientId = Guid.NewGuid();
+            var unmappedClientSeriesId = Guid.NewGuid();
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Tasks = new SyncPushTasksDto
+                {
+                    Created = new[]
+                    {
+                        new TaskCreatedPushItemDto
+                        {
+                            ClientId = clientId,
+                            Date = new DateOnly(2025, 1, 5),
+                            Title = "Task referencing same-push series that wasn't in the push",
+                            RecurringSeriesClientId = unmappedClientSeriesId,
+                            CanonicalOccurrenceDate = new DateOnly(2025, 1, 5)
+                        }
+                    }
+                }
+            };
+
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            var taskResult = result.Value.Tasks.Created.Should().ContainSingle().Subject;
+            taskResult.Status.Should().Be(SyncPushCreatedStatus.Failed);
+            taskResult.Conflict!.ConflictType.Should().Be(SyncConflictType.ValidationFailed);
+            taskResult.Conflict.Errors.Should().Contain("Recurring series not found in this push.");
+            _taskRepositoryMock.Verify(r => r.AddAsync(It.IsAny<TaskItem>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task Handle_TaskCreate_OwnedRecurringSeriesId_LinksTaskToSeries()
+        {
+            var handler = CreateHandler();
+            var clientId = Guid.NewGuid();
+            var seriesId = Guid.NewGuid();
+            var canonicalDate = new DateOnly(2025, 1, 5);
+
+            var ownedSeries = BuildSeries(_userId, seriesId);
+            _recurringSeriesRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(seriesId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(ownedSeries);
+
+            TaskItem? captured = null;
+            _taskRepositoryMock
+                .Setup(r => r.AddAsync(It.IsAny<TaskItem>(), It.IsAny<CancellationToken>()))
+                .Callback<TaskItem, CancellationToken>((t, _) => captured = t)
+                .Returns(Task.CompletedTask);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                Tasks = new SyncPushTasksDto
+                {
+                    Created = new[]
+                    {
+                        new TaskCreatedPushItemDto
+                        {
+                            ClientId = clientId,
+                            Date = canonicalDate,
+                            Title = "Owned series occurrence",
+                            RecurringSeriesId = seriesId,
+                            CanonicalOccurrenceDate = canonicalDate
+                        }
+                    }
+                }
+            };
+
+            var result = await handler.Handle(command, CancellationToken.None);
 
             var taskResult = result.Value.Tasks.Created.Should().ContainSingle().Subject;
             taskResult.Status.Should().Be(SyncPushCreatedStatus.Created);
-
-            _taskRepositoryMock.Verify(r => r.AddAsync(It.IsAny<TaskItem>(), It.IsAny<CancellationToken>()), Times.Once);
-            _recurringSeriesRepositoryMock.Verify(
-                r => r.GetByIdUntrackedAsync(otherUserSeriesId, It.IsAny<CancellationToken>()),
-                Times.Once);
+            captured.Should().NotBeNull();
+            captured!.RecurringSeriesId.Should().Be(seriesId);
+            captured.CanonicalOccurrenceDate.Should().Be(canonicalDate);
         }
 
         #endregion
@@ -2731,6 +2878,334 @@ namespace NotesApp.Application.Tests.Sync
 
         #endregion
 
+        #region Recurring Series Tenant-Boundary Tests
+
+        // REFACTORED: tenant-boundary hardening for ProcessRecurringSeriesCreatesAsync (A2).
+
+        [Fact]
+        public async Task Handle_RecurringSeriesCreate_CategoryBelongsToDifferentUser_ReturnsValidationFailedConflict()
+        {
+            var handler = CreateHandler();
+            var clientId = Guid.NewGuid();
+            var rootId = Guid.NewGuid();
+            var foreignCategoryId = Guid.NewGuid();
+            var otherUserId = Guid.NewGuid();
+
+            _recurringRootRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(rootId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(BuildRoot(_userId, rootId));
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(foreignCategoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(BuildCategory(otherUserId, foreignCategoryId));
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                RecurringSeries = new SyncPushRecurringSeriesDto
+                {
+                    Created = new[]
+                    {
+                        new RecurringSeriesCreatedPushItemDto
+                        {
+                            ClientId = clientId,
+                            RootId = rootId,
+                            RRuleString = "FREQ=DAILY",
+                            StartsOnDate = new DateOnly(2025, 1, 1),
+                            Title = "Series",
+                            CategoryId = foreignCategoryId
+                        }
+                    }
+                }
+            };
+
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            var seriesResult = result.Value.RecurringSeries.Created.Should().ContainSingle().Subject;
+            seriesResult.Status.Should().Be(SyncPushCreatedStatus.Failed);
+            seriesResult.Conflict!.ConflictType.Should().Be(SyncConflictType.ValidationFailed);
+            seriesResult.Conflict.Errors.Should().Contain("Category not found or does not belong to you.");
+            _recurringSeriesRepositoryMock.Verify(
+                r => r.AddAsync(It.IsAny<RecurringTaskSeries>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task Handle_RecurringSeriesCreate_CategoryIdNotFound_ReturnsValidationFailedConflict()
+        {
+            var handler = CreateHandler();
+            var rootId = Guid.NewGuid();
+            var unknownCategoryId = Guid.NewGuid();
+
+            _recurringRootRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(rootId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(BuildRoot(_userId, rootId));
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(unknownCategoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((TaskCategory?)null);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                RecurringSeries = new SyncPushRecurringSeriesDto
+                {
+                    Created = new[]
+                    {
+                        new RecurringSeriesCreatedPushItemDto
+                        {
+                            ClientId = Guid.NewGuid(),
+                            RootId = rootId,
+                            RRuleString = "FREQ=DAILY",
+                            StartsOnDate = new DateOnly(2025, 1, 1),
+                            Title = "Series",
+                            CategoryId = unknownCategoryId
+                        }
+                    }
+                }
+            };
+
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            var seriesResult = result.Value.RecurringSeries.Created.Should().ContainSingle().Subject;
+            seriesResult.Status.Should().Be(SyncPushCreatedStatus.Failed);
+            seriesResult.Conflict!.ConflictType.Should().Be(SyncConflictType.ValidationFailed);
+        }
+
+        [Fact]
+        public async Task Handle_RecurringSeriesCreate_OwnedCategoryId_PersistsSeriesWithCategory()
+        {
+            var handler = CreateHandler();
+            var rootId = Guid.NewGuid();
+            var categoryId = Guid.NewGuid();
+
+            _recurringRootRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(rootId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(BuildRoot(_userId, rootId));
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(BuildCategory(_userId, categoryId));
+
+            RecurringTaskSeries? captured = null;
+            _recurringSeriesRepositoryMock
+                .Setup(r => r.AddAsync(It.IsAny<RecurringTaskSeries>(), It.IsAny<CancellationToken>()))
+                .Callback<RecurringTaskSeries, CancellationToken>((s, _) => captured = s)
+                .Returns(Task.CompletedTask);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                RecurringSeries = new SyncPushRecurringSeriesDto
+                {
+                    Created = new[]
+                    {
+                        new RecurringSeriesCreatedPushItemDto
+                        {
+                            ClientId = Guid.NewGuid(),
+                            RootId = rootId,
+                            RRuleString = "FREQ=DAILY",
+                            StartsOnDate = new DateOnly(2025, 1, 1),
+                            Title = "Series",
+                            CategoryId = categoryId
+                        }
+                    }
+                }
+            };
+
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            var seriesResult = result.Value.RecurringSeries.Created.Should().ContainSingle().Subject;
+            seriesResult.Status.Should().Be(SyncPushCreatedStatus.Created);
+            captured.Should().NotBeNull();
+            captured!.CategoryId.Should().Be(categoryId);
+        }
+
+        // REFACTORED: tenant-boundary hardening for ProcessRecurringSeriesUpdatesAsync (A3).
+
+        [Fact]
+        public async Task Handle_RecurringSeriesUpdate_CategoryBelongsToDifferentUser_ReturnsValidationFailedConflict()
+        {
+            var handler = CreateHandler();
+            var seriesId = Guid.NewGuid();
+            var foreignCategoryId = Guid.NewGuid();
+            var otherUserId = Guid.NewGuid();
+
+            var series = BuildSeries(_userId, seriesId);
+            _recurringSeriesRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(seriesId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(series);
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(foreignCategoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(BuildCategory(otherUserId, foreignCategoryId));
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                RecurringSeries = new SyncPushRecurringSeriesDto
+                {
+                    Updated = new[]
+                    {
+                        new RecurringSeriesUpdatedPushItemDto
+                        {
+                            Id = seriesId,
+                            ExpectedVersion = series.Version,
+                            Title = "New Title",
+                            CategoryId = foreignCategoryId
+                        }
+                    }
+                }
+            };
+
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            var seriesResult = result.Value.RecurringSeries.Updated.Should().ContainSingle().Subject;
+            seriesResult.Status.Should().Be(SyncPushUpdatedStatus.Failed);
+            seriesResult.Conflict!.ConflictType.Should().Be(SyncConflictType.ValidationFailed);
+            seriesResult.Conflict.Errors.Should().Contain("Category not found or does not belong to you.");
+        }
+
+        // REFACTORED: tenant-boundary hardening for ProcessRecurringExceptionCreatesAsync (A4).
+
+        [Fact]
+        public async Task Handle_RecurringExceptionCreate_OverrideCategoryBelongsToDifferentUser_ReturnsValidationFailedConflict()
+        {
+            var handler = CreateHandler();
+            var seriesId = Guid.NewGuid();
+            var foreignCategoryId = Guid.NewGuid();
+            var otherUserId = Guid.NewGuid();
+
+            _recurringSeriesRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(seriesId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(BuildSeries(_userId, seriesId));
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(foreignCategoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(BuildCategory(otherUserId, foreignCategoryId));
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                RecurringExceptions = new SyncPushRecurringExceptionsDto
+                {
+                    Created = new[]
+                    {
+                        new RecurringExceptionCreatedPushItemDto
+                        {
+                            ClientId = Guid.NewGuid(),
+                            SeriesId = seriesId,
+                            OccurrenceDate = new DateOnly(2025, 1, 5),
+                            IsDeletion = false,
+                            OverrideCategoryId = foreignCategoryId
+                        }
+                    }
+                }
+            };
+
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            var exceptionResult = result.Value.RecurringExceptions.Created.Should().ContainSingle().Subject;
+            exceptionResult.Status.Should().Be(SyncPushCreatedStatus.Failed);
+            exceptionResult.Conflict!.ConflictType.Should().Be(SyncConflictType.ValidationFailed);
+            exceptionResult.Conflict.Errors.Should().Contain("Category not found or does not belong to you.");
+        }
+
+        [Fact]
+        public async Task Handle_RecurringExceptionCreate_OverrideCategoryIdNotFound_ReturnsValidationFailedConflict()
+        {
+            var handler = CreateHandler();
+            var seriesId = Guid.NewGuid();
+            var unknownCategoryId = Guid.NewGuid();
+
+            _recurringSeriesRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(seriesId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(BuildSeries(_userId, seriesId));
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(unknownCategoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((TaskCategory?)null);
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                RecurringExceptions = new SyncPushRecurringExceptionsDto
+                {
+                    Created = new[]
+                    {
+                        new RecurringExceptionCreatedPushItemDto
+                        {
+                            ClientId = Guid.NewGuid(),
+                            SeriesId = seriesId,
+                            OccurrenceDate = new DateOnly(2025, 1, 5),
+                            IsDeletion = false,
+                            OverrideCategoryId = unknownCategoryId
+                        }
+                    }
+                }
+            };
+
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            var exceptionResult = result.Value.RecurringExceptions.Created.Should().ContainSingle().Subject;
+            exceptionResult.Status.Should().Be(SyncPushCreatedStatus.Failed);
+            exceptionResult.Conflict!.ConflictType.Should().Be(SyncConflictType.ValidationFailed);
+        }
+
+        // REFACTORED: tenant-boundary hardening for ProcessRecurringExceptionUpdatesAsync (A5).
+
+        [Fact]
+        public async Task Handle_RecurringExceptionUpdate_OverrideCategoryBelongsToDifferentUser_ReturnsValidationFailedConflict()
+        {
+            var handler = CreateHandler();
+            var exceptionId = Guid.NewGuid();
+            var seriesId = Guid.NewGuid();
+            var foreignCategoryId = Guid.NewGuid();
+            var otherUserId = Guid.NewGuid();
+
+            var exception = BuildException(_userId, exceptionId, seriesId);
+            _recurringExceptionRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(exceptionId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(exception);
+
+            _categoryRepositoryMock
+                .Setup(r => r.GetByIdUntrackedAsync(foreignCategoryId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(BuildCategory(otherUserId, foreignCategoryId));
+
+            var command = new SyncPushCommand
+            {
+                DeviceId = _deviceId,
+                ClientSyncTimestampUtc = _now,
+                RecurringExceptions = new SyncPushRecurringExceptionsDto
+                {
+                    Updated = new[]
+                    {
+                        new RecurringExceptionUpdatedPushItemDto
+                        {
+                            Id = exceptionId,
+                            ExpectedVersion = exception.Version,
+                            OverrideCategoryId = foreignCategoryId
+                        }
+                    }
+                }
+            };
+
+            var result = await handler.Handle(command, CancellationToken.None);
+
+            var exceptionResult = result.Value.RecurringExceptions.Updated.Should().ContainSingle().Subject;
+            exceptionResult.Status.Should().Be(SyncPushUpdatedStatus.Failed);
+            exceptionResult.Conflict!.ConflictType.Should().Be(SyncConflictType.ValidationFailed);
+            exceptionResult.Conflict.Errors.Should().Contain("Category not found or does not belong to you.");
+        }
+
+        #endregion
+
         #region Helper Methods
 
         private SyncPushCommand CreateEmptyCommand()
@@ -2804,6 +3279,69 @@ namespace NotesApp.Application.Tests.Sync
         private static void SetEntityId<T>(T entity, Guid id) where T : class
         {
             typeof(T).GetProperty("Id")!.SetValue(entity, id);
+        }
+
+        // REFACTORED: shared builders for tenant-boundary hardening tests.
+        private RecurringTaskSeries BuildSeries(Guid userId, Guid seriesId, Guid? rootId = null)
+        {
+            var series = RecurringTaskSeries.Create(
+                userId,
+                rootId ?? Guid.NewGuid(),
+                "FREQ=DAILY",
+                new DateOnly(2025, 1, 1),
+                endsBeforeDate: null,
+                title: "Series",
+                description: null,
+                startTime: null,
+                endTime: null,
+                location: null,
+                travelTime: null,
+                categoryId: null,
+                priority: TaskPriority.Normal,
+                meetingLink: null,
+                reminderOffsetMinutes: null,
+                materializedUpToDate: new DateOnly(2024, 12, 31),
+                utcNow: _now).Value!;
+            SetEntityId(series, seriesId);
+            return series;
+        }
+
+        private TaskCategory BuildCategory(Guid userId, Guid categoryId)
+        {
+            var category = TaskCategory.Create(userId, "Cat", _now).Value!;
+            SetEntityId(category, categoryId);
+            return category;
+        }
+
+        private RecurringTaskRoot BuildRoot(Guid userId, Guid rootId)
+        {
+            var root = RecurringTaskRoot.Create(userId, _now).Value!;
+            SetEntityId(root, rootId);
+            return root;
+        }
+
+        private RecurringTaskException BuildException(Guid userId, Guid exceptionId, Guid seriesId)
+        {
+            var exception = RecurringTaskException.CreateOverride(
+                userId,
+                seriesId,
+                new DateOnly(2025, 1, 5),
+                overrideTitle: "Override",
+                overrideDescription: null,
+                overrideDate: null,
+                overrideStartTime: null,
+                overrideEndTime: null,
+                overrideLocation: null,
+                overrideTravelTime: null,
+                overrideCategoryId: null,
+                overridePriority: null,
+                overrideMeetingLink: null,
+                overrideReminderAtUtc: null,
+                isCompleted: false,
+                materializedTaskItemId: null,
+                _now).Value!;
+            SetEntityId(exception, exceptionId);
+            return exception;
         }
 
         private static void SetEntityVersion<T>(T entity, long version) where T : class

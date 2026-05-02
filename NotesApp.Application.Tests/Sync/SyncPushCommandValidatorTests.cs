@@ -1,6 +1,7 @@
 ﻿using FluentAssertions;
 using NotesApp.Application.Sync.Commands.SyncPush;
 using NotesApp.Application.Sync.Models;
+using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -328,7 +329,7 @@ namespace NotesApp.Application.Tests.Sync
 
             result.IsValid.Should().BeFalse();
             result.Errors.Should().Contain(e =>
-                e.ErrorMessage.Contains("Either TaskId or TaskClientId must be provided"));
+                e.ErrorMessage.Contains("Exactly one of TaskId or TaskClientId must be provided"));
         }
 
         [Fact]
@@ -895,7 +896,7 @@ namespace NotesApp.Application.Tests.Sync
 
             result.IsValid.Should().BeFalse();
             result.Errors.Should().Contain(e =>
-                e.ErrorMessage.Contains("Either SeriesId/SeriesClientId or ExceptionId must be provided"));
+                e.ErrorMessage.Contains("Exactly one of SeriesId, SeriesClientId, or ExceptionId must be provided"));
         }
 
         [Fact]
@@ -1226,5 +1227,303 @@ namespace NotesApp.Application.Tests.Sync
             result.Errors.Should().Contain(e =>
                 e.ErrorMessage.Contains("Total number of pushed items must not exceed"));
         }
+
+        // REFACTORED: B1 — Task series-link payload-shape rules.
+
+        [Fact]
+        public void Task_create_with_series_id_but_no_canonical_date_fails_validation()
+        {
+            var command = BaseCommand(new TaskCreatedPushItemDto
+            {
+                ClientId = Guid.NewGuid(),
+                Date = new DateOnly(2025, 1, 2),
+                Title = "Task",
+                RecurringSeriesId = Guid.NewGuid()
+                // CanonicalOccurrenceDate intentionally omitted
+            });
+
+            var result = _validator.Validate(command);
+
+            result.IsValid.Should().BeFalse();
+            result.Errors.Should().Contain(e =>
+                e.ErrorMessage.Contains("CanonicalOccurrenceDate must be set together with a recurring series reference"));
+        }
+
+        [Fact]
+        public void Task_create_with_canonical_date_but_no_series_id_fails_validation()
+        {
+            var command = BaseCommand(new TaskCreatedPushItemDto
+            {
+                ClientId = Guid.NewGuid(),
+                Date = new DateOnly(2025, 1, 2),
+                Title = "Task",
+                CanonicalOccurrenceDate = new DateOnly(2025, 1, 2)
+            });
+
+            var result = _validator.Validate(command);
+
+            result.IsValid.Should().BeFalse();
+            result.Errors.Should().Contain(e =>
+                e.ErrorMessage.Contains("CanonicalOccurrenceDate must be set together with a recurring series reference"));
+        }
+
+        [Fact]
+        public void Task_create_with_both_series_id_and_series_client_id_fails_validation()
+        {
+            var command = BaseCommand(new TaskCreatedPushItemDto
+            {
+                ClientId = Guid.NewGuid(),
+                Date = new DateOnly(2025, 1, 2),
+                Title = "Task",
+                RecurringSeriesId = Guid.NewGuid(),
+                RecurringSeriesClientId = Guid.NewGuid(),
+                CanonicalOccurrenceDate = new DateOnly(2025, 1, 2)
+            });
+
+            var result = _validator.Validate(command);
+
+            result.IsValid.Should().BeFalse();
+            result.Errors.Should().Contain(e =>
+                e.ErrorMessage.Contains("Only one of RecurringSeriesId or RecurringSeriesClientId may be set"));
+        }
+
+        [Fact]
+        public void Task_create_with_series_id_and_canonical_date_passes_validation()
+        {
+            var command = BaseCommand(new TaskCreatedPushItemDto
+            {
+                ClientId = Guid.NewGuid(),
+                Date = new DateOnly(2025, 1, 2),
+                Title = "Task",
+                RecurringSeriesId = Guid.NewGuid(),
+                CanonicalOccurrenceDate = new DateOnly(2025, 1, 2)
+            });
+
+            var result = _validator.Validate(command);
+
+            result.IsValid.Should().BeTrue();
+        }
+
+        // REFACTORED: B2 — RecurringException IsDeletion mutual exclusion with override fields.
+
+        [Fact]
+        public void Recurring_exception_create_with_deletion_and_override_field_fails_validation()
+        {
+            var command = new SyncPushCommand
+            {
+                DeviceId = Guid.NewGuid(),
+                ClientSyncTimestampUtc = DateTime.UtcNow,
+                RecurringExceptions = new SyncPushRecurringExceptionsDto
+                {
+                    Created = new[]
+                    {
+                        new RecurringExceptionCreatedPushItemDto
+                        {
+                            ClientId = Guid.NewGuid(),
+                            SeriesId = Guid.NewGuid(),
+                            OccurrenceDate = new DateOnly(2025, 1, 5),
+                            IsDeletion = true,
+                            OverrideTitle = "Should not be allowed"
+                        }
+                    }
+                }
+            };
+
+            var result = _validator.Validate(command);
+
+            result.IsValid.Should().BeFalse();
+            result.Errors.Should().Contain(e =>
+                e.ErrorMessage.Contains("Override fields must be null when IsDeletion is true"));
+        }
+
+        [Fact]
+        public void Recurring_exception_create_with_deletion_and_no_overrides_passes_validation()
+        {
+            var command = new SyncPushCommand
+            {
+                DeviceId = Guid.NewGuid(),
+                ClientSyncTimestampUtc = DateTime.UtcNow,
+                RecurringExceptions = new SyncPushRecurringExceptionsDto
+                {
+                    Created = new[]
+                    {
+                        new RecurringExceptionCreatedPushItemDto
+                        {
+                            ClientId = Guid.NewGuid(),
+                            SeriesId = Guid.NewGuid(),
+                            OccurrenceDate = new DateOnly(2025, 1, 5),
+                            IsDeletion = true
+                        }
+                    }
+                }
+            };
+
+            var result = _validator.Validate(command);
+
+            result.IsValid.Should().BeTrue();
+        }
+
+        // REFACTORED: B3 — RecurringSubtask FK exactly-one rule.
+
+        [Fact]
+        public void Recurring_subtask_create_with_two_fks_set_fails_validation()
+        {
+            var command = new SyncPushCommand
+            {
+                DeviceId = Guid.NewGuid(),
+                ClientSyncTimestampUtc = DateTime.UtcNow,
+                RecurringSeriesSubtasks = new SyncPushRecurringSeriesSubtasksDto
+                {
+                    Created = new[]
+                    {
+                        new RecurringSubtaskCreatedPushItemDto
+                        {
+                            ClientId = Guid.NewGuid(),
+                            SeriesId = Guid.NewGuid(),
+                            ExceptionId = Guid.NewGuid(),
+                            Text = "Sub",
+                            Position = "a0"
+                        }
+                    }
+                }
+            };
+
+            var result = _validator.Validate(command);
+
+            result.IsValid.Should().BeFalse();
+            result.Errors.Should().Contain(e =>
+                e.ErrorMessage.Contains("Exactly one of SeriesId, SeriesClientId, or ExceptionId must be provided"));
+        }
+
+        [Fact]
+        public void Recurring_subtask_create_with_no_fk_fails_validation()
+        {
+            var command = new SyncPushCommand
+            {
+                DeviceId = Guid.NewGuid(),
+                ClientSyncTimestampUtc = DateTime.UtcNow,
+                RecurringSeriesSubtasks = new SyncPushRecurringSeriesSubtasksDto
+                {
+                    Created = new[]
+                    {
+                        new RecurringSubtaskCreatedPushItemDto
+                        {
+                            ClientId = Guid.NewGuid(),
+                            Text = "Sub",
+                            Position = "a0"
+                        }
+                    }
+                }
+            };
+
+            var result = _validator.Validate(command);
+
+            result.IsValid.Should().BeFalse();
+            result.Errors.Should().Contain(e =>
+                e.ErrorMessage.Contains("Exactly one of SeriesId, SeriesClientId, or ExceptionId must be provided"));
+        }
+
+        [Fact]
+        public void Recurring_subtask_create_with_exactly_one_fk_passes_validation()
+        {
+            var command = new SyncPushCommand
+            {
+                DeviceId = Guid.NewGuid(),
+                ClientSyncTimestampUtc = DateTime.UtcNow,
+                RecurringSeriesSubtasks = new SyncPushRecurringSeriesSubtasksDto
+                {
+                    Created = new[]
+                    {
+                        new RecurringSubtaskCreatedPushItemDto
+                        {
+                            ClientId = Guid.NewGuid(),
+                            SeriesId = Guid.NewGuid(),
+                            Text = "Sub",
+                            Position = "a0"
+                        }
+                    }
+                }
+            };
+
+            var result = _validator.Validate(command);
+
+            result.IsValid.Should().BeTrue();
+        }
+
+        // REFACTORED: B4 — Block ParentId/ParentClientId exactly-one rule.
+
+        [Fact]
+        public void Block_create_with_both_parent_id_and_parent_client_id_fails_validation()
+        {
+            var command = new SyncPushCommand
+            {
+                DeviceId = Guid.NewGuid(),
+                ClientSyncTimestampUtc = DateTime.UtcNow,
+                Blocks = new SyncPushBlocksDto
+                {
+                    Created = new[]
+                    {
+                        new BlockCreatedPushItemDto
+                        {
+                            ClientId = Guid.NewGuid(),
+                            ParentId = Guid.NewGuid(),
+                            ParentClientId = Guid.NewGuid(),
+                            ParentType = BlockParentType.Note,
+                            Type = BlockType.Paragraph,
+                            Position = "a0",
+                            TextContent = "x"
+                        }
+                    }
+                }
+            };
+
+            var result = _validator.Validate(command);
+
+            result.IsValid.Should().BeFalse();
+            result.Errors.Should().Contain(e =>
+                e.ErrorMessage.Contains("Exactly one of ParentId or ParentClientId must be provided"));
+        }
+
+        // REFACTORED: B5 — Subtask TaskId/TaskClientId exactly-one rule.
+
+        [Fact]
+        public void Subtask_create_with_both_task_id_and_task_client_id_fails_validation()
+        {
+            var command = new SyncPushCommand
+            {
+                DeviceId = Guid.NewGuid(),
+                ClientSyncTimestampUtc = DateTime.UtcNow,
+                Subtasks = new SyncPushSubtasksDto
+                {
+                    Created = new[]
+                    {
+                        new SubtaskCreatedPushItemDto
+                        {
+                            ClientId = Guid.NewGuid(),
+                            TaskId = Guid.NewGuid(),
+                            TaskClientId = Guid.NewGuid(),
+                            Text = "Sub",
+                            Position = "a0"
+                        }
+                    }
+                }
+            };
+
+            var result = _validator.Validate(command);
+
+            result.IsValid.Should().BeFalse();
+            result.Errors.Should().Contain(e =>
+                e.ErrorMessage.Contains("Exactly one of TaskId or TaskClientId must be provided"));
+        }
+
+        private static SyncPushCommand BaseCommand(TaskCreatedPushItemDto task) => new()
+        {
+            DeviceId = Guid.NewGuid(),
+            ClientSyncTimestampUtc = DateTime.UtcNow,
+            Tasks = new SyncPushTasksDto
+            {
+                Created = new[] { task }
+            }
+        };
     }
 }
