@@ -26,7 +26,7 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
             Guid id, CancellationToken cancellationToken = default)
         {
             return await _context.RecurringTaskSubtasks
-                .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+                .FirstOrDefaultAsync(s => s.Id == id && !s.IsDeleted, cancellationToken);
         }
 
         public async Task<RecurringTaskSubtask?> GetByIdUntrackedAsync(
@@ -34,6 +34,15 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
         {
             return await _context.RecurringTaskSubtasks
                 .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == id && !s.IsDeleted, cancellationToken);
+        }
+
+        public async Task<RecurringTaskSubtask?> GetByIdIgnoringQueryFiltersUntrackedAsync(
+            Guid id, CancellationToken cancellationToken = default)
+        {
+            return await _context.RecurringTaskSubtasks
+                .AsNoTracking()
+                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
         }
 

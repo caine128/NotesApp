@@ -29,6 +29,17 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
                 .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
         }
 
+        // OutboxMessage has no soft-delete query filter, so this is functionally
+        // equivalent to GetByIdUntrackedAsync. Implemented to satisfy IRepository<T>.
+        public async Task<OutboxMessage?> GetByIdIgnoringQueryFiltersUntrackedAsync(
+            Guid id, CancellationToken cancellationToken = default)
+        {
+            return await _context.OutboxMessages
+                .AsNoTracking()
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+        }
+
         public async Task AddAsync(OutboxMessage entity, CancellationToken cancellationToken = default)
         {
             await _context.OutboxMessages.AddAsync(entity, cancellationToken);

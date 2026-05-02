@@ -24,11 +24,12 @@ namespace NotesApp.Application.Tests.Sync
     /// Covers:
     /// - Attachment delete via sync push soft-deletes the record in DB.
     /// - Delete non-existent attachment → NotFound status.
-    /// - Delete already-deleted attachment → NotFound (global query filter makes it invisible).
+    /// - Delete already-deleted attachment → AlreadyDeleted (sync push bypasses the global
+    ///   query filter so it can distinguish "never existed" from "exists but soft-deleted").
     /// - Task delete via REST cascades to attachments (SoftDeleteAllForTaskAsync).
     /// - Task delete + explicit attachment delete in the same push: task delete cascades
-    ///   (soft-deletes attachment), then the explicit attachment delete sees null
-    ///   (global filter hides it) → NotFound on the explicit one.
+    ///   (soft-deletes attachment), then the explicit attachment delete sees the
+    ///   soft-deleted row via the bypass → AlreadyDeleted on the explicit one.
     ///
     /// Note: Attachment *create* has no sync push path — files always go via the REST
     /// upload endpoint (POST /api/attachments/{taskId}). The outbox propagates the
@@ -196,10 +197,11 @@ namespace NotesApp.Application.Tests.Sync
         }
 
         [Fact]
-        public async Task Handle_AttachmentDelete_already_deleted_returns_not_found_via_global_filter()
+        public async Task Handle_AttachmentDelete_already_deleted_returns_already_deleted()
         {
-            // The global query filter hides soft-deleted attachments.
-            // GetByIdUntrackedAsync returns null → NotFound (idempotent for the client).
+            // SyncPush bypasses the global query filter (GetByIdIgnoringQueryFiltersUntrackedAsync)
+            // so it can distinguish "never existed" (NotFound) from "exists but soft-deleted"
+            // (AlreadyDeleted). This preserves delete-wins semantics for offline clients.
             await using var context = SqlServerAppDbContextFactory.CreateContext();
             var (userId, deviceId) = await SeedUserAndDeviceAsync(context, _now);
             var task = await SeedTaskAsync(context, userId, _now.AddHours(-1));
@@ -229,8 +231,8 @@ namespace NotesApp.Application.Tests.Sync
 
             result.IsSuccess.Should().BeTrue();
             result.Value.Attachments.Deleted.Should().ContainSingle(r =>
-                r.Id == attachment.Id && r.Status == SyncPushDeletedStatus.NotFound,
-                "global query filter makes deleted attachments invisible → NotFound");
+                r.Id == attachment.Id && r.Status == SyncPushDeletedStatus.AlreadyDeleted,
+                "soft-deleted attachments must be reported as AlreadyDeleted, not NotFound");
         }
 
         // ── Task delete → cascade ─────────────────────────────────────────────

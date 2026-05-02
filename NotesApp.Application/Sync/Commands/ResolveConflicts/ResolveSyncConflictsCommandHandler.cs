@@ -126,7 +126,9 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
                                                                                          DateTime utcNow,
                                                                                          CancellationToken cancellationToken)
         {
-            var task = await _taskRepository.GetByIdUntrackedAsync(resolution.EntityId, cancellationToken);
+            // Bypass the soft-delete query filter so we can distinguish "never existed"
+            // (NotFound) from "exists but soft-deleted" (DeletedOnServer).
+            var task = await _taskRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(resolution.EntityId, cancellationToken);
 
             if (task is null)
             {
@@ -288,7 +290,9 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
                                                                                          DateTime utcNow,
                                                                                          CancellationToken cancellationToken)
         {
-            var note = await _noteRepository.GetByIdUntrackedAsync(resolution.EntityId, cancellationToken);
+            // Bypass the soft-delete query filter so we can distinguish "never existed"
+            // (NotFound) from "exists but soft-deleted" (DeletedOnServer).
+            var note = await _noteRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(resolution.EntityId, cancellationToken);
 
             if (note is null)
             {
@@ -427,8 +431,10 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
                                                                                           DateTime utcNow,
                                                                                           CancellationToken cancellationToken)
         {
-            // Load block WITHOUT tracking (untracked pattern)
-            var block = await _blockRepository.GetByIdUntrackedAsync(resolution.EntityId, cancellationToken);
+            // Load block WITHOUT tracking (untracked pattern). Bypass the soft-delete
+            // query filter so we can distinguish "never existed" (NotFound) from
+            // "exists but soft-deleted" (DeletedOnServer).
+            var block = await _blockRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(resolution.EntityId, cancellationToken);
 
             if (block is null)
             {

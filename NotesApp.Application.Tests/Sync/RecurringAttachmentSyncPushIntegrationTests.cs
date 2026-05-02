@@ -24,7 +24,8 @@ namespace NotesApp.Application.Tests.Sync
     /// Covers:
     /// - Recurring attachment delete via sync push soft-deletes the record in DB.
     /// - Delete non-existent recurring attachment → NotFound status.
-    /// - Delete already-deleted recurring attachment → NotFound (global query filter).
+    /// - Delete already-deleted recurring attachment → AlreadyDeleted (sync push bypasses
+    ///   the global query filter to distinguish "never existed" from "exists but soft-deleted").
     ///
     /// Note: RecurringTaskAttachment *create* has no sync push path — files always go via the REST
     /// upload endpoint. The outbox propagates creation to all devices via the next sync pull.
@@ -218,10 +219,11 @@ namespace NotesApp.Application.Tests.Sync
         }
 
         [Fact]
-        public async Task Handle_RecurringAttachmentDelete_already_deleted_returns_not_found_via_global_filter()
+        public async Task Handle_RecurringAttachmentDelete_already_deleted_returns_already_deleted()
         {
-            // The global query filter hides soft-deleted attachments.
-            // GetByIdUntrackedAsync returns null → NotFound (idempotent for the client).
+            // SyncPush bypasses the global query filter (GetByIdIgnoringQueryFiltersUntrackedAsync)
+            // so it can distinguish "never existed" (NotFound) from "exists but soft-deleted"
+            // (AlreadyDeleted). This preserves delete-wins semantics for offline clients.
             await using var context = SqlServerAppDbContextFactory.CreateContext();
             var (userId, deviceId) = await SeedUserAndDeviceAsync(context, _now);
             var root = await SeedRootAsync(context, userId, _now.AddHours(-1));
@@ -252,8 +254,8 @@ namespace NotesApp.Application.Tests.Sync
 
             result.IsSuccess.Should().BeTrue();
             result.Value.RecurringAttachments.Deleted.Should().ContainSingle(r =>
-                r.Id == attachment.Id && r.Status == SyncPushDeletedStatus.NotFound,
-                "global query filter makes deleted attachments invisible → NotFound");
+                r.Id == attachment.Id && r.Status == SyncPushDeletedStatus.AlreadyDeleted,
+                "soft-deleted attachments must be reported as AlreadyDeleted, not NotFound");
         }
     }
 }

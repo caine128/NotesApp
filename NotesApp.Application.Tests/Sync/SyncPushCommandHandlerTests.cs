@@ -315,7 +315,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityVersion(existingTask, 1L);
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existingTask);
 
             var command = new SyncPushCommand
@@ -363,7 +363,7 @@ namespace NotesApp.Application.Tests.Sync
             var taskId = Guid.NewGuid();
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync((TaskItem?)null);
 
             var command = new SyncPushCommand
@@ -411,7 +411,7 @@ namespace NotesApp.Application.Tests.Sync
             deletedTask.SoftDelete(_now);
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(deletedTask);
 
             var command = new SyncPushCommand
@@ -458,7 +458,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityVersion(serverTask, 5L);
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(serverTask);
 
             var command = new SyncPushCommand
@@ -513,7 +513,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityVersion(existingTask, 1L);
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existingTask);
 
             var command = new SyncPushCommand
@@ -607,7 +607,7 @@ namespace NotesApp.Application.Tests.Sync
 
             TaskItem? capturedTask = null;
             _taskRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existingTask);
             _taskRepositoryMock
                 .Setup(r => r.Update(It.IsAny<TaskItem>()))
@@ -657,7 +657,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityVersion(otherUserTask, 1L);
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(otherUserTask);
 
             var command = new SyncPushCommand
@@ -709,7 +709,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityId(existingTask, taskId);
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existingTask);
 
             var command = new SyncPushCommand
@@ -746,7 +746,7 @@ namespace NotesApp.Application.Tests.Sync
             var taskId = Guid.NewGuid();
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync((TaskItem?)null);
 
             var command = new SyncPushCommand
@@ -783,7 +783,7 @@ namespace NotesApp.Application.Tests.Sync
             deletedTask.SoftDelete(_now);
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(deletedTask);
 
             var command = new SyncPushCommand
@@ -820,7 +820,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityId(otherUserTask, taskId);
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(otherUserTask);
 
             var command = new SyncPushCommand
@@ -948,7 +948,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityVersion(existingNote, 1L);
 
             _noteRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existingNote);
 
             var command = new SyncPushCommand
@@ -992,7 +992,7 @@ namespace NotesApp.Application.Tests.Sync
             var noteId = Guid.NewGuid();
 
             _noteRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync((Note?)null);
 
             var command = new SyncPushCommand
@@ -1038,7 +1038,7 @@ namespace NotesApp.Application.Tests.Sync
             deletedNote.SoftDelete(_now);
 
             _noteRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(deletedNote);
 
             var command = new SyncPushCommand
@@ -1084,7 +1084,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityVersion(serverNote, 5L);
 
             _noteRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(serverNote);
 
             var command = new SyncPushCommand
@@ -1134,7 +1134,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityVersion(otherUserNote, 1L);
 
             _noteRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(otherUserNote);
 
             var command = new SyncPushCommand
@@ -1186,7 +1186,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityId(existingNote, noteId);
 
             _noteRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existingNote);
 
             var command = new SyncPushCommand
@@ -1219,7 +1219,7 @@ namespace NotesApp.Application.Tests.Sync
             var noteId = Guid.NewGuid();
 
             _noteRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync((Note?)null);
 
             var command = new SyncPushCommand
@@ -1255,7 +1255,7 @@ namespace NotesApp.Application.Tests.Sync
             deletedNote.SoftDelete(_now);
 
             _noteRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(deletedNote);
 
             var command = new SyncPushCommand
@@ -1291,7 +1291,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityId(otherUserNote, noteId);
 
             _noteRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(noteId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(otherUserNote);
 
             var command = new SyncPushCommand
@@ -1703,7 +1703,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityVersion(existingBlock, 1L);
 
             _blockRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existingBlock);
 
             var command = new SyncPushCommand
@@ -1746,7 +1746,7 @@ namespace NotesApp.Application.Tests.Sync
             var blockId = Guid.NewGuid();
 
             _blockRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync((Block?)null);
 
             var command = new SyncPushCommand
@@ -1791,7 +1791,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityId(otherUserBlock, blockId);
 
             _blockRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(otherUserBlock);
 
             var command = new SyncPushCommand
@@ -1836,7 +1836,7 @@ namespace NotesApp.Application.Tests.Sync
             deletedBlock.SoftDelete(_now);
 
             _blockRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(deletedBlock);
 
             var command = new SyncPushCommand
@@ -1881,7 +1881,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityVersion(serverBlock, 5L);
 
             _blockRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(serverBlock);
 
             var command = new SyncPushCommand
@@ -1932,7 +1932,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityId(existingBlock, blockId);
 
             _blockRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existingBlock);
 
             var command = new SyncPushCommand
@@ -1965,7 +1965,7 @@ namespace NotesApp.Application.Tests.Sync
             var blockId = Guid.NewGuid();
 
             _blockRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync((Block?)null);
 
             var command = new SyncPushCommand
@@ -2001,7 +2001,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityId(otherUserBlock, blockId);
 
             _blockRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(otherUserBlock);
 
             var command = new SyncPushCommand
@@ -2037,7 +2037,7 @@ namespace NotesApp.Application.Tests.Sync
             deletedBlock.SoftDelete(_now);
 
             _blockRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(blockId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(deletedBlock);
 
             var command = new SyncPushCommand
@@ -2165,7 +2165,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityVersion(existingCategory, 1L);
 
             _categoryRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existingCategory);
 
             var command = new SyncPushCommand
@@ -2211,7 +2211,7 @@ namespace NotesApp.Application.Tests.Sync
             var categoryId = Guid.NewGuid();
 
             _categoryRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync((TaskCategory?)null);
 
             var command = new SyncPushCommand
@@ -2255,7 +2255,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityVersion(serverCategory, 5L); // server is at version 5
 
             _categoryRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(serverCategory);
 
             var command = new SyncPushCommand
@@ -2306,7 +2306,7 @@ namespace NotesApp.Application.Tests.Sync
             deletedCategory.SoftDelete(_now);
 
             _categoryRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(deletedCategory);
 
             var command = new SyncPushCommand
@@ -2353,7 +2353,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityId(existingCategory, categoryId);
 
             _categoryRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existingCategory);
 
             var command = new SyncPushCommand
@@ -2386,7 +2386,7 @@ namespace NotesApp.Application.Tests.Sync
             var categoryId = Guid.NewGuid();
 
             _categoryRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync((TaskCategory?)null);
 
             var command = new SyncPushCommand
@@ -2422,7 +2422,7 @@ namespace NotesApp.Application.Tests.Sync
             deletedCategory.SoftDelete(_now);
 
             _categoryRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(deletedCategory);
 
             var command = new SyncPushCommand
@@ -2460,7 +2460,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityId(existingCategory, categoryId);
 
             _categoryRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(categoryId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existingCategory);
 
             var command = new SyncPushCommand
@@ -2561,7 +2561,7 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityVersion(existingTask, 1L);
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(taskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existingTask);
 
             var command = new SyncPushCommand
@@ -2644,12 +2644,12 @@ namespace NotesApp.Application.Tests.Sync
             SetEntityVersion(existingTask, 5L); // Version mismatch setup
 
             _taskRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(existingTaskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(existingTaskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(existingTask);
 
             var nonExistentTaskId = Guid.NewGuid();
             _taskRepositoryMock
-                .Setup(r => r.GetByIdUntrackedAsync(nonExistentTaskId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByIdIgnoringQueryFiltersUntrackedAsync(nonExistentTaskId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync((TaskItem?)null);
 
             var command = new SyncPushCommand

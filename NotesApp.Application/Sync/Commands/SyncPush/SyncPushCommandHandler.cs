@@ -94,12 +94,13 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             var userId = await _currentUserService.GetUserIdAsync(cancellationToken);
             var utcNow = _clock.UtcNow;
 
-            // Device ownership / status check
+            // Device ownership / status check.
+            // Note: GetByIdAsync respects the soft-delete query filter, so a deleted
+            // device is already returned as null — no explicit IsDeleted check needed.
             var device = await _deviceRepository.GetByIdAsync(request.DeviceId, cancellationToken);
             if (device is null ||
                 device.UserId != userId ||
-                !device.IsActive ||
-                device.IsDeleted)
+                !device.IsActive)
             {
                 return Result.Fail(new Error("Device.NotFound"));
             }
@@ -635,7 +636,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             foreach (var item in request.Tasks.Updated)
             {
                 // Load WITHOUT tracking - modifications won't auto-persist
-                var task = await _taskRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var task = await _taskRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (task is null || task.UserId != userId)
                 {
@@ -818,7 +819,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             foreach (var item in request.Tasks.Deleted)
             {
                 // Load WITHOUT tracking - modifications won't auto-persist
-                var task = await _taskRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var task = await _taskRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (task is null || task.UserId != userId)
                 {
@@ -996,7 +997,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             foreach (var item in request.Notes.Updated)
             {
                 // Load WITHOUT tracking - modifications won't auto-persist
-                var note = await _noteRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var note = await _noteRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (note is null || note.UserId != userId)
                 {
@@ -1123,7 +1124,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             foreach (var item in request.Notes.Deleted)
             {
                 // Load WITHOUT tracking - modifications won't auto-persist
-                var note = await _noteRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var note = await _noteRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (note is null || note.UserId != userId)
                 {
@@ -1402,7 +1403,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             foreach (var item in request.Blocks.Updated)
             {
                 // Load WITHOUT tracking - modifications won't auto-persist
-                var block = await _blockRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var block = await _blockRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (block is null)
                 {
@@ -1574,7 +1575,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             foreach (var item in request.Blocks.Deleted)
             {
                 // Load WITHOUT tracking - modifications won't auto-persist
-                var block = await _blockRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var block = await _blockRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (block is null)
                 {
@@ -1766,7 +1767,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.Categories.Updated)
             {
-                var category = await _categoryRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var category = await _categoryRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (category is null || category.UserId != userId)
                 {
@@ -1899,7 +1900,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.Categories.Deleted)
             {
-                var category = await _categoryRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var category = await _categoryRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (category is null || category.UserId != userId)
                 {
@@ -2155,7 +2156,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.Subtasks.Updated)
             {
-                var subtask = await _subtaskRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var subtask = await _subtaskRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (subtask is null || subtask.UserId != userId)
                 {
@@ -2316,7 +2317,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.Subtasks.Deleted)
             {
-                var subtask = await _subtaskRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var subtask = await _subtaskRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (subtask is null || subtask.UserId != userId)
                 {
@@ -2420,7 +2421,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.Attachments.Deleted)
             {
-                var attachment = await _attachmentRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var attachment = await _attachmentRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (attachment is null || attachment.UserId != userId)
                 {
@@ -2515,7 +2516,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.RecurringAttachments.Deleted)
             {
-                var attachment = await _recurringAttachmentRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var attachment = await _recurringAttachmentRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (attachment is null || attachment.UserId != userId)
                 {
@@ -2700,7 +2701,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.RecurringRoots.Deleted)
             {
-                var root = await _recurringRootRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var root = await _recurringRootRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (root is null || root.UserId != userId)
                 {
@@ -2950,7 +2951,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.RecurringSeries.Updated)
             {
-                var series = await _recurringSeriesRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var series = await _recurringSeriesRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (series is null || series.UserId != userId)
                 {
@@ -3120,7 +3121,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.RecurringSeries.Deleted)
             {
-                var series = await _recurringSeriesRepository.GetByIdUntrackedAsync(item.Id, cancellationToken);
+                var series = await _recurringSeriesRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(item.Id, cancellationToken);
 
                 if (series is null || series.UserId != userId)
                 {
@@ -3370,7 +3371,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.RecurringSeriesSubtasks.Updated)
             {
-                var subtask = await _recurringSeriesSubtaskRepository.GetByIdUntrackedAsync(
+                var subtask = await _recurringSeriesSubtaskRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(
                     item.Id, cancellationToken);
 
                 if (subtask is null || subtask.UserId != userId)
@@ -3535,7 +3536,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.RecurringSeriesSubtasks.Deleted)
             {
-                var subtask = await _recurringSeriesSubtaskRepository.GetByIdUntrackedAsync(
+                var subtask = await _recurringSeriesSubtaskRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(
                     item.Id, cancellationToken);
 
                 if (subtask is null || subtask.UserId != userId)
@@ -3786,7 +3787,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.RecurringExceptions.Updated)
             {
-                var exception = await _recurringExceptionRepository.GetByIdUntrackedAsync(
+                var exception = await _recurringExceptionRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(
                     item.Id, cancellationToken);
 
                 if (exception is null || exception.UserId != userId)
@@ -3933,7 +3934,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         {
             foreach (var item in request.RecurringExceptions.Deleted)
             {
-                var exception = await _recurringExceptionRepository.GetByIdUntrackedAsync(
+                var exception = await _recurringExceptionRepository.GetByIdIgnoringQueryFiltersUntrackedAsync(
                     item.Id, cancellationToken);
 
                 if (exception is null || exception.UserId != userId)
