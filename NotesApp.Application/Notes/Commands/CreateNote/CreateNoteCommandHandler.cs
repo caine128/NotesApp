@@ -5,6 +5,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Notes.Models;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
@@ -28,13 +29,15 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
     {
         private readonly INoteRepository _noteRepository;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
         private readonly ILogger<CreateNoteCommandHandler> _logger;
 
         public CreateNoteCommandHandler(INoteRepository noteRepository,
-                                        IOutboxRepository outboxRepository, 
+                                        IOutboxRepository outboxRepository,
+                                        ISyncChangeWriter syncChangeWriter,
                                         IUnitOfWork unitOfWork,
                                         ICurrentUserService currentUserService,
                                         ISystemClock clock,
@@ -42,6 +45,7 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
         {
             _noteRepository = noteRepository;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -102,6 +106,7 @@ namespace NotesApp.Application.Notes.Commands.CreateNote
             // 5) Persist: only after all domain operations and outbox creation succeed
             await _noteRepository.AddAsync(note, cancellationToken);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+            await _syncChangeWriter.AddCreatedAsync(note, originDeviceId: null, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Created note {NoteId} for user {UserId} on {Date}",

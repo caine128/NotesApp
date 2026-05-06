@@ -79,6 +79,7 @@ namespace NotesApp.Application.Tests.Sync
                 _recurringExceptionRepositoryMock.Object,
                 new Mock<IRecurringTaskAttachmentRepository>().Object, // REFACTORED: added for recurring-task-attachments feature
                 _outboxRepositoryMock.Object,
+                new Mock<NotesApp.Application.Sync.Abstractions.ISyncChangeWriter>().Object, // REFACTORED: sequence-based sync pull
                 _unitOfWorkMock.Object,
                 _clockMock.Object,
                 _loggerMock.Object);

@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using NotesApp.Infrastructure.Persistence;
+using NotesApp.Infrastructure.Persistence.Interceptors;
 using System;
 using System.IO;
 
@@ -26,22 +27,48 @@ namespace NotesApp.Application.Tests.Infrastructure
         /// </summary>
         public static AppDbContext CreateContext()
         {
-            var options = new DbContextOptionsBuilder<AppDbContext>()
-                .UseSqlServer(ConnectionString)
-                .Options;
+            // The SyncChangeSequenceInterceptor matches production DI: every DbContext has it.
+            // It is a no-op when no SyncChange entries are pending in the change tracker, and is
+            // required for any test that triggers SyncChange writes via SyncPushCommandHandler /
+            // non-sync command handlers / etc., to avoid (UserId, Sequence)=(_,0) unique violations.
+            return CreateContextCore(includeSyncInterceptor: true);
+        }
 
-            var context = new AppDbContext(options);
+        /// <summary>
+        /// Alias retained for clarity in interceptor-focused tests. Same behavior as
+        /// <see cref="CreateContext"/>.
+        /// </summary>
+        public static AppDbContext CreateContextWithSyncInterceptor()
+        {
+            return CreateContextCore(includeSyncInterceptor: true);
+        }
 
-            // Drop the database if it is registered in the LocalDB catalog.
-            // EnsureDeleted() returns true  → SQL Server dropped the DB and released the files.
-            // EnsureDeleted() returns false → DB was not in the catalog; physical MDF/LDF files
-            //   may still exist from a previous run that crashed while the instance was down.
-            //   In that case we must delete the files manually before EnsureCreated() runs,
-            //   otherwise SQL Server refuses: "Cannot create file … because it already exists."
+        /// <summary>
+        /// Like CreateContextWithSyncInterceptor but does NOT drop/recreate the database.
+        /// Use when a test needs multiple contexts sharing the same already-seeded database
+        /// (e.g. concurrent-writer tests, retry-replay tests, multi-step verification).
+        /// </summary>
+        public static AppDbContext CreateContextWithSyncInterceptorReuseDb()
+        {
+            var builder = new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(ConnectionString);
+            builder.AddInterceptors(new SyncChangeSequenceInterceptor());
+            return new AppDbContext(builder.Options);
+        }
+
+        private static AppDbContext CreateContextCore(bool includeSyncInterceptor)
+        {
+            var builder = new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(ConnectionString);
+
+            if (includeSyncInterceptor)
+            {
+                builder.AddInterceptors(new SyncChangeSequenceInterceptor());
+            }
+
+            var context = new AppDbContext(builder.Options);
+
             bool dbExisted = context.Database.EnsureDeleted();
             if (!dbExisted)
             {
-                // Only safe to touch the files when SQL Server has no handle on them.
                 DeleteOrphanedDbFiles();
             }
 

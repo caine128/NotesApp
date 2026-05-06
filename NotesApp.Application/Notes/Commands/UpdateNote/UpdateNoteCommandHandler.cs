@@ -5,6 +5,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Notes.Models;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
@@ -19,6 +20,7 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
     {
         private readonly INoteRepository _noteRepository;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
@@ -26,6 +28,7 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
 
         public UpdateNoteCommandHandler(INoteRepository noteRepository,
                                         IOutboxRepository outboxRepository,
+                                        ISyncChangeWriter syncChangeWriter,
                                         IUnitOfWork unitOfWork,
                                         ICurrentUserService currentUserService,
                                         ISystemClock clock,
@@ -33,6 +36,7 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
         {
             _noteRepository = noteRepository;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -113,6 +117,7 @@ namespace NotesApp.Application.Notes.Commands.UpdateNote
             note.ApplyClientRowVersion(command.RowVersion); // REFACTORED: enable stale-page detection
             _noteRepository.Update(note);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+            await _syncChangeWriter.AddUpdatedAsync(note, originDeviceId: null, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(

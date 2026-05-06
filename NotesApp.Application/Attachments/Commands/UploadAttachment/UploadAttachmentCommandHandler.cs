@@ -8,6 +8,7 @@ using NotesApp.Application.Attachments.Models;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Configuration;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
@@ -41,6 +42,7 @@ namespace NotesApp.Application.Attachments.Commands.UploadAttachment
         private readonly IBlobStorageService _blobStorageService;
         private readonly ICurrentUserService _currentUserService;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISystemClock _clock;
         private readonly AttachmentStorageOptions _options;
@@ -51,6 +53,7 @@ namespace NotesApp.Application.Attachments.Commands.UploadAttachment
                                               IBlobStorageService blobStorageService,
                                               ICurrentUserService currentUserService,
                                               IOutboxRepository outboxRepository,
+                                              ISyncChangeWriter syncChangeWriter,
                                               IUnitOfWork unitOfWork,
                                               ISystemClock clock,
                                               IOptions<AttachmentStorageOptions> options,
@@ -61,6 +64,7 @@ namespace NotesApp.Application.Attachments.Commands.UploadAttachment
             _blobStorageService = blobStorageService;
             _currentUserService = currentUserService;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _clock = clock;
             _options = options.Value;
@@ -206,6 +210,7 @@ namespace NotesApp.Application.Attachments.Commands.UploadAttachment
 
             await _attachmentRepository.AddAsync(attachment, cancellationToken);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+            await _syncChangeWriter.AddCreatedAsync(attachment, originDeviceId: null, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             // ═══════════════════════════════════════════════════════════════════

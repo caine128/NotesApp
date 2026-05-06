@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
@@ -32,6 +33,7 @@ namespace NotesApp.Application.Blocks.Commands.DeleteBlock
     {
         private readonly IBlockRepository _blockRepository;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
@@ -40,6 +42,7 @@ namespace NotesApp.Application.Blocks.Commands.DeleteBlock
         public DeleteBlockCommandHandler(
             IBlockRepository blockRepository,
             IOutboxRepository outboxRepository,
+            ISyncChangeWriter syncChangeWriter,
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUserService,
             ISystemClock clock,
@@ -47,6 +50,7 @@ namespace NotesApp.Application.Blocks.Commands.DeleteBlock
         {
             _blockRepository = blockRepository;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -129,6 +133,7 @@ namespace NotesApp.Application.Blocks.Commands.DeleteBlock
             block.ApplyClientRowVersion(command.RowVersion); // REFACTORED: enable stale-page detection
             _blockRepository.Update(block);
             await _outboxRepository.AddAsync(outboxResult.Value!, cancellationToken);
+            await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Block, block.Id, userId, originDeviceId: null, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(

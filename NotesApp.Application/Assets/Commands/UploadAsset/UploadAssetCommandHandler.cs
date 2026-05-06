@@ -8,6 +8,7 @@ using NotesApp.Application.Assets.Models;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Configuration;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
@@ -43,6 +44,7 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
         private readonly IBlobStorageService _blobStorageService;
         private readonly ICurrentUserService _currentUserService;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISystemClock _clock;
         private readonly AssetStorageOptions _options;
@@ -53,6 +55,7 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
                                          IBlobStorageService blobStorageService,
                                          ICurrentUserService currentUserService,
                                          IOutboxRepository outboxRepository,
+                                         ISyncChangeWriter syncChangeWriter,
                                          IUnitOfWork unitOfWork,
                                          ISystemClock clock,
                                          IOptions<AssetStorageOptions> options,
@@ -63,6 +66,7 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
             _blobStorageService = blobStorageService;
             _currentUserService = currentUserService;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _clock = clock;
             _options = options.Value;
@@ -262,6 +266,8 @@ namespace NotesApp.Application.Assets.Commands.UploadAsset
             _blockRepository.Update(block);
             await _outboxRepository.AddAsync(assetOutboxResult.Value, cancellationToken);
             await _outboxRepository.AddAsync(blockOutboxResult.Value, cancellationToken);
+            await _syncChangeWriter.AddCreatedAsync(asset, originDeviceId: null, cancellationToken);
+            await _syncChangeWriter.AddUpdatedAsync(block, originDeviceId: null, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             // ═══════════════════════════════════════════════════════════════════

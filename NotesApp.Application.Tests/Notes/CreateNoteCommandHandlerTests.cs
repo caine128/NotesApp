@@ -50,6 +50,7 @@ namespace NotesApp.Application.Tests.Notes
             var handler = new CreateNoteCommandHandler(
                 noteRepository,
                 outboxRepository,
+                new Mock<NotesApp.Application.Sync.Abstractions.ISyncChangeWriter>().Object,
                 unitOfWork,
                 currentUserServiceMock.Object,
                 clock,
@@ -122,6 +123,7 @@ namespace NotesApp.Application.Tests.Notes
             var handler = new CreateNoteCommandHandler(
                 noteRepository,
                 outboxRepository,
+                new Mock<NotesApp.Application.Sync.Abstractions.ISyncChangeWriter>().Object,
                 unitOfWork,
                 currentUserServiceMock.Object,
                 clock,

@@ -55,6 +55,7 @@ namespace NotesApp.Application.Tests.Sync
                 _noteRepositoryMock.Object,
                 _blockRepositoryMock.Object,
                 _outboxRepositoryMock.Object,
+                new Mock<NotesApp.Application.Sync.Abstractions.ISyncChangeWriter>().Object,
                 _unitOfWorkMock.Object,
                 _clockMock.Object,
                 _loggerMock.Object);

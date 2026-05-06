@@ -10,18 +10,8 @@ namespace NotesApp.Application.Sync
     /// </summary>
     internal static class SyncLimits
     {
-        // Pull (/api/sync/changes)
-
-        /// <summary>
-        /// Default per-entity maximum number of items returned by sync pull
-        /// when the client does not specify maxItemsPerEntity.
-        /// </summary>
-        public const int DefaultPullMaxItemsPerEntity = 500;
-
-        /// <summary>
-        /// Hard upper bound on maxItemsPerEntity that a client is allowed to request.
-        /// </summary>
-        public const int HardPullMaxItemsPerEntity = 1000;
+        // Pull constants moved to SyncPullLimits.
+        // This class now only holds push-related size limits.
 
         // Push (/api/sync/push) — per-entity collection limits
 

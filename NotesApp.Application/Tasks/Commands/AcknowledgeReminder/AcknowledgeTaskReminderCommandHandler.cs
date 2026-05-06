@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
@@ -29,6 +30,7 @@ namespace NotesApp.Application.Tasks.Commands.AcknowledgeReminder
         private readonly ICurrentUserService _currentUserService;
         private readonly ITaskRepository _taskRepository;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISystemClock _clock;
         private readonly ILogger<AcknowledgeTaskReminderCommandHandler> _logger;
@@ -37,6 +39,7 @@ namespace NotesApp.Application.Tasks.Commands.AcknowledgeReminder
             ICurrentUserService currentUserService,
             ITaskRepository taskRepository,
             IOutboxRepository outboxRepository,
+            ISyncChangeWriter syncChangeWriter,
             IUnitOfWork unitOfWork,
             ISystemClock clock,
             ILogger<AcknowledgeTaskReminderCommandHandler> logger)
@@ -44,6 +47,7 @@ namespace NotesApp.Application.Tasks.Commands.AcknowledgeReminder
             _currentUserService = currentUserService;
             _taskRepository = taskRepository;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _clock = clock;
             _logger = logger;
@@ -121,6 +125,7 @@ namespace NotesApp.Application.Tasks.Commands.AcknowledgeReminder
             //    Update() attaches the untracked entity and marks it as Modified
             _taskRepository.Update(task);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+            await _syncChangeWriter.AddUpdatedAsync(task, originDeviceId: request.DeviceId, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(

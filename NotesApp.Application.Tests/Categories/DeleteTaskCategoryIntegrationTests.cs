@@ -51,6 +51,7 @@ namespace NotesApp.Application.Tests.Categories
                 new CategoryRepository(context),
                 new TaskRepository(context, new Mock<IRecurrenceEngine>().Object),
                 new OutboxRepository(context),
+                new Mock<NotesApp.Application.Sync.Abstractions.ISyncChangeWriter>().Object,
                 new UnitOfWork(context),
                 currentUserSvc.Object,
                 clockMock.Object,

@@ -48,6 +48,15 @@ namespace NotesApp.Domain.Users
         /// </summary>
         public bool IsActive { get; private set; }
 
+        /// <summary>
+        /// Highest <see cref="Entities.SyncChange.Sequence"/> the client has acknowledged applying
+        /// locally. Advanced implicitly by the pull endpoint when the client requests
+        /// <c>afterSequence = N</c> (asking for "after N" implies "I have applied through N"), and
+        /// set explicitly by the snapshot endpoint to the bootstrap sequence. Read by the
+        /// retention sweep to determine which rows can be hard-deleted.
+        /// </summary>
+        public long LastAckedSyncSequence { get; private set; }
+
         private UserDevice()
         {
             // EF Core
@@ -103,6 +112,7 @@ namespace NotesApp.Domain.Users
                 DeviceName = normalizedName,
                 LastSeenAtUtc = utcNow,
                 IsActive = true,
+                LastAckedSyncSequence = 0L,
                 CreatedAtUtc = utcNow,
                 UpdatedAtUtc = utcNow,
                 IsDeleted = false
@@ -192,6 +202,22 @@ namespace NotesApp.Domain.Users
             Restore(utcNow);
             LastSeenAtUtc = utcNow;
             return DomainResult.Success();
+        }
+
+        /// <summary>
+        /// Advances the acknowledged-sync-sequence high-water mark. Idempotent and monotonic:
+        /// a value not strictly greater than the current one is ignored (no rollback, no Touch).
+        /// Called by the pull and snapshot handlers after a successful response.
+        /// </summary>
+        public void AdvanceLastAckedSyncSequence(long sequence, DateTime utcNow)
+        {
+            if (sequence <= LastAckedSyncSequence)
+            {
+                return;
+            }
+
+            LastAckedSyncSequence = sequence;
+            Touch(utcNow);
         }
 
         /// <summary>

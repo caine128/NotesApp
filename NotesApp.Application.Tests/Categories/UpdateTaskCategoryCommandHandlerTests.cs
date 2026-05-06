@@ -40,6 +40,7 @@ namespace NotesApp.Application.Tests.Categories
             return new UpdateTaskCategoryCommandHandler(
                 _categoryRepositoryMock.Object,
                 _outboxRepositoryMock.Object,
+                new Mock<NotesApp.Application.Sync.Abstractions.ISyncChangeWriter>().Object,
                 _unitOfWorkMock.Object,
                 _currentUserServiceMock.Object,
                 _clockMock.Object,

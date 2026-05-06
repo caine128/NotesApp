@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System.Text.Json;
@@ -40,6 +41,7 @@ namespace NotesApp.Application.Categories.Commands.DeleteTaskCategory
         private readonly ICategoryRepository _categoryRepository;
         private readonly ITaskRepository _taskRepository;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
@@ -48,6 +50,7 @@ namespace NotesApp.Application.Categories.Commands.DeleteTaskCategory
         public DeleteTaskCategoryCommandHandler(ICategoryRepository categoryRepository,
                                                 ITaskRepository taskRepository,
                                                 IOutboxRepository outboxRepository,
+                                                ISyncChangeWriter syncChangeWriter,
                                                 IUnitOfWork unitOfWork,
                                                 ICurrentUserService currentUserService,
                                                 ISystemClock clock,
@@ -56,6 +59,7 @@ namespace NotesApp.Application.Categories.Commands.DeleteTaskCategory
             _categoryRepository = categoryRepository;
             _taskRepository = taskRepository;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -148,6 +152,14 @@ namespace NotesApp.Application.Categories.Commands.DeleteTaskCategory
             category.ApplyClientRowVersion(command.RowVersion); // REFACTORED: enable stale-page detection
             _categoryRepository.Update(category);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+            await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Category, category.Id, currentUserId, originDeviceId: null, cancellationToken);
+            // TODO: ClearCategoryFromTasksAsync above bumps Version on every task that referenced
+            // this category, but does not return the affected IDs. To emit a Task.Updated
+            // SyncChange per affected task, add a repository method to load the IDs first
+            // (or have ClearCategoryFromTasksAsync return them). Without this, devices that
+            // pull SyncChanges after a REST category delete will see the Category disappear
+            // but won't receive Task.Updated rows reflecting the cleared CategoryId. Sync push
+            // mutations are unaffected (mobile clients send the task updates themselves).
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(

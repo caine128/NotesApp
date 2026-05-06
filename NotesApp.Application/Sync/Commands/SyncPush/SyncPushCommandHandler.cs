@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Application.Sync.Models;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
@@ -46,6 +47,8 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
         // REFACTORED: added for recurring-task-attachments feature
         private readonly IRecurringTaskAttachmentRepository _recurringAttachmentRepository;
         private readonly IOutboxRepository _outboxRepository;
+        // REFACTORED: added for sequence-based sync pull
+        private readonly ISyncChangeWriter _syncChangeWriter;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISystemClock _clock;
         private readonly ILogger<SyncPushCommandHandler> _logger;
@@ -64,6 +67,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                                      IRecurringTaskExceptionRepository recurringExceptionRepository,
                                      IRecurringTaskAttachmentRepository recurringAttachmentRepository,
                                      IOutboxRepository outboxRepository,
+                                     ISyncChangeWriter syncChangeWriter,
                                      IUnitOfWork unitOfWork,
                                      ISystemClock clock,
                                      ILogger<SyncPushCommandHandler> logger)
@@ -83,6 +87,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
             _recurringExceptionRepository = recurringExceptionRepository;
             _recurringAttachmentRepository = recurringAttachmentRepository; // REFACTORED: recurring-task-attachments feature
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter; // REFACTORED: sequence-based sync pull
             _unitOfWork = unitOfWork;
             _clock = clock;
             _logger = logger;
@@ -651,6 +656,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 // Both entity and outbox message created successfully - add both to repositories
                 await _taskRepository.AddAsync(task, cancellationToken);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(task, request.DeviceId, cancellationToken);
 
                 // Store client-to-server ID mapping for block parent resolution
                 clientToServerIds[item.ClientId] = task.Id;
@@ -839,6 +845,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 // SUCCESS: Attach modified entity and add outbox
                 _taskRepository.Update(task);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddUpdatedAsync(task, request.DeviceId, cancellationToken);
 
                 results.Add(new TaskUpdatedPushResultDto
                 {
@@ -927,6 +934,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 // SUCCESS: Attach modified entity and add outbox
                 _taskRepository.Update(task);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Task, task.Id, userId, request.DeviceId, cancellationToken);
 
                 // The client is responsible for sending explicit SubtaskDeleted items
                 // in the same push payload alongside the TaskDeleted item.
@@ -1013,6 +1021,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 // Both entity and outbox message created successfully - add both to repositories
                 await _noteRepository.AddAsync(note, cancellationToken);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(note, request.DeviceId, cancellationToken);
 
                 // Store client-to-server ID mapping for block parent resolution
                 clientToServerIds[item.ClientId] = note.Id;
@@ -1144,6 +1153,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 // SUCCESS: Attach modified entity and add outbox
                 _noteRepository.Update(note);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddUpdatedAsync(note, request.DeviceId, cancellationToken);
 
                 results.Add(new NoteUpdatedPushResultDto
                 {
@@ -1232,6 +1242,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 // SUCCESS: Attach modified entity and add outbox
                 _noteRepository.Update(note);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Note, note.Id, userId, request.DeviceId, cancellationToken);
 
                 results.Add(new NoteDeletedPushResultDto
                 {
@@ -1422,6 +1433,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 // Both entity and outbox message created successfully - add both to repositories
                 await _blockRepository.AddAsync(block, cancellationToken);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(block, request.DeviceId, cancellationToken);
 
                 results.Add(new BlockCreatedPushResultDto
                 {
@@ -1594,6 +1606,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                     // SUCCESS: Attach modified entity and add outbox
                     _blockRepository.Update(block);
                     await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                    await _syncChangeWriter.AddUpdatedAsync(block, request.DeviceId, cancellationToken);
                 }
 
                 results.Add(new BlockUpdatedPushResultDto
@@ -1695,6 +1708,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 // SUCCESS: Attach modified entity and add outbox
                 _blockRepository.Update(block);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Block, block.Id, userId, request.DeviceId, cancellationToken);
 
                 results.Add(new BlockDeletedPushResultDto
                 {
@@ -1780,6 +1794,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 await _categoryRepository.AddAsync(category, cancellationToken);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(category, request.DeviceId, cancellationToken);
 
                 // Store mapping so task creates/updates in this push can resolve CategoryId
                 categoryClientToServerIds[item.ClientId] = category.Id;
@@ -1915,6 +1930,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 _categoryRepository.Update(category);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddUpdatedAsync(category, request.DeviceId, cancellationToken);
 
                 results.Add(new CategoryUpdatedPushResultDto
                 {
@@ -2014,6 +2030,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 _categoryRepository.Update(category);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Category, category.Id, userId, request.DeviceId, cancellationToken);
 
                 results.Add(new CategoryDeletedPushResultDto
                 {
@@ -2175,6 +2192,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 await _subtaskRepository.AddAsync(subtask, cancellationToken);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(subtask, request.DeviceId, cancellationToken);
 
                 results.Add(new SubtaskCreatedPushResultDto
                 {
@@ -2336,6 +2354,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                     _subtaskRepository.Update(subtask);
                     await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                    await _syncChangeWriter.AddUpdatedAsync(subtask, request.DeviceId, cancellationToken);
                 }
 
                 results.Add(new SubtaskUpdatedPushResultDto
@@ -2436,6 +2455,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 _subtaskRepository.Update(subtask);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Subtask, subtask.Id, userId, request.DeviceId, cancellationToken);
 
                 results.Add(new SubtaskDeletedPushResultDto
                 {
@@ -2530,6 +2550,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 _attachmentRepository.Update(attachment);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Attachment, attachment.Id, userId, request.DeviceId, cancellationToken);
 
                 results.Add(new AttachmentDeletedPushResultDto
                 {
@@ -2622,6 +2643,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 _recurringAttachmentRepository.Update(attachment);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.RecurringTaskAttachment, attachment.Id, userId, request.DeviceId, cancellationToken);
 
                 results.Add(new RecurringAttachmentDeletedPushResultDto
                 {
@@ -2713,6 +2735,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 await _recurringRootRepository.AddAsync(root, cancellationToken);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(root, request.DeviceId, cancellationToken);
 
                 rootClientToServerIds[item.ClientId] = root.Id;
 
@@ -2815,6 +2838,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 _recurringRootRepository.Update(root);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.RecurringTaskRoot, root.Id, userId, request.DeviceId, cancellationToken);
 
                 results.Add(new RecurringRootDeletedPushResultDto
                 {
@@ -2999,6 +3023,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 await _recurringSeriesRepository.AddAsync(series, cancellationToken);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(series, request.DeviceId, cancellationToken);
 
                 seriesClientToServerIds[item.ClientId] = series.Id;
 
@@ -3208,6 +3233,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 _recurringSeriesRepository.Update(series);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddUpdatedAsync(series, request.DeviceId, cancellationToken);
 
                 results.Add(new RecurringSeriesUpdatedPushResultDto
                 {
@@ -3309,6 +3335,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 _recurringSeriesRepository.Update(series);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.RecurringTaskSeries, series.Id, userId, request.DeviceId, cancellationToken);
 
                 results.Add(new RecurringSeriesDeletedPushResultDto
                 {
@@ -3459,6 +3486,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 await _recurringSeriesSubtaskRepository.AddAsync(subtask, cancellationToken);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(subtask, request.DeviceId, cancellationToken);
 
                 results.Add(new RecurringSubtaskCreatedPushResultDto
                 {
@@ -3624,6 +3652,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                     _recurringSeriesSubtaskRepository.Update(subtask);
                     await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                    await _syncChangeWriter.AddUpdatedAsync(subtask, request.DeviceId, cancellationToken);
                 }
 
                 results.Add(new RecurringSubtaskUpdatedPushResultDto
@@ -3727,6 +3756,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 _recurringSeriesSubtaskRepository.Update(subtask);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.RecurringTaskSubtask, subtask.Id, userId, request.DeviceId, cancellationToken);
 
                 results.Add(new RecurringSubtaskDeletedPushResultDto
                 {
@@ -3912,6 +3942,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 await _recurringExceptionRepository.AddAsync(newException, cancellationToken);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(newException, request.DeviceId, cancellationToken);
 
                 results.Add(new RecurringExceptionCreatedPushResultDto
                 {
@@ -4098,6 +4129,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 _recurringExceptionRepository.Update(exception);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddUpdatedAsync(exception, request.DeviceId, cancellationToken);
 
                 results.Add(new RecurringExceptionUpdatedPushResultDto
                 {
@@ -4199,6 +4231,7 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
 
                 _recurringExceptionRepository.Update(exception);
                 await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.RecurringTaskException, exception.Id, userId, request.DeviceId, cancellationToken);
 
                 results.Add(new RecurringExceptionDeletedPushResultDto
                 {

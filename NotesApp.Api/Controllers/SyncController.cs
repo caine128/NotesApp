@@ -27,34 +27,45 @@ namespace NotesApp.Api.Controllers
         }
 
         /// <summary>
-        /// Returns all changes (tasks and notes) for the current user since the given timestamp.
-        /// If <paramref name="sinceUtc"/> is null, this performs an initial sync and returns all
-        /// non-deleted entities for the user.
+        /// Sequence-based sync pull. Returns ordered <see cref="SyncPullDto.Changes"/> with
+        /// <c>Sequence &gt; afterSequence</c>, paginated by <paramref name="limit"/>. Replaces the
+        /// legacy <c>GET /api/sync/changes</c> timestamp pull.
         /// </summary>
-        /// <param name="sinceUtc">
-        /// Optional timestamp (UTC). Only entities with UpdatedAtUtc greater than this value
-        /// are returned. When omitted, this acts as an initial sync.
-        /// </param>
-        /// <param name="deviceId">
-        /// Optional id of the requesting device. Currently not used on the server side,
-        /// but reserved for future device-specific optimisations.
-        /// </param>
-        [HttpGet("changes")]
-        [ProducesResponseType(typeof(SyncChangesDto), StatusCodes.Status200OK)]
-        public async Task<IActionResult> GetChanges([FromQuery] DateTime? sinceUtc,
-                                                    [FromQuery] Guid? deviceId,                                          
-                                                    [FromQuery] int? maxItemsPerEntity,
-                                                    CancellationToken cancellationToken)
+        /// <param name="afterSequence">Resume cursor; pass 0 for "from the start of available history".</param>
+        /// <param name="deviceId">Optional device id; advances the device's LastAckedSyncSequence on success.</param>
+        /// <param name="limit">Optional page size; defaults to 500. Max 1000.</param>
+        [HttpGet("pull")]
+        [ProducesResponseType(typeof(SyncPullDto), StatusCodes.Status200OK)]
+        public async Task<IActionResult> Pull([FromQuery] long afterSequence,
+                                              [FromQuery] Guid? deviceId,
+                                              [FromQuery] int? limit,
+                                              CancellationToken cancellationToken)
         {
             // In Dev + X-Debug-User, this may auto-provision a device.
             var effectiveDeviceId = await _debugDeviceProvisioningService
                 .EnsureDeviceIdAsync(deviceId, cancellationToken);
 
-            var query = new GetSyncChangesQuery(sinceUtc, effectiveDeviceId, maxItemsPerEntity);
-
+            var query = new GetSyncPullQuery(afterSequence, effectiveDeviceId, limit);
             var result = await _mediator.Send(query, cancellationToken);
 
-            // Uses NotesAppResultEndpointProfile behind the scenes
+            return result.ToActionResult();
+        }
+
+        /// <summary>
+        /// Bootstrap snapshot for new or re-bootstrapping devices. Returns the current state of
+        /// every non-deleted entity for the user, plus the <c>BootstrapSequence</c> the client
+        /// should use as <c>afterSequence</c> for subsequent <c>GET /api/sync/pull</c> calls.
+        /// </summary>
+        [HttpGet("snapshot")]
+        [ProducesResponseType(typeof(SyncSnapshotDto), StatusCodes.Status200OK)]
+        public async Task<IActionResult> Snapshot([FromQuery] Guid? deviceId, CancellationToken cancellationToken)
+        {
+            var effectiveDeviceId = await _debugDeviceProvisioningService
+                .EnsureDeviceIdAsync(deviceId, cancellationToken);
+
+            var query = new GetSyncSnapshotQuery(effectiveDeviceId);
+            var result = await _mediator.Send(query, cancellationToken);
+
             return result.ToActionResult();
         }
 

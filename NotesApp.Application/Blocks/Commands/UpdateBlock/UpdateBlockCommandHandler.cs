@@ -5,6 +5,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Blocks.Models;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
@@ -27,6 +28,7 @@ namespace NotesApp.Application.Blocks.Commands.UpdateBlock
     {
         private readonly IBlockRepository _blockRepository;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
@@ -35,6 +37,7 @@ namespace NotesApp.Application.Blocks.Commands.UpdateBlock
         public UpdateBlockCommandHandler(
             IBlockRepository blockRepository,
             IOutboxRepository outboxRepository,
+            ISyncChangeWriter syncChangeWriter,
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUserService,
             ISystemClock clock,
@@ -42,6 +45,7 @@ namespace NotesApp.Application.Blocks.Commands.UpdateBlock
         {
             _blockRepository = blockRepository;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -158,6 +162,7 @@ namespace NotesApp.Application.Blocks.Commands.UpdateBlock
             block.ApplyClientRowVersion(command.RowVersion); // REFACTORED: enable stale-page detection
             _blockRepository.Update(block);
             await _outboxRepository.AddAsync(outboxResult.Value!, cancellationToken);
+            await _syncChangeWriter.AddUpdatedAsync(block, originDeviceId: null, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(

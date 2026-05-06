@@ -5,6 +5,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Categories.Models;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System.Text.Json;
@@ -27,6 +28,7 @@ namespace NotesApp.Application.Categories.Commands.CreateTaskCategory
     {
         private readonly ICategoryRepository _categoryRepository;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
@@ -35,6 +37,7 @@ namespace NotesApp.Application.Categories.Commands.CreateTaskCategory
         public CreateTaskCategoryCommandHandler(
             ICategoryRepository categoryRepository,
             IOutboxRepository outboxRepository,
+            ISyncChangeWriter syncChangeWriter,
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUserService,
             ISystemClock clock,
@@ -42,6 +45,7 @@ namespace NotesApp.Application.Categories.Commands.CreateTaskCategory
         {
             _categoryRepository = categoryRepository;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -91,6 +95,7 @@ namespace NotesApp.Application.Categories.Commands.CreateTaskCategory
             // 4) Persist category and outbox atomically.
             await _categoryRepository.AddAsync(category, cancellationToken);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+            await _syncChangeWriter.AddCreatedAsync(category, originDeviceId: null, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Category {CategoryId} '{Name}' created for user {UserId}.",

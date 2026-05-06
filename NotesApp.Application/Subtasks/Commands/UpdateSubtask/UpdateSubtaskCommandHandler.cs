@@ -5,6 +5,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Subtasks.Models;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
@@ -30,6 +31,7 @@ namespace NotesApp.Application.Subtasks.Commands.UpdateSubtask
     {
         private readonly ISubtaskRepository _subtaskRepository;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
@@ -38,6 +40,7 @@ namespace NotesApp.Application.Subtasks.Commands.UpdateSubtask
         public UpdateSubtaskCommandHandler(
             ISubtaskRepository subtaskRepository,
             IOutboxRepository outboxRepository,
+            ISyncChangeWriter syncChangeWriter,
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUserService,
             ISystemClock clock,
@@ -45,6 +48,7 @@ namespace NotesApp.Application.Subtasks.Commands.UpdateSubtask
         {
             _subtaskRepository = subtaskRepository;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -146,6 +150,7 @@ namespace NotesApp.Application.Subtasks.Commands.UpdateSubtask
             subtask.ApplyClientRowVersion(command.RowVersion); // REFACTORED: enable stale-page detection
             _subtaskRepository.Update(subtask);
             await _outboxRepository.AddAsync(outboxResult.Value!, cancellationToken);
+            await _syncChangeWriter.AddUpdatedAsync(subtask, originDeviceId: null, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(

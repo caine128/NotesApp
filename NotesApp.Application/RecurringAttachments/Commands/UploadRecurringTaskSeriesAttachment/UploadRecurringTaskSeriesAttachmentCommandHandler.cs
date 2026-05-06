@@ -8,6 +8,7 @@ using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Configuration;
 using NotesApp.Application.RecurringAttachments.Models;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
@@ -38,6 +39,7 @@ namespace NotesApp.Application.RecurringAttachments.Commands.UploadRecurringTask
         private readonly IBlobStorageService _blobStorageService;
         private readonly ICurrentUserService _currentUserService;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISystemClock _clock;
         private readonly AttachmentStorageOptions _options;
@@ -49,6 +51,7 @@ namespace NotesApp.Application.RecurringAttachments.Commands.UploadRecurringTask
             IBlobStorageService blobStorageService,
             ICurrentUserService currentUserService,
             IOutboxRepository outboxRepository,
+            ISyncChangeWriter syncChangeWriter,
             IUnitOfWork unitOfWork,
             ISystemClock clock,
             IOptions<AttachmentStorageOptions> options,
@@ -59,6 +62,7 @@ namespace NotesApp.Application.RecurringAttachments.Commands.UploadRecurringTask
             _blobStorageService = blobStorageService;
             _currentUserService = currentUserService;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _clock = clock;
             _options = options.Value;
@@ -174,6 +178,7 @@ namespace NotesApp.Application.RecurringAttachments.Commands.UploadRecurringTask
 
             await _attachmentRepository.AddAsync(attachment, cancellationToken);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+            await _syncChangeWriter.AddCreatedAsync(attachment, originDeviceId: null, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             // Best-effort download URL (failure here does not roll back the upload)

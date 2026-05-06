@@ -56,12 +56,20 @@ builder.Services.AddOptions<RecurringTaskHorizonWorkerOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+// REFACTORED: SyncChange retention worker for sequence-based sync pull
+builder.Services.AddOptions<SyncRetentionOptions>()
+    .Bind(builder.Configuration.GetSection(SyncRetentionOptions.SectionName))
+    .Validate(o => o.SweepInterval > TimeSpan.Zero, "SweepInterval must be greater than zero.")
+    .ValidateOnStart();
+
 // Register the OutboxProcessingWorker as a hosted service
 builder.Services.AddHostedService<OutboxProcessingWorker>();
 // New hosted service:
 builder.Services.AddHostedService<ReminderMonitorWorker>();
 // REFACTORED: added recurring-task horizon worker for recurring-tasks feature
 builder.Services.AddHostedService<RecurringTaskHorizonWorker>();
+// REFACTORED: SyncChange retention sweep
+builder.Services.AddHostedService<SyncChangeRetentionService>();
 
 var host = builder.Build();
 host.Run();

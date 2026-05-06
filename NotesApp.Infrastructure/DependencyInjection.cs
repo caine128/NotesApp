@@ -9,12 +9,13 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Abstractions.Storage;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Infrastructure.Identity;
 using NotesApp.Infrastructure.Notifications;
 using NotesApp.Infrastructure.Persistence;
+using NotesApp.Infrastructure.Persistence.Interceptors;
 using NotesApp.Infrastructure.Persistence.Repositories;
 using NotesApp.Infrastructure.Storage;
-using NotesApp.Infrastructure.Persistence.Repositories;
 using NotesApp.Infrastructure.Services;
 using NotesApp.Infrastructure.Time;
 using System;
@@ -32,7 +33,11 @@ namespace NotesApp.Infrastructure
             var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
-            services.AddDbContext<AppDbContext>(options =>
+            // SyncChangeSequenceInterceptor must be Scoped: it holds per-DbContext transaction
+            // state across SavingChangesAsync / SavedChangesAsync / SaveChangesFailedAsync.
+            services.AddScoped<SyncChangeSequenceInterceptor>();
+
+            services.AddDbContext<AppDbContext>((sp, options) =>
             {
                 options.UseSqlServer(connectionString, sqlOptions =>
                 {
@@ -45,6 +50,8 @@ namespace NotesApp.Infrastructure
                         maxRetryDelay: TimeSpan.FromSeconds(5),
                         errorNumbersToAdd: null);
                 });
+
+                options.AddInterceptors(sp.GetRequiredService<SyncChangeSequenceInterceptor>());
             });
 
             // 2) Repositories + UnitOfWork
@@ -67,6 +74,10 @@ namespace NotesApp.Infrastructure
             services.AddScoped<IRecurringTaskSubtaskRepository, RecurringTaskSubtaskRepository>();
             services.AddScoped<IRecurringTaskExceptionRepository, RecurringTaskExceptionRepository>();
             services.AddScoped<IRecurringTaskAttachmentRepository, RecurringTaskAttachmentRepository>(); // REFACTORED: added for recurring-task-attachments feature
+
+            // REFACTORED: added for sequence-based sync pull
+            services.AddScoped<ISyncChangeRepository, SyncChangeRepository>();
+            services.AddScoped<ISyncChangeWriter, NotesApp.Application.Sync.SyncChangeWriter>();
 
             // 3) System clock (for time abstraction)
             services.AddSingleton<ISystemClock, SystemClock>();

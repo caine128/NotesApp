@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Application.Sync.Models;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
@@ -46,6 +47,7 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
         private readonly INoteRepository _noteRepository;
         private readonly IBlockRepository _blockRepository;  // ADDED: Block repository
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISystemClock _clock;
         private readonly ILogger<ResolveSyncConflictsCommandHandler> _logger;
@@ -56,6 +58,7 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
             INoteRepository noteRepository,
             IBlockRepository blockRepository,  // ADDED: Block repository injection
             IOutboxRepository outboxRepository,
+            ISyncChangeWriter syncChangeWriter,
             IUnitOfWork unitOfWork,
             ISystemClock clock,
             ILogger<ResolveSyncConflictsCommandHandler> logger)
@@ -65,6 +68,7 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
             _noteRepository = noteRepository;
             _blockRepository = blockRepository;  // ADDED
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _clock = clock;
             _logger = logger;
@@ -270,6 +274,7 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
 
             _taskRepository.Update(task);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+            await _syncChangeWriter.AddUpdatedAsync(task, originDeviceId: null, cancellationToken);
 
             return new SyncConflictResolutionResultItemDto
             {
@@ -411,6 +416,7 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
 
             _noteRepository.Update(note);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+            await _syncChangeWriter.AddUpdatedAsync(note, originDeviceId: null, cancellationToken);
 
             return new SyncConflictResolutionResultItemDto
             {
@@ -594,6 +600,7 @@ namespace NotesApp.Application.Sync.Commands.ResolveConflicts
             // Persist both entity and outbox (untracked pattern)
             _blockRepository.Update(block);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+            await _syncChangeWriter.AddUpdatedAsync(block, originDeviceId: null, cancellationToken);
 
             return new SyncConflictResolutionResultItemDto
             {

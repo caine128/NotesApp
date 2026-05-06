@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
@@ -27,6 +28,7 @@ namespace NotesApp.Application.RecurringAttachments.Commands.DeleteRecurringTask
     {
         private readonly IRecurringTaskAttachmentRepository _attachmentRepository;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
@@ -35,6 +37,7 @@ namespace NotesApp.Application.RecurringAttachments.Commands.DeleteRecurringTask
         public DeleteRecurringTaskSeriesAttachmentCommandHandler(
             IRecurringTaskAttachmentRepository attachmentRepository,
             IOutboxRepository outboxRepository,
+            ISyncChangeWriter syncChangeWriter,
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUserService,
             ISystemClock clock,
@@ -42,6 +45,7 @@ namespace NotesApp.Application.RecurringAttachments.Commands.DeleteRecurringTask
         {
             _attachmentRepository = attachmentRepository;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -89,6 +93,7 @@ namespace NotesApp.Application.RecurringAttachments.Commands.DeleteRecurringTask
             attachment.ApplyClientRowVersion(command.RowVersion);
             _attachmentRepository.Update(attachment);
             await _outboxRepository.AddAsync(outboxResult.Value!, cancellationToken);
+            await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.RecurringTaskAttachment, attachment.Id, currentUserId, originDeviceId: null, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(

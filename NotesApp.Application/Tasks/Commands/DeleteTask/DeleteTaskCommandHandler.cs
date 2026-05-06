@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
@@ -36,6 +37,7 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
         // REFACTORED: added attachment repository for task-attachments cascade-delete
         private readonly IAttachmentRepository _attachmentRepository;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
@@ -46,6 +48,7 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
             ISubtaskRepository subtaskRepository,
             IAttachmentRepository attachmentRepository,
             IOutboxRepository outboxRepository,
+            ISyncChangeWriter syncChangeWriter,
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUserService,
             ISystemClock clock,
@@ -55,6 +58,7 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
             _subtaskRepository = subtaskRepository;
             _attachmentRepository = attachmentRepository;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -120,16 +124,32 @@ namespace NotesApp.Application.Tasks.Commands.DeleteTask
             taskItem.ApplyClientRowVersion(command.RowVersion); // REFACTORED: enable stale-page detection
             _taskRepository.Update(taskItem);
             await _outboxRepository.AddAsync(outboxResult.Value!, cancellationToken);
+            await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Task, taskItem.Id, currentUserId, originDeviceId: null, cancellationToken);
+
+            // REFACTORED: capture child IDs BEFORE cascade so we can emit one SyncChange per
+            // cascaded subtask/attachment for the new sync pull feed.
+            var subtasksBeingCascaded = await _subtaskRepository.GetAllForTaskAsync(taskItem.Id, currentUserId, cancellationToken);
+            var attachmentsBeingCascaded = await _attachmentRepository.GetAllForTaskAsync(taskItem.Id, currentUserId, cancellationToken);
 
             // REFACTORED: cascade soft-delete all subtasks atomically (subtasks feature)
             // Bulk-deletes in the same SaveChangesAsync call so deleted subtasks surface
             // in the next sync pull via UpdatedAtUtc.
             await _subtaskRepository.SoftDeleteAllForTaskAsync(taskItem.Id, currentUserId, utcNow, cancellationToken);
 
+            foreach (var st in subtasksBeingCascaded)
+            {
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Subtask, st.Id, currentUserId, originDeviceId: null, cancellationToken);
+            }
+
             // REFACTORED: cascade soft-delete all attachments atomically (task-attachments feature)
             // Runs in the same SaveChangesAsync call so deleted attachments surface in the next sync pull.
             // Blob cleanup is handled separately by the background orphan-cleanup worker.
             await _attachmentRepository.SoftDeleteAllForTaskAsync(taskItem.Id, currentUserId, utcNow, cancellationToken);
+
+            foreach (var att in attachmentsBeingCascaded)
+            {
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Attachment, att.Id, currentUserId, originDeviceId: null, cancellationToken);
+            }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 

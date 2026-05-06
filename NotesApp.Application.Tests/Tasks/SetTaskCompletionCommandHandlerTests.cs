@@ -65,6 +65,7 @@ namespace NotesApp.Application.Tests.Tasks
             var handler = new SetTaskCompletionCommandHandler(
                 taskRepository,
                 outboxRepository,
+                new Mock<NotesApp.Application.Sync.Abstractions.ISyncChangeWriter>().Object,
                 unitOfWork,
                 currentUserServiceMock.Object,
                 clock,
@@ -151,6 +152,7 @@ namespace NotesApp.Application.Tests.Tasks
             var handler = new SetTaskCompletionCommandHandler(
                 taskRepository,
                 outboxRepository,
+                new Mock<NotesApp.Application.Sync.Abstractions.ISyncChangeWriter>().Object,
                 unitOfWork,
                 currentUserServiceMock.Object,
                 clock,
@@ -208,6 +210,7 @@ namespace NotesApp.Application.Tests.Tasks
             var handler = new SetTaskCompletionCommandHandler(
                 taskRepository,
                 outboxRepository,
+                new Mock<NotesApp.Application.Sync.Abstractions.ISyncChangeWriter>().Object,
                 unitOfWork,
                 currentUserServiceMock.Object,
                 clock,
@@ -276,6 +279,7 @@ namespace NotesApp.Application.Tests.Tasks
             var handler = new SetTaskCompletionCommandHandler(
                 taskRepository,
                 outboxRepository,
+                new Mock<NotesApp.Application.Sync.Abstractions.ISyncChangeWriter>().Object,
                 unitOfWork,
                 currentUserServiceMock.Object,
                 clock,
@@ -348,6 +352,7 @@ namespace NotesApp.Application.Tests.Tasks
             var handler = new SetTaskCompletionCommandHandler(
                 taskRepository,
                 outboxRepository,
+                new Mock<NotesApp.Application.Sync.Abstractions.ISyncChangeWriter>().Object,
                 unitOfWork,
                 currentUserServiceMock.Object,
                 clock,

@@ -5,6 +5,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Configuration;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Application.Tasks.Models;
 using NotesApp.Application.Tasks.Services;
 using NotesApp.Domain.Common;
@@ -22,6 +23,7 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
         private readonly ISubtaskRepository _subtaskRepository;
         private readonly ICategoryRepository _categoryRepository; // REFACTORED: added for CategoryId ownership validation
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
@@ -37,6 +39,7 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
                                         ISubtaskRepository subtaskRepository,
                                         ICategoryRepository categoryRepository,
                                         IOutboxRepository outboxRepository,
+                                        ISyncChangeWriter syncChangeWriter,
                                         IUnitOfWork unitOfWork,
                                         ICurrentUserService currentUserService,
                                         ISystemClock clock,
@@ -50,6 +53,7 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
             _subtaskRepository = subtaskRepository;
             _categoryRepository = categoryRepository;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -160,6 +164,7 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
 
             await _taskRepository.AddAsync(taskItem, cancellationToken);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
+            await _syncChangeWriter.AddCreatedAsync(taskItem, originDeviceId: null, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result.Ok(taskItem.ToDetailDto());
@@ -331,20 +336,25 @@ namespace NotesApp.Application.Tasks.Commands.CreateTask
             // 7. Persist all entities in one SaveChangesAsync — fully atomic.
             await _rootRepository.AddAsync(root, cancellationToken);
             await _seriesRepository.AddAsync(series, cancellationToken);
+            await _syncChangeWriter.AddCreatedAsync(root, originDeviceId: null, cancellationToken);
+            await _syncChangeWriter.AddCreatedAsync(series, originDeviceId: null, cancellationToken);
 
             foreach (var st in templateSubtasks)
             {
                 await _recurringSubtaskRepository.AddAsync(st, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(st, originDeviceId: null, cancellationToken);
             }
 
             foreach (var task in batch.Tasks)
             {
                 await _taskRepository.AddAsync(task, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(task, originDeviceId: null, cancellationToken);
             }
 
             foreach (var subtask in batch.Subtasks)
             {
                 await _subtaskRepository.AddAsync(subtask, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(subtask, originDeviceId: null, cancellationToken);
             }
 
             foreach (var outbox in outboxMessages)

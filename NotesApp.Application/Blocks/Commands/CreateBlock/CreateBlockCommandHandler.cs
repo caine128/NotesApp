@@ -5,6 +5,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Blocks.Models;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
@@ -29,6 +30,7 @@ namespace NotesApp.Application.Blocks.Commands.CreateBlock
         private readonly INoteRepository _noteRepository;
         private readonly ITaskRepository _taskRepository;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
@@ -39,6 +41,7 @@ namespace NotesApp.Application.Blocks.Commands.CreateBlock
             INoteRepository noteRepository,
             ITaskRepository taskRepository,
             IOutboxRepository outboxRepository,
+            ISyncChangeWriter syncChangeWriter,
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUserService,
             ISystemClock clock,
@@ -48,6 +51,7 @@ namespace NotesApp.Application.Blocks.Commands.CreateBlock
             _noteRepository = noteRepository;
             _taskRepository = taskRepository;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -142,6 +146,7 @@ namespace NotesApp.Application.Blocks.Commands.CreateBlock
             // 4) Persist
             await _blockRepository.AddAsync(block, cancellationToken);
             await _outboxRepository.AddAsync(outboxResult.Value!, cancellationToken);
+            await _syncChangeWriter.AddCreatedAsync(block, originDeviceId: null, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(

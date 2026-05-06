@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
@@ -34,6 +35,7 @@ namespace NotesApp.Application.Notes.Commands.DeleteNote
         private readonly INoteRepository _noteRepository;
         private readonly IBlockRepository _blockRepository;  // ADDED: For cascade deletion
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter; // REFACTORED: sequence-based sync pull
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
@@ -43,6 +45,7 @@ namespace NotesApp.Application.Notes.Commands.DeleteNote
             INoteRepository noteRepository,
             IBlockRepository blockRepository,  // ADDED
             IOutboxRepository outboxRepository,
+            ISyncChangeWriter syncChangeWriter,
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUserService,
             ISystemClock clock,
@@ -51,6 +54,7 @@ namespace NotesApp.Application.Notes.Commands.DeleteNote
             _noteRepository = noteRepository;
             _blockRepository = blockRepository;  // ADDED
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -165,11 +169,13 @@ namespace NotesApp.Application.Notes.Commands.DeleteNote
             note.ApplyClientRowVersion(request.RowVersion); // REFACTORED: enable stale-page detection
             _noteRepository.Update(note);
             await _outboxRepository.AddAsync(noteOutboxResult.Value!, cancellationToken);
+            await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Note, note.Id, userId, originDeviceId: null, cancellationToken);
 
             // Persist block changes - only blocks where both soft-delete AND outbox succeeded
             foreach (var block in blocksToUpdate)
             {
                 _blockRepository.Update(block);
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Block, block.Id, userId, originDeviceId: null, cancellationToken);
             }
 
             foreach (var outboxMessage in blockOutboxMessages)

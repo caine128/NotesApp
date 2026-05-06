@@ -39,6 +39,10 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
             builder.Property(d => d.IsActive)
                    .IsRequired();
 
+            builder.Property(d => d.LastAckedSyncSequence)
+                   .IsRequired()
+                   .HasDefaultValue(0L);
+
             builder.Property(d => d.CreatedAtUtc)
                    .IsRequired();
 

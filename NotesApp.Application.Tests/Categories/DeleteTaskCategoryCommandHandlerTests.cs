@@ -54,6 +54,7 @@ namespace NotesApp.Application.Tests.Categories
                 _categoryRepositoryMock.Object,
                 _taskRepositoryMock.Object,
                 _outboxRepositoryMock.Object,
+                new Mock<NotesApp.Application.Sync.Abstractions.ISyncChangeWriter>().Object,
                 _unitOfWorkMock.Object,
                 _currentUserServiceMock.Object,
                 _clockMock.Object,

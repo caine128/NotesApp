@@ -42,6 +42,7 @@ namespace NotesApp.Application.Tests.Notes
             return new UpdateNoteCommandHandler(
                 _noteRepository.Object,
                 _outboxRepository.Object,
+                new Mock<NotesApp.Application.Sync.Abstractions.ISyncChangeWriter>().Object,
                 _unitOfWork.Object,
                 _currentUser.Object,
                 _clock.Object,

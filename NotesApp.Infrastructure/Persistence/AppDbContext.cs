@@ -32,6 +32,9 @@ namespace NotesApp.Infrastructure.Persistence
         public DbSet<RecurringTaskException> RecurringTaskExceptions => Set<RecurringTaskException>();
         // REFACTORED: added RecurringTaskAttachments for recurring-task-attachments feature
         public DbSet<RecurringTaskAttachment> RecurringTaskAttachments => Set<RecurringTaskAttachment>();
+        // REFACTORED: added SyncChange feed for sequence-based sync pull
+        public DbSet<SyncChange> SyncChanges => Set<SyncChange>();
+        public DbSet<SyncSequenceState> SyncSequenceStates => Set<SyncSequenceState>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

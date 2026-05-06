@@ -76,6 +76,7 @@ namespace NotesApp.Application.Tests.Sync
                 new RecurringTaskExceptionRepository(context),
                 new RecurringTaskAttachmentRepository(context),
                 new OutboxRepository(context),
+                new NotesApp.Application.Sync.SyncChangeWriter(new SyncChangeRepository(context), clock.Object), // REFACTORED: sequence-based sync pull
                 new UnitOfWork(context),
                 clock.Object,
                 new Mock<ILogger<SyncPushCommandHandler>>().Object);
