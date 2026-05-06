@@ -16,15 +16,19 @@ namespace NotesApp.Infrastructure.Persistence.Interceptors
     /// sequences for each user via a row-locked MERGE on SyncSequenceStates, and assigns the
     /// reserved values to the entities in tracking order before EF emits its INSERTs.
     ///
-    /// All work happens inside a single transaction shared with the EF SaveChanges SQL, so the
-    /// row lock is released only at commit. Idempotent under EF execution-strategy retry: on
-    /// replay, entities re-enter Added state with stale Sequence values which we reset to 0
-    /// before reassigning.
+    /// The MERGE uses HOLDLOCK which serializes concurrent allocators at the statement level —
+    /// no outer transaction is required for uniqueness. If the caller has an active transaction
+    /// (e.g. from CreateExecutionStrategy().Execute()) the MERGE joins it; otherwise it runs in
+    /// autocommit. Sequence gaps from a rolled-back EF save are acceptable.
+    ///
+    /// Idempotent under EF execution-strategy retry: on replay, Added SyncChange entries have
+    /// stale Sequence values which are reset to 0 before reassigning.
+    ///
+    /// Does NOT call BeginTransactionAsync — that would conflict with SqlServerRetryingExecutionStrategy
+    /// (installed by EnableRetryOnFailure), which forbids user-initiated transactions.
     /// </summary>
     public sealed class SyncChangeSequenceInterceptor : ISaveChangesInterceptor
     {
-        private IDbContextTransaction? _ownedTransaction;
-
         public InterceptionResult<int> SavingChanges(DbContextEventData eventData,
                                                      InterceptionResult<int> result)
         {
@@ -39,9 +43,7 @@ namespace NotesApp.Infrastructure.Persistence.Interceptors
         {
             var context = eventData.Context;
             if (context is null)
-            {
                 return result;
-            }
 
             var addedGroups = context.ChangeTracker
                 .Entries<SyncChange>()
@@ -50,26 +52,12 @@ namespace NotesApp.Infrastructure.Persistence.Interceptors
                 .ToList();
 
             if (addedGroups.Count == 0)
-            {
                 return result;
-            }
 
             // Reset placeholder Sequence values in case of execution-strategy retry replay.
             foreach (var group in addedGroups)
-            {
                 foreach (var entry in group)
-                {
                     entry.Property(nameof(SyncChange.Sequence)).CurrentValue = 0L;
-                }
-            }
-
-            // Ensure a single transaction wraps both our reservation work and EF's subsequent
-            // INSERTs. If the caller already started one, use it; otherwise we start (and own)
-            // one to be committed in SavedChangesAsync / rolled back in SaveChangesFailedAsync.
-            if (context.Database.CurrentTransaction is null)
-            {
-                _ownedTransaction = await context.Database.BeginTransactionAsync(cancellationToken);
-            }
 
             foreach (var group in addedGroups)
             {
@@ -78,62 +66,29 @@ namespace NotesApp.Infrastructure.Persistence.Interceptors
                 var firstSequence = await ReserveSequencesAsync(context, userId, ordered.Count, cancellationToken);
 
                 for (var i = 0; i < ordered.Count; i++)
-                {
                     ordered[i].Property(nameof(SyncChange.Sequence)).CurrentValue = firstSequence + i;
-                }
             }
 
             return result;
         }
 
-        public int SavedChanges(SaveChangesCompletedEventData eventData, int result)
-        {
-            return SavedChangesAsync(eventData, result, default).AsTask().GetAwaiter().GetResult();
-        }
+        public int SavedChanges(SaveChangesCompletedEventData eventData, int result) => result;
 
-        public async ValueTask<int> SavedChangesAsync(SaveChangesCompletedEventData eventData,
-                                                      int result,
-                                                      CancellationToken cancellationToken = default)
-        {
-            if (_ownedTransaction is not null)
-            {
-                await _ownedTransaction.CommitAsync(cancellationToken);
-                await _ownedTransaction.DisposeAsync();
-                _ownedTransaction = null;
-            }
-            return result;
-        }
+        public ValueTask<int> SavedChangesAsync(SaveChangesCompletedEventData eventData,
+                                                int result,
+                                                CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(result);
 
-        public void SaveChangesFailed(DbContextErrorEventData eventData)
-        {
-            SaveChangesFailedAsync(eventData, default).GetAwaiter().GetResult();
-        }
+        public void SaveChangesFailed(DbContextErrorEventData eventData) { }
 
-        public async Task SaveChangesFailedAsync(DbContextErrorEventData eventData,
-                                                 CancellationToken cancellationToken = default)
-        {
-            if (_ownedTransaction is not null)
-            {
-                try
-                {
-                    await _ownedTransaction.RollbackAsync(cancellationToken);
-                }
-                catch
-                {
-                    // Connection may already be in a faulted state; the transaction is dead either way.
-                }
-                await _ownedTransaction.DisposeAsync();
-                _ownedTransaction = null;
-            }
-        }
+        public Task SaveChangesFailedAsync(DbContextErrorEventData eventData,
+                                           CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
         /// <summary>
         /// Atomically reserves <paramref name="count"/> consecutive sequence numbers for the user
-        /// and returns the first one. Inserts a SyncSequenceStates row on first write for the user
-        /// or increments NextSequence on subsequent writes — both paths in one round trip.
-        ///
-        /// Uses raw ADO.NET on the DbContext's connection and transaction so the lock is held
-        /// inside the same transaction as EF's subsequent INSERTs.
+        /// and returns the first one. Runs on the DbContext's connection, joining the active
+        /// transaction if one exists or running in autocommit otherwise.
         /// </summary>
         private static async Task<long> ReserveSequencesAsync(DbContext context,
                                                               Guid userId,
@@ -144,9 +99,7 @@ namespace NotesApp.Infrastructure.Persistence.Interceptors
             var transaction = context.Database.CurrentTransaction?.GetDbTransaction();
 
             if (connection.State != ConnectionState.Open)
-            {
                 await connection.OpenAsync(cancellationToken);
-            }
 
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
@@ -170,10 +123,8 @@ OUTPUT ISNULL(deleted.NextSequence, CAST(1 AS bigint)) AS FirstSequence;";
 
             var raw = await command.ExecuteScalarAsync(cancellationToken);
             if (raw is null || raw is DBNull)
-            {
                 throw new InvalidOperationException(
                     $"SyncChangeSequenceInterceptor: MERGE returned no value for user {userId}.");
-            }
 
             return Convert.ToInt64(raw);
         }
