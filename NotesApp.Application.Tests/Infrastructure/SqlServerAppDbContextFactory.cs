@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using NotesApp.Infrastructure.Persistence;
 using NotesApp.Infrastructure.Persistence.Interceptors;
 using System;
@@ -65,6 +66,12 @@ namespace NotesApp.Application.Tests.Infrastructure
             }
 
             var context = new AppDbContext(builder.Options);
+
+            // Release any pooled connections from the previous test before issuing
+            // DROP/CREATE — otherwise a lingering pooled connection to NotesApp_Tests
+            // can cause EnsureDeleted to silently no-op or EnsureCreated to fail with
+            // "Database already exists" / "file in use".
+            SqlConnection.ClearAllPools();
 
             bool dbExisted = context.Database.EnsureDeleted();
             if (!dbExisted)
