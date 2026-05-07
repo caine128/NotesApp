@@ -1,7 +1,5 @@
-﻿using NotesApp.Application.Abstractions.Persistence;
-using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using Microsoft.EntityFrameworkCore;
+using NotesApp.Application.Abstractions.Persistence;
 
 namespace NotesApp.Infrastructure.Persistence
 {
@@ -14,9 +12,17 @@ namespace NotesApp.Infrastructure.Persistence
             _context = context;
         }
 
+        // Run SaveChanges inside the configured execution strategy so that
+        // SyncChangeSequenceInterceptor's manual BeginTransactionAsync is legal under
+        // EnableRetryOnFailure and the whole flush (sequence MERGE + EF INSERTs) is one
+        // retriable unit.
         public Task SaveChangesAsync(CancellationToken cancellationToken = default)
         {
-            return _context.SaveChangesAsync(cancellationToken);
+            var strategy = _context.Database.CreateExecutionStrategy();
+            return strategy.ExecuteAsync(
+                _context,
+                static (ctx, ct) => ctx.SaveChangesAsync(ct),
+                cancellationToken);
         }
     }
 }

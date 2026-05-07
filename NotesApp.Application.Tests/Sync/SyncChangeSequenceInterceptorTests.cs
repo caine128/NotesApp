@@ -171,7 +171,7 @@ namespace NotesApp.Application.Tests.Sync
             // along with the failed INSERT.
             await context.Database.ExecuteSqlRawAsync(
                 @"INSERT INTO SyncChanges (Id, UserId, Sequence, EntityFamily, EntityId, Operation, ChangedAtUtc, OriginDeviceId, PayloadJson)
-                  VALUES ({0}, {1}, 2, 1, {2}, 1, {3}, NULL, '{}')",
+                  VALUES ({0}, {1}, 2, 1, {2}, 1, {3}, NULL, '{{}}')",
                 Guid.NewGuid(), userId, Guid.NewGuid(), DateTime.UtcNow);
 
             // Use a fresh context so the change tracker is clean and reads of SyncSequenceState
