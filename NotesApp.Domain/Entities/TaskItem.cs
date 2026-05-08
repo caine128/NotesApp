@@ -425,6 +425,30 @@ namespace NotesApp.Domain.Entities
             return DomainResult.Success();
         }
 
+        /// <summary>
+        /// Clears the CategoryId reference (used when a category is deleted via REST).
+        /// Idempotent: returns success without mutation when CategoryId is already null.
+        /// </summary>
+        public DomainResult ClearCategory(DateTime utcNow)
+        {
+            if (IsDeleted)
+            {
+                return DomainResult.Failure(
+                    new DomainError("Task.Deleted", "Cannot clear category on a deleted task.")
+                );
+            }
+
+            if (!CategoryId.HasValue)
+            {
+                return DomainResult.Success();
+            }
+
+            CategoryId = null;
+            IncrementVersion();
+            Touch(utcNow);
+            return DomainResult.Success();
+        }
+
         public DomainResult RestoreTask(DateTime utcNow)
         {
             if (!IsDeleted)

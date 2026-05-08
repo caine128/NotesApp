@@ -20,15 +20,11 @@ namespace NotesApp.Application.Categories.Commands.DeleteTaskCategory
     ///   then returns success. This is the safe retry path.
     /// - Soft-deletes the category through the domain method.
     /// - Creates an outbox message.
-    /// - Bulk-clears CategoryId on all affected tasks (ClearCategoryFromTasksAsync) FIRST,
-    ///   incrementing their Version so stale mobile push attempts receive a VersionMismatch.
-    /// - Then commits the soft-delete and outbox atomically via SaveChangesAsync.
-    ///
-    /// Ordering rationale (clear BEFORE save):
-    ///   If ClearCategoryFromTasksAsync fails  → category is still live; safe to retry from scratch.
-    ///   If SaveChangesAsync fails after clear  → tasks are clean, category still live;
-    ///                                            next retry finds 0 tasks to clear, then saves.
-    ///   Neither failure mode leaves orphaned task FK rows.
+    /// - Clears CategoryId on all affected tasks via the change-tracker pattern, bumping their
+    ///   Version so stale mobile push attempts receive a VersionMismatch and emitting a
+    ///   Task.Updated SyncChange row per task so the sync feed reflects the cleared FK.
+    /// - Commits the category soft-delete + outbox + per-task mutations + SyncChange rows
+    ///   atomically in a single SaveChangesAsync.
     ///
     /// Returns:
     /// - Result.Ok()                         -> HTTP 204 No Content
@@ -86,8 +82,18 @@ namespace NotesApp.Application.Categories.Commands.DeleteTaskCategory
             {
                 // Could be genuinely not found, or already soft-deleted.
                 // Either way, ensure task references are cleared (safe to call on empty set).
-                await _taskRepository.ClearCategoryFromTasksAsync(
+                var orphanCleared = await _taskRepository.ClearCategoryFromTasksAsync(
                     command.CategoryId, currentUserId, utcNow, cancellationToken);
+
+                foreach (var task in orphanCleared)
+                {
+                    await _syncChangeWriter.AddUpdatedAsync(task, originDeviceId: null, cancellationToken);
+                }
+
+                if (orphanCleared.Count > 0)
+                {
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+                }
 
                 _logger.LogInformation(
                     "DeleteTaskCategory: category {CategoryId} not found (may already be deleted). " +
@@ -137,29 +143,25 @@ namespace NotesApp.Application.Categories.Commands.DeleteTaskCategory
                 return outboxResult.ToResult();
             }
 
-            // 5) Bulk-clear CategoryId on all affected tasks BEFORE committing the soft-delete.
-            //    If this call fails, the category is still live and the operation is safe to retry
-            //    from scratch — no orphaned FK rows are possible.
-            //    Increments Version on affected tasks so any stale mobile push attempts
-            //    receive a VersionMismatch conflict rather than silently re-assigning a
-            //    deleted category.
-            await _taskRepository.ClearCategoryFromTasksAsync(
+            // 5) Clear CategoryId on all affected tasks (change-tracker pattern; staged, not yet committed).
+            //    Returns the mutated entities so we can emit a Task.Updated SyncChange row per task.
+            //    Bumps Version so any stale mobile push attempts receive a VersionMismatch conflict
+            //    rather than silently re-assigning a deleted category.
+            var clearedTasks = await _taskRepository.ClearCategoryFromTasksAsync(
                 category.Id, currentUserId, utcNow, cancellationToken);
 
-            // 6) Persist the soft-delete and outbox atomically.
-            //    Runs AFTER the task clear so failure here leaves tasks already clean.
-            //    The next retry will find 0 tasks to clear (no-op) and then save successfully.
+            // 6) Stage the category soft-delete + outbox + SyncChange rows. All commit atomically
+            //    in the single SaveChangesAsync below alongside the staged task mutations from step 5.
             category.ApplyClientRowVersion(command.RowVersion); // REFACTORED: enable stale-page detection
             _categoryRepository.Update(category);
             await _outboxRepository.AddAsync(outboxResult.Value, cancellationToken);
             await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Category, category.Id, currentUserId, originDeviceId: null, cancellationToken);
-            // TODO: ClearCategoryFromTasksAsync above bumps Version on every task that referenced
-            // this category, but does not return the affected IDs. To emit a Task.Updated
-            // SyncChange per affected task, add a repository method to load the IDs first
-            // (or have ClearCategoryFromTasksAsync return them). Without this, devices that
-            // pull SyncChanges after a REST category delete will see the Category disappear
-            // but won't receive Task.Updated rows reflecting the cleared CategoryId. Sync push
-            // mutations are unaffected (mobile clients send the task updates themselves).
+
+            foreach (var task in clearedTasks)
+            {
+                await _syncChangeWriter.AddUpdatedAsync(task, originDeviceId: null, cancellationToken);
+            }
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(

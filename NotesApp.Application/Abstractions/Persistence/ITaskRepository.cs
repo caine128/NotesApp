@@ -22,9 +22,11 @@ namespace NotesApp.Application.Abstractions.Persistence
 
         /// <summary>
         /// Bulk-clears <c>CategoryId</c> on all non-deleted tasks belonging to the user
-        /// that reference the given category. Also increments <c>Version</c> and sets
-        /// <c>UpdatedAtUtc</c> so that affected tasks surface in the next sync pull and
-        /// any stale mobile push attempts receive a <c>VersionMismatch</c> conflict.
+        /// that reference the given category, using the change-tracker pattern: loads the
+        /// affected entities, calls the domain <see cref="TaskItem.ClearCategory"/> method on
+        /// each (which increments <c>Version</c> and sets <c>UpdatedAtUtc</c>), and returns
+        /// the mutated entities so the caller can emit per-task <c>SyncChange</c> rows.
+        /// Caller's <c>SaveChangesAsync()</c> commits atomically.
         ///
         /// Called only from <c>DeleteTaskCategoryCommandHandler</c> (REST/web path).
         /// In the sync push path, mobile clients send the affected task updates themselves.
@@ -33,10 +35,11 @@ namespace NotesApp.Application.Abstractions.Persistence
         /// <param name="userId">Owner of the tasks (tenant boundary).</param>
         /// <param name="utcNow">Current UTC time applied to UpdatedAtUtc.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
-        Task ClearCategoryFromTasksAsync(Guid categoryId,
-                                         Guid userId,
-                                         DateTime utcNow,
-                                         CancellationToken cancellationToken = default);
+        /// <returns>The mutated <see cref="TaskItem"/> entities (post-update); empty list when none reference the category.</returns>
+        Task<IReadOnlyList<TaskItem>> ClearCategoryFromTasksAsync(Guid categoryId,
+                                                                  Guid userId,
+                                                                  DateTime utcNow,
+                                                                  CancellationToken cancellationToken = default);
 
         // REFACTORED: added recurring-task methods for recurring-tasks feature
 
@@ -82,6 +85,17 @@ namespace NotesApp.Application.Abstractions.Persistence
         Task<IReadOnlyList<TaskItem>> GetBySeriesAsync(Guid seriesId,
                                                        Guid userId,
                                                        CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Returns all non-deleted materialized TaskItems for the given series whose
+        /// <see cref="TaskItem.CanonicalOccurrenceDate"/> is &gt;= <paramref name="fromInclusive"/>.
+        /// Used by recurring delete/update handlers to capture per-row identity before calling
+        /// <see cref="SoftDeleteRecurringFromDateAsync"/> so the caller can emit per-task SyncChange rows.
+        /// </summary>
+        Task<IReadOnlyList<TaskItem>> GetBySeriesFromDateAsync(Guid seriesId,
+                                                                DateOnly fromInclusive,
+                                                                Guid userId,
+                                                                CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Loads all non-deleted materialized TaskItems for the series whose Date &gt;=

@@ -117,23 +117,28 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
         // REFACTORED: added ClearCategoryFromTasksAsync for task categories feature
 
         /// <inheritdoc />
-        public async Task ClearCategoryFromTasksAsync(Guid categoryId,
-                                                      Guid userId,
-                                                      DateTime utcNow,
-                                                      CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<TaskItem>> ClearCategoryFromTasksAsync(Guid categoryId,
+                                                                                Guid userId,
+                                                                                DateTime utcNow,
+                                                                                CancellationToken cancellationToken = default)
         {
-            // Bulk UPDATE using ExecuteUpdateAsync — does NOT load entities into memory.
-            // Increments Version so that any stale push attempt from a mobile client
-            // that still holds the old CategoryId receives a VersionMismatch conflict.
-            await _context.Tasks
+            // Change-tracker pattern: load entities, mutate via the domain method, return them.
+            // The caller's SaveChangesAsync() commits the soft-delete + outbox + per-task
+            // SyncChange emissions atomically in a single transaction. This replaces the prior
+            // ExecuteUpdateAsync implementation, which committed outside the ambient transaction
+            // and could not yield the affected entities for SyncChange emission.
+            var tasks = await _context.Tasks
                 .Where(t => t.UserId == userId
                             && t.CategoryId == categoryId
                             && !t.IsDeleted)
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(t => t.CategoryId, (Guid?)null)
-                    .SetProperty(t => t.Version, t => t.Version + 1)
-                    .SetProperty(t => t.UpdatedAtUtc, utcNow),
-                    cancellationToken);
+                .ToListAsync(cancellationToken);
+
+            foreach (var task in tasks)
+            {
+                task.ClearCategory(utcNow);
+            }
+
+            return tasks;
         }
 
         public async Task<List<TaskItem>> GetOverdueRemindersAsync(DateTime utcNow,
@@ -208,6 +213,23 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
         {
             return await _context.Tasks
                 .Where(t => t.RecurringSeriesId == seriesId && t.UserId == userId)
+                .ToListAsync(cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public async Task<IReadOnlyList<TaskItem>> GetBySeriesFromDateAsync(Guid seriesId,
+                                                                             DateOnly fromInclusive,
+                                                                             Guid userId,
+                                                                             CancellationToken cancellationToken = default)
+        {
+            // Filter by CanonicalOccurrenceDate (engine-assigned position in the recurrence
+            // sequence), matching SoftDeleteRecurringFromDateAsync — see comment there for why.
+            return await _context.Tasks
+                .AsNoTracking()
+                .Where(t => t.RecurringSeriesId == seriesId
+                            && t.UserId == userId
+                            && !t.IsDeleted
+                            && t.CanonicalOccurrenceDate >= fromInclusive)
                 .ToListAsync(cancellationToken);
         }
 

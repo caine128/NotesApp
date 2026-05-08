@@ -8,6 +8,7 @@ using NotesApp.Application.Common.Interfaces;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
 using System;
+using System.Collections.Generic;
 
 namespace NotesApp.Application.Tests.Categories
 {
@@ -48,7 +49,7 @@ namespace NotesApp.Application.Tests.Categories
             _taskRepositoryMock
                 .Setup(r => r.ClearCategoryFromTasksAsync(
                     It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
-                .Returns(Task.CompletedTask);
+                .ReturnsAsync((IReadOnlyList<TaskItem>)Array.Empty<TaskItem>());
 
             return new DeleteTaskCategoryCommandHandler(
                 _categoryRepositoryMock.Object,

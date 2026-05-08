@@ -3938,6 +3938,12 @@ namespace NotesApp.Application.Sync.Commands.SyncPush
                 {
                     existing.SoftDelete(utcNow);
                     _recurringExceptionRepository.Update(existing);
+                    await _syncChangeWriter.AddDeletedAsync(
+                        SyncEntityFamily.RecurringTaskException,
+                        existing.Id,
+                        userId,
+                        request.DeviceId,
+                        cancellationToken);
                 }
 
                 await _recurringExceptionRepository.AddAsync(newException, cancellationToken);

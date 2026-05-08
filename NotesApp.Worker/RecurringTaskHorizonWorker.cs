@@ -2,6 +2,7 @@ using Microsoft.Extensions.Options;
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Configuration;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Application.Tasks.Services;
 using NotesApp.Domain.Entities;
 using NotesApp.Worker.Configuration;
@@ -149,6 +150,7 @@ namespace NotesApp.Worker
             var taskRepo = sp.GetRequiredService<ITaskRepository>();
             var regularSubtaskRepo = sp.GetRequiredService<ISubtaskRepository>();
             var materializerService = sp.GetRequiredService<IRecurringTaskMaterializerService>();
+            var syncChangeWriter = sp.GetRequiredService<ISyncChangeWriter>();
             var unitOfWork = sp.GetRequiredService<IUnitOfWork>();
 
             // Determine the window to materialize: (MaterializedUpToDate, targetDate].
@@ -205,12 +207,14 @@ namespace NotesApp.Worker
             foreach (var task in batch.Tasks)
             {
                 await taskRepo.AddAsync(task, cancellationToken);
+                await syncChangeWriter.AddCreatedAsync(task, originDeviceId: null, cancellationToken);
             }
 
             // Persist materialized Subtasks.
             foreach (var subtask in batch.Subtasks)
             {
                 await regularSubtaskRepo.AddAsync(subtask, cancellationToken);
+                await syncChangeWriter.AddCreatedAsync(subtask, originDeviceId: null, cancellationToken);
             }
 
             // Advance the MaterializedUpToDate on the series.
@@ -218,8 +222,16 @@ namespace NotesApp.Worker
             var trackedSeries = await seriesRepo.GetByIdAsync(series.Id, cancellationToken);
             if (trackedSeries is not null)
             {
+                // Capture the pre-call horizon so we only emit a SyncChange when AdvanceMaterializedHorizon
+                // actually advances (the domain method is idempotent and short-circuits otherwise).
+                var previousHorizon = trackedSeries.MaterializedUpToDate;
                 trackedSeries.AdvanceMaterializedHorizon(targetDate, utcNow);
                 // Already tracked via GetByIdAsync — no explicit Update() needed.
+
+                if (trackedSeries.MaterializedUpToDate > previousHorizon)
+                {
+                    await syncChangeWriter.AddUpdatedAsync(trackedSeries, originDeviceId: null, cancellationToken);
+                }
             }
 
             // Single SaveChangesAsync per series — new tasks + subtasks + series horizon update.

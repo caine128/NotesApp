@@ -13,6 +13,23 @@
 
 ## Known Gaps / Follow-up Work
 
+- [ ] **Coarse `RecurringTaskFamily.Updated` coalesced sync event**
+  `UpdateRecurringTaskOccurrenceCommandHandler.HandleAllAsync` and
+  `UpdateRecurringTaskOccurrenceSubtasksCommandHandler.HandleAllAsync` mutate every active
+  series + every non-individually-modified `TaskItem` for the root. After the
+  `ISyncChangeWriter` wiring lands, each of those becomes one `SyncChange` row — potentially
+  hundreds per "edit all" operation on a long-running daily recurrence.
+
+  Follow-up: introduce a coalesced `SyncEntityFamily.RecurringTaskFamily` event whose payload
+  carries the `RootId` and lets the client invalidate-and-refetch the whole family in one
+  shot. Requires:
+  - New `SyncEntityFamily` enum value + DB migration if persisted as int.
+  - New `ISyncChangeWriter.AddFamilyUpdatedAsync(Guid rootId, Guid userId, ...)` overload.
+  - Client-side handler that maps the family event to a re-pull of all rows under that root.
+  - Decision on whether `HandleThisAndFollowingAsync` should also emit the coalesced event.
+
+  Defer until measured: confirm row volume in production before paying the protocol-change cost.
+
 - [ ] **RRuleString parse-attempt validation**
   The `CreateTaskCommandValidator` only checks that `RRuleString` contains `"FREQ="`. It does not attempt
   to parse the string with Ical.Net. A malformed but `FREQ=`-containing string (e.g. `"FREQ=BLAH"`)
@@ -28,6 +45,25 @@
 ---
 
 ## Completed (this session)
+
+- [x] `ISyncChangeWriter` wiring audit — all missing call sites filled:
+      `DeleteRecurringTaskOccurrenceCommandHandler` (single/thisAndFollowing/all scopes),
+      `UpdateRecurringTaskOccurrenceCommandHandler` (single/thisAndFollowing/all scopes),
+      `UpdateRecurringTaskOccurrenceSubtasksCommandHandler` (single/thisAndFollowing/all scopes),
+      `RecurringTaskHorizonWorker.AdvanceSeriesHorizonAsync` (new tasks + subtasks + guarded series horizon),
+      `ReminderMonitorWorker.ProcessSingleTaskReminderAsync` (task after `MarkReminderSent`),
+      `DeleteTaskCategoryCommandHandler` (per-task `AddUpdatedAsync` for cleared tasks),
+      `SyncPushCommandHandler` line ~3939 (displaced-exception soft-delete `AddDeletedAsync`).
+- [x] `TaskSyncItemDto` — added `ReminderSentAtUtc` and `ReminderAcknowledgedAtUtc` fields;
+      `SyncMappings.ToSyncDto` updated to map both.
+- [x] `TaskItem.ClearCategory(DateTime utcNow)` domain method added.
+- [x] `ITaskRepository.ClearCategoryFromTasksAsync` return type changed from `Task` to
+      `Task<IReadOnlyList<TaskItem>>`; implementation converted from `ExecuteUpdateAsync` to
+      change-tracker pattern.
+- [x] `ITaskRepository.GetBySeriesFromDateAsync` added; used by thisAndFollowing scopes to
+      pre-load tasks before emitting `AddDeletedAsync`.
+
+
 
 - [x] Atomicity audit — `SubtaskRepository.SoftDeleteAllForTaskAsync` and
       `AttachmentRepository.SoftDeleteAllForTaskAsync` converted from `ExecuteUpdateAsync`

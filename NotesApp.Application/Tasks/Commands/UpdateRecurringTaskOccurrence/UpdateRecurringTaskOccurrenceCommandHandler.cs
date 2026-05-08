@@ -5,6 +5,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Configuration;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Application.Tasks;
 using NotesApp.Application.Tasks.Models;
 using NotesApp.Application.Tasks.Services;
@@ -44,6 +45,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
         private readonly IRecurringTaskAttachmentRepository _recurringAttachmentRepository;
         private readonly IRecurringTaskMaterializerService _materializerService;
         private readonly IOutboxRepository _outboxRepository;
+        private readonly ISyncChangeWriter _syncChangeWriter;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
@@ -59,6 +61,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
                                                            IRecurringTaskAttachmentRepository recurringAttachmentRepository,
                                                            IRecurringTaskMaterializerService materializerService,
                                                            IOutboxRepository outboxRepository,
+                                                           ISyncChangeWriter syncChangeWriter,
                                                            IUnitOfWork unitOfWork,
                                                            ICurrentUserService currentUserService,
                                                            ISystemClock clock,
@@ -74,6 +77,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
             _recurringAttachmentRepository = recurringAttachmentRepository;
             _materializerService = materializerService;
             _outboxRepository = outboxRepository;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -178,6 +182,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
                 }
 
                 _taskRepository.Update(task);
+                await _syncChangeWriter.AddUpdatedAsync(task, originDeviceId: null, cancellationToken);
                 updatedTask = task;
             }
             else
@@ -223,6 +228,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
                 }
 
                 _exceptionRepository.Update(existing);
+                await _syncChangeWriter.AddUpdatedAsync(existing, originDeviceId: null, cancellationToken);
             }
             else
             {
@@ -252,6 +258,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
                 }
 
                 await _exceptionRepository.AddAsync(exResult.Value, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(exResult.Value, originDeviceId: null, cancellationToken);
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -304,13 +311,29 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
                         .WithMetadata("ErrorCode", "RecurringSeries.NotFound"));
             }
 
-            // 1. Bulk soft-delete all materialized TaskItems from occurrenceDate forward (change-tracker).
+            // 1. Pre-load + bulk soft-delete materialized TaskItems from occurrenceDate forward.
+            var tasksToRemove = await _taskRepository.GetBySeriesFromDateAsync(
+                command.SeriesId, command.OccurrenceDate, userId, cancellationToken);
+
             await _taskRepository.SoftDeleteRecurringFromDateAsync(
                 command.SeriesId, command.OccurrenceDate, userId, utcNow, cancellationToken);
 
-            // 2. Bulk soft-delete all exceptions from occurrenceDate forward (change-tracker).
+            foreach (var t in tasksToRemove)
+            {
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Task, t.Id, userId, originDeviceId: null, cancellationToken);
+            }
+
+            // 2. Pre-load + bulk soft-delete exceptions from occurrenceDate forward.
+            var exceptionsToRemove = await _exceptionRepository.GetForSeriesInRangeAsync(
+                command.SeriesId, command.OccurrenceDate, DateOnly.MaxValue, cancellationToken);
+
             await _exceptionRepository.SoftDeleteFromDateAsync(
                 command.SeriesId, command.OccurrenceDate, userId, utcNow, cancellationToken);
+
+            foreach (var ex in exceptionsToRemove)
+            {
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.RecurringTaskException, ex.Id, userId, originDeviceId: null, cancellationToken);
+            }
 
             // 3. Terminate the old series at occurrenceDate.
             var terminateResult = oldSeries.Terminate(command.OccurrenceDate, utcNow);
@@ -320,6 +343,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
                     terminateResult.Errors.Select(e => new Error(e.Message)));
             }
             _seriesRepository.Update(oldSeries);
+            await _syncChangeWriter.AddUpdatedAsync(oldSeries, originDeviceId: null, cancellationToken);
 
             // 4. Create the new series segment (same RootId, starting from occurrenceDate).
             var newRRuleString = command.NewRRuleString ?? oldSeries.RRuleString;
@@ -406,10 +430,12 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
 
             // 7. Persist everything in one SaveChangesAsync.
             await _seriesRepository.AddAsync(newSeries, cancellationToken);
+            await _syncChangeWriter.AddCreatedAsync(newSeries, originDeviceId: null, cancellationToken);
 
             foreach (var st in templateSubtasks)
             {
                 await _recurringSubtaskRepository.AddAsync(st, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(st, originDeviceId: null, cancellationToken);
             }
 
             // Copy series template attachments from the old series to the new series.
@@ -435,16 +461,19 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
                     return Result.Fail<TaskDetailDto>(copyResult.Errors.Select(e => new Error(e.Message)));
 
                 await _recurringAttachmentRepository.AddAsync(copyResult.Value!, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(copyResult.Value!, originDeviceId: null, cancellationToken);
             }
 
             foreach (var task in batch.Tasks)
             {
                 await _taskRepository.AddAsync(task, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(task, originDeviceId: null, cancellationToken);
             }
 
             foreach (var subtask in batch.Subtasks)
             {
                 await _subtaskRepository.AddAsync(subtask, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(subtask, originDeviceId: null, cancellationToken);
             }
 
             // Single SaveChangesAsync — soft-deleted tasks, soft-deleted exceptions,
@@ -523,6 +552,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
                 }
 
                 _seriesRepository.Update(series);
+                await _syncChangeWriter.AddUpdatedAsync(series, originDeviceId: null, cancellationToken);
             }
 
             // 3. For each series, load materialized TaskItems and update those that have
@@ -587,6 +617,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrence
                     }
 
                     _taskRepository.Update(task);
+                    await _syncChangeWriter.AddUpdatedAsync(task, originDeviceId: null, cancellationToken);
                 }
             }
 

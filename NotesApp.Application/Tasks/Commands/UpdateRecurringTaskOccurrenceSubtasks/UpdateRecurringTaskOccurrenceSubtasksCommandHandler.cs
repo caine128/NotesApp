@@ -5,6 +5,7 @@ using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
 using NotesApp.Application.Configuration;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Application.Tasks.Services;
 using NotesApp.Domain.Common;
 using NotesApp.Domain.Entities;
@@ -66,6 +67,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
         // REFACTORED: added for recurring-task-attachments feature
         private readonly IRecurringTaskAttachmentRepository _recurringAttachmentRepository;
         private readonly IRecurringTaskMaterializerService _materializerService;
+        private readonly ISyncChangeWriter _syncChangeWriter;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUserService;
         private readonly ISystemClock _clock;
@@ -79,6 +81,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
             IRecurringTaskSubtaskRepository recurringSubtaskRepository,
             IRecurringTaskAttachmentRepository recurringAttachmentRepository,
             IRecurringTaskMaterializerService materializerService,
+            ISyncChangeWriter syncChangeWriter,
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUserService,
             ISystemClock clock,
@@ -91,6 +94,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
             _recurringSubtaskRepository = recurringSubtaskRepository;
             _recurringAttachmentRepository = recurringAttachmentRepository;
             _materializerService = materializerService;
+            _syncChangeWriter = syncChangeWriter;
             _unitOfWork = unitOfWork;
             _currentUserService = currentUserService;
             _clock = clock;
@@ -156,9 +160,18 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
                         .WithMetadata("ErrorCode", "Tasks.NotRecurring"));
             }
 
+            // Pre-load existing subtasks so we can emit per-row Deleted SyncChange events.
+            var existingSubtasks = await _subtaskRepository.GetAllForTaskAsync(
+                task.Id, userId, cancellationToken);
+
             // Soft-delete all existing Subtask rows (change-tracker — staged, not yet committed).
             await _subtaskRepository.SoftDeleteAllForTaskAsync(
                 task.Id, userId, utcNow, cancellationToken);
+
+            foreach (var st in existingSubtasks)
+            {
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Subtask, st.Id, userId, originDeviceId: null, cancellationToken);
+            }
 
             // Create and stage new Subtask rows.
             foreach (var desired in command.Subtasks)
@@ -190,6 +203,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
                 }
 
                 await _subtaskRepository.AddAsync(subtask, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(subtask, originDeviceId: null, cancellationToken);
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -257,6 +271,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
 
                 exception = exResult.Value;
                 await _exceptionRepository.AddAsync(exception, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(exception, originDeviceId: null, cancellationToken);
             }
 
             // 3. Load current exception subtask rows and soft-delete them (full replace semantics).
@@ -272,6 +287,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
                 }
 
                 _recurringSubtaskRepository.Update(st);
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.RecurringTaskSubtask, st.Id, userId, originDeviceId: null, cancellationToken);
             }
 
             // 4. Create new RecurringTaskSubtask rows for each desired subtask.
@@ -291,6 +307,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
                 }
 
                 await _recurringSubtaskRepository.AddAsync(stResult.Value, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(stResult.Value, originDeviceId: null, cancellationToken);
             }
 
             // 5. Persist atomically:
@@ -328,13 +345,29 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
             // The new series inherits the same natural end condition as the old series.
             var originalEndsBeforeDate = oldSeries.EndsBeforeDate;
 
-            // 2. Bulk soft-delete all materialized TaskItems from OccurrenceDate forward (change-tracker).
+            // 2. Pre-load + bulk soft-delete materialized TaskItems from OccurrenceDate forward.
+            var tasksToRemove = await _taskRepository.GetBySeriesFromDateAsync(
+                command.SeriesId, command.OccurrenceDate, userId, cancellationToken);
+
             await _taskRepository.SoftDeleteRecurringFromDateAsync(
                 command.SeriesId, command.OccurrenceDate, userId, utcNow, cancellationToken);
 
-            // 3. Bulk soft-delete all exceptions from OccurrenceDate forward (change-tracker).
+            foreach (var t in tasksToRemove)
+            {
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Task, t.Id, userId, originDeviceId: null, cancellationToken);
+            }
+
+            // 3. Pre-load + bulk soft-delete exceptions from OccurrenceDate forward.
+            var exceptionsToRemove = await _exceptionRepository.GetForSeriesInRangeAsync(
+                command.SeriesId, command.OccurrenceDate, DateOnly.MaxValue, cancellationToken);
+
             await _exceptionRepository.SoftDeleteFromDateAsync(
                 command.SeriesId, command.OccurrenceDate, userId, utcNow, cancellationToken);
+
+            foreach (var ex in exceptionsToRemove)
+            {
+                await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.RecurringTaskException, ex.Id, userId, originDeviceId: null, cancellationToken);
+            }
 
             // 4. Terminate the old series at OccurrenceDate (sets EndsBeforeDate = OccurrenceDate).
             var terminateResult = oldSeries.Terminate(command.OccurrenceDate, utcNow);
@@ -343,6 +376,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
                 return Result.Fail(terminateResult.Errors.Select(e => new Error(e.Message)));
             }
             _seriesRepository.Update(oldSeries);
+            await _syncChangeWriter.AddUpdatedAsync(oldSeries, originDeviceId: null, cancellationToken);
 
             // Note: old series template subtasks are intentionally left intact.
             // Virtual occurrences that fall before OccurrenceDate still belong to the old series
@@ -434,10 +468,12 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
             //    - New materialized TaskItems + Subtask rows (step 7)
             //    - Copied series template attachments (below)
             await _seriesRepository.AddAsync(newSeries, cancellationToken);
+            await _syncChangeWriter.AddCreatedAsync(newSeries, originDeviceId: null, cancellationToken);
 
             foreach (var st in newTemplateSubtasks)
             {
                 await _recurringSubtaskRepository.AddAsync(st, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(st, originDeviceId: null, cancellationToken);
             }
 
             // Copy series template attachments from old series to new series (same BlobPath, new row IDs).
@@ -461,16 +497,19 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
                     return Result.Fail(copyResult.Errors.Select(e => new Error(e.Message)));
 
                 await _recurringAttachmentRepository.AddAsync(copyResult.Value!, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(copyResult.Value!, originDeviceId: null, cancellationToken);
             }
 
             foreach (var task in batch.Tasks)
             {
                 await _taskRepository.AddAsync(task, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(task, originDeviceId: null, cancellationToken);
             }
 
             foreach (var subtask in batch.Subtasks)
             {
                 await _subtaskRepository.AddAsync(subtask, cancellationToken);
+                await _syncChangeWriter.AddCreatedAsync(subtask, originDeviceId: null, cancellationToken);
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -518,6 +557,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
                     }
 
                     _recurringSubtaskRepository.Update(st);
+                    await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.RecurringTaskSubtask, st.Id, userId, originDeviceId: null, cancellationToken);
                 }
 
                 // 4. Create new template subtasks for this series.
@@ -536,6 +576,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
                     }
 
                     await _recurringSubtaskRepository.AddAsync(stResult.Value, cancellationToken);
+                    await _syncChangeWriter.AddCreatedAsync(stResult.Value, originDeviceId: null, cancellationToken);
                 }
 
                 // 5. Load materialized tasks for this series.
@@ -562,9 +603,18 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
                         continue; // Preserve individually-modified occurrence.
                     }
 
+                    // Pre-load existing materialized subtasks for per-row Deleted SyncChange events.
+                    var existingMaterializedSubtasks = await _subtaskRepository.GetAllForTaskAsync(
+                        task.Id, userId, cancellationToken);
+
                     // Soft-delete all existing Subtask rows for this task (change-tracker — staged).
                     await _subtaskRepository.SoftDeleteAllForTaskAsync(
                         task.Id, userId, utcNow, cancellationToken);
+
+                    foreach (var st in existingMaterializedSubtasks)
+                    {
+                        await _syncChangeWriter.AddDeletedAsync(SyncEntityFamily.Subtask, st.Id, userId, originDeviceId: null, cancellationToken);
+                    }
 
                     // Create new Subtask rows from the desired list.
                     foreach (var desired in command.Subtasks)
@@ -594,6 +644,7 @@ namespace NotesApp.Application.Tasks.Commands.UpdateRecurringTaskOccurrenceSubta
                         }
 
                         await _subtaskRepository.AddAsync(subtask, cancellationToken);
+                        await _syncChangeWriter.AddCreatedAsync(subtask, originDeviceId: null, cancellationToken);
                     }
                 }
             }

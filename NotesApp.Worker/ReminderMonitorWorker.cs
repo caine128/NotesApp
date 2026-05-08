@@ -2,6 +2,7 @@
 using NotesApp.Application.Abstractions.Persistence;
 using NotesApp.Application.Common;
 using NotesApp.Application.Common.Interfaces;
+using NotesApp.Application.Sync.Abstractions;
 using NotesApp.Domain.Entities;
 using NotesApp.Worker.Configuration;
 using System;
@@ -77,6 +78,7 @@ namespace NotesApp.Worker
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
             var clock = scope.ServiceProvider.GetRequiredService<ISystemClock>();
             var pushService = scope.ServiceProvider.GetRequiredService<IPushNotificationService>();
+            var syncChangeWriter = scope.ServiceProvider.GetRequiredService<ISyncChangeWriter>();
 
             var utcNow = clock.UtcNow;
 
@@ -103,6 +105,7 @@ namespace NotesApp.Worker
                         task,
                         pushService,
                         taskRepository,
+                        syncChangeWriter,
                         unitOfWork,
                         utcNow,
                         cancellationToken);
@@ -128,6 +131,7 @@ namespace NotesApp.Worker
             TaskItem task,
             IPushNotificationService pushService,
             ITaskRepository taskRepository,
+            ISyncChangeWriter syncChangeWriter,
             IUnitOfWork unitOfWork,
             DateTime utcNow,
             CancellationToken cancellationToken)
@@ -173,6 +177,7 @@ namespace NotesApp.Worker
             }
 
             taskRepository.Update(task);
+            await syncChangeWriter.AddUpdatedAsync(task, originDeviceId: null, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(

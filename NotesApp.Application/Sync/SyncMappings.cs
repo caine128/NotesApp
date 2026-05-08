@@ -22,6 +22,8 @@ namespace NotesApp.Application.Sync
                 Location = task.Location,
                 TravelTime = task.TravelTime,
                 ReminderAtUtc = task.ReminderAtUtc,
+                ReminderSentAtUtc = task.ReminderSentAtUtc,
+                ReminderAcknowledgedAtUtc = task.ReminderAcknowledgedAtUtc,
                 CategoryId = task.CategoryId, // REFACTORED: added CategoryId mapping
                 Priority = task.Priority, // REFACTORED: added Priority mapping
                 MeetingLink = task.MeetingLink, // REFACTORED: added MeetingLink mapping

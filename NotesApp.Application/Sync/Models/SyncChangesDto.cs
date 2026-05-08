@@ -25,6 +25,8 @@ namespace NotesApp.Application.Sync.Models
         public string? Location { get; init; }
         public TimeSpan? TravelTime { get; init; }
         public DateTime? ReminderAtUtc { get; init; }
+        public DateTime? ReminderSentAtUtc { get; init; }
+        public DateTime? ReminderAcknowledgedAtUtc { get; init; }
         public Guid? CategoryId { get; init; }
         public TaskPriority Priority { get; init; } = TaskPriority.Normal;
         public string? MeetingLink { get; init; }
