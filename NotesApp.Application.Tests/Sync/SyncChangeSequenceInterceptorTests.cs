@@ -30,8 +30,7 @@ namespace NotesApp.Application.Tests.Sync
     public sealed class SyncChangeSequenceInterceptorTests
     {
         private static SyncChange MakeChange(Guid userId, SyncOperation op = SyncOperation.Created)
-        {
-            var result = SyncChange.Create(
+            => SyncChange.Create(
                 userId: userId,
                 entityFamily: SyncEntityFamily.Task,
                 entityId: Guid.NewGuid(),
@@ -39,10 +38,6 @@ namespace NotesApp.Application.Tests.Sync
                 changedAtUtc: new DateTime(2026, 5, 3, 12, 0, 0, DateTimeKind.Utc),
                 originDeviceId: null,
                 payloadJson: "{}");
-
-            result.IsSuccess.Should().BeTrue($"factory should succeed; errors: {string.Join(",", result.Errors.Select(e => e.Code))}");
-            return result.Value!;
-        }
 
         [Fact]
         public async Task First_write_for_new_user_assigns_sequence_1()

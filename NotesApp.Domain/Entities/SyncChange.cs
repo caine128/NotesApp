@@ -1,6 +1,5 @@
 using NotesApp.Domain.Common;
 using System;
-using System.Collections.Generic;
 
 namespace NotesApp.Domain.Entities
 {
@@ -73,54 +72,42 @@ namespace NotesApp.Domain.Entities
             PayloadJson = payloadJson;
         }
 
-        public static DomainResult<SyncChange> Create(Guid userId,
-                                                      SyncEntityFamily entityFamily,
-                                                      Guid entityId,
-                                                      SyncOperation operation,
-                                                      DateTime changedAtUtc,
-                                                      Guid? originDeviceId,
-                                                      string payloadJson)
+        /// <summary>
+        /// Constructs a <see cref="SyncChange"/> from internal preconditions. Throws
+        /// <see cref="ArgumentException"/> on precondition violation; failure is not a recoverable
+        /// domain outcome here — callers (currently only <c>SyncChangeWriter</c>) source these
+        /// fields from already-validated entities, so any failure indicates a programmer-error
+        /// contract violation rather than a user-facing validation failure.
+        /// </summary>
+        public static SyncChange Create(Guid userId,
+                                        SyncEntityFamily entityFamily,
+                                        Guid entityId,
+                                        SyncOperation operation,
+                                        DateTime changedAtUtc,
+                                        Guid? originDeviceId,
+                                        string payloadJson)
         {
-            var errors = new List<DomainError>();
-
             if (userId == Guid.Empty)
-            {
-                errors.Add(new DomainError("SyncChange.UserId.Empty", "UserId must be a non-empty GUID."));
-            }
+                throw new ArgumentException("UserId must be a non-empty GUID.", nameof(userId));
 
             if (entityId == Guid.Empty)
-            {
-                errors.Add(new DomainError("SyncChange.EntityId.Empty", "EntityId must be a non-empty GUID."));
-            }
+                throw new ArgumentException("EntityId must be a non-empty GUID.", nameof(entityId));
 
             if (originDeviceId is { } d && d == Guid.Empty)
-            {
-                errors.Add(new DomainError("SyncChange.OriginDeviceId.Empty",
-                    "OriginDeviceId, when present, must be a non-empty GUID."));
-            }
+                throw new ArgumentException("OriginDeviceId, when present, must be a non-empty GUID.", nameof(originDeviceId));
 
             var normalizedPayload = payloadJson?.Trim() ?? string.Empty;
             if (normalizedPayload.Length == 0)
-            {
-                errors.Add(new DomainError("SyncChange.Payload.Empty",
-                    "Payload must be a non-empty string (typically JSON)."));
-            }
+                throw new ArgumentException("Payload must be a non-empty string (typically JSON).", nameof(payloadJson));
 
-            if (errors.Count > 0)
-            {
-                return DomainResult<SyncChange>.Failure(errors);
-            }
-
-            var change = new SyncChange(Guid.NewGuid(),
-                                        userId,
-                                        entityFamily,
-                                        entityId,
-                                        operation,
-                                        changedAtUtc,
-                                        originDeviceId,
-                                        normalizedPayload);
-
-            return DomainResult<SyncChange>.Success(change);
+            return new SyncChange(Guid.NewGuid(),
+                                  userId,
+                                  entityFamily,
+                                  entityId,
+                                  operation,
+                                  changedAtUtc,
+                                  originDeviceId,
+                                  normalizedPayload);
         }
     }
 }

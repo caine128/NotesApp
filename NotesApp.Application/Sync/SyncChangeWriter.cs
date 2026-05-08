@@ -137,24 +137,17 @@ namespace NotesApp.Application.Sync
             await StageAsyncWithTime(userId, family, entityId, operation, originDeviceId, payloadJson, _clock.UtcNow, cancellationToken);
         }
 
-        private async Task StageAsyncWithTime(Guid userId,
-                                              SyncEntityFamily family,
-                                              Guid entityId,
-                                              SyncOperation operation,
-                                              Guid? originDeviceId,
-                                              string payloadJson,
-                                              DateTime utcNow,
-                                              CancellationToken cancellationToken)
+        private Task StageAsyncWithTime(Guid userId,
+                                        SyncEntityFamily family,
+                                        Guid entityId,
+                                        SyncOperation operation,
+                                        Guid? originDeviceId,
+                                        string payloadJson,
+                                        DateTime utcNow,
+                                        CancellationToken cancellationToken)
         {
-            var result = SyncChange.Create(userId, family, entityId, operation, utcNow, originDeviceId, payloadJson);
-            if (result.IsFailure || result.Value is null)
-            {
-                throw new InvalidOperationException(
-                    "SyncChangeWriter failed to construct SyncChange: " +
-                    string.Join(", ", result.Errors.Select(e => $"{e.Code}:{e.Message}")));
-            }
-
-            await _repository.AddAsync(result.Value, cancellationToken);
+            var change = SyncChange.Create(userId, family, entityId, operation, utcNow, originDeviceId, payloadJson);
+            return _repository.AddAsync(change, cancellationToken);
         }
 
         // Recurring exceptions mapping requires subtasks/attachments lists (used by initial-sync
