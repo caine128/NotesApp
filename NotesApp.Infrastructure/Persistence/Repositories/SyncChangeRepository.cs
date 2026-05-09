@@ -46,11 +46,11 @@ namespace NotesApp.Infrastructure.Persistence.Repositories
 
         public async Task<long> GetCurrentMaxSequenceAsync(Guid userId, CancellationToken cancellationToken = default)
         {
-            return await _context.SyncChanges
+            var state = await _context.SyncSequenceStates
                 .AsNoTracking()
-                .Where(x => x.UserId == userId)
-                .Select(x => (long?)x.Sequence)
-                .MaxAsync(cancellationToken) ?? 0L;
+                .FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+
+            return state is null ? 0L : state.NextSequence - 1;
         }
     }
 }

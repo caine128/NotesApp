@@ -35,9 +35,9 @@ namespace NotesApp.Application.Sync.Abstractions
         Task<long> GetMinRetainedSequenceAsync(Guid userId, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Returns the highest <see cref="SyncChange.Sequence"/> currently stored for the user, or
-        /// 0 if none. Used by the snapshot endpoint to capture the bootstrap watermark before the
-        /// entity reads.
+        /// Returns the last sequence number allocated for the user (<c>SyncSequenceState.NextSequence - 1</c>),
+        /// or 0 if no state row exists yet. Used by the snapshot endpoint to capture the bootstrap
+        /// watermark before the entity reads.
         /// </summary>
         Task<long> GetCurrentMaxSequenceAsync(Guid userId, CancellationToken cancellationToken = default);
     }

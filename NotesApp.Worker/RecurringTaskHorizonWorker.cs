@@ -225,7 +225,15 @@ namespace NotesApp.Worker
                 // Capture the pre-call horizon so we only emit a SyncChange when AdvanceMaterializedHorizon
                 // actually advances (the domain method is idempotent and short-circuits otherwise).
                 var previousHorizon = trackedSeries.MaterializedUpToDate;
-                trackedSeries.AdvanceMaterializedHorizon(targetDate, utcNow);
+                var advanceResult = trackedSeries.AdvanceMaterializedHorizon(targetDate, utcNow);
+                if (advanceResult.IsFailure)
+                {
+                    _logger.LogError(
+                        "Failed to advance horizon for series {SeriesId}: {Errors}. Skipping series.",
+                        series.Id,
+                        string.Join("; ", advanceResult.Errors.Select(e => e.Message)));
+                    return;
+                }
                 // Already tracked via GetByIdAsync — no explicit Update() needed.
 
                 if (trackedSeries.MaterializedUpToDate > previousHorizon)
