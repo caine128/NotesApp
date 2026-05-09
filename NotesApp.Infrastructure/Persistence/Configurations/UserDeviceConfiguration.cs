@@ -27,7 +27,7 @@ namespace NotesApp.Infrastructure.Persistence.Configurations
 
             builder.Property(d => d.Platform)
                    .IsRequired()
-                   .HasConversion<string>()   // or .HasConversion<int>() if you prefer
+                   .HasConversion<string>()   // stored as string (nvarchar(20)); locked by applied migration; readable in DB ops
                    .HasMaxLength(UserDevice.MaxPlatformLength);
 
             builder.Property(d => d.DeviceName)
