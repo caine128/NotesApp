@@ -21,6 +21,7 @@ using NotesApp.Infrastructure.Time;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using NotesApp.Application.Sync;
 
 namespace NotesApp.Infrastructure
 {
@@ -77,7 +78,7 @@ namespace NotesApp.Infrastructure
 
             // REFACTORED: added for sequence-based sync pull
             services.AddScoped<ISyncChangeRepository, SyncChangeRepository>();
-            services.AddScoped<ISyncChangeWriter, NotesApp.Application.Sync.SyncChangeWriter>();
+            services.AddScoped<ISyncChangeWriter, SyncChangeWriter>();
 
             // 3) System clock (for time abstraction)
             services.AddSingleton<ISystemClock, SystemClock>();
