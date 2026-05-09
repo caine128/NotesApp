@@ -104,11 +104,11 @@ namespace NotesApp.Application.Sync
 
         public Task AddCreatedAsync(RecurringTaskException entity, Guid? originDeviceId, CancellationToken cancellationToken = default)
             => StageAsync(entity.UserId, SyncEntityFamily.RecurringTaskException, entity.Id, SyncOperation.Created,
-                          originDeviceId, SerializeRecurringException(entity), cancellationToken);
+                          originDeviceId, JsonSerializer.Serialize(entity.ToSyncDto(), JsonOptions), cancellationToken);
 
         public Task AddUpdatedAsync(RecurringTaskException entity, Guid? originDeviceId, CancellationToken cancellationToken = default)
             => StageAsync(entity.UserId, SyncEntityFamily.RecurringTaskException, entity.Id, SyncOperation.Updated,
-                          originDeviceId, SerializeRecurringException(entity), cancellationToken);
+                          originDeviceId, JsonSerializer.Serialize(entity.ToSyncDto(), JsonOptions), cancellationToken);
 
         public Task AddCreatedAsync(RecurringTaskAttachment entity, Guid? originDeviceId, CancellationToken cancellationToken = default)
             => StageAsync(entity.UserId, SyncEntityFamily.RecurringTaskAttachment, entity.Id, SyncOperation.Created,
@@ -148,17 +148,6 @@ namespace NotesApp.Application.Sync
         {
             var change = SyncChange.Create(userId, family, entityId, operation, utcNow, originDeviceId, payloadJson);
             return _repository.AddAsync(change, cancellationToken);
-        }
-
-        // Recurring exceptions mapping requires subtasks/attachments lists (used by initial-sync
-        // inlining in the legacy pull). For the change-feed payload we don't inline children —
-        // they are emitted as their own SyncChange rows. Pass empty lists.
-        private string SerializeRecurringException(RecurringTaskException entity)
-        {
-            var dto = entity.ToSyncDto(
-                subtasks: Array.Empty<Models.RecurringSubtaskSyncItemDto>(),
-                attachments: Array.Empty<Models.RecurringAttachmentSyncItemDto>());
-            return JsonSerializer.Serialize(dto, JsonOptions);
         }
 
         private readonly record struct DeletedPayload(Guid Id, DateTime DeletedAtUtc);

@@ -154,14 +154,7 @@ namespace NotesApp.Application.Sync.Queries
             foreach (var rs in recurringSubtasks)
                 items.Add(MakeItem(SyncEntityFamily.RecurringTaskSubtask, rs.Id, JsonSerializer.Serialize(rs.ToSyncDto(), JsonOptions)));
             foreach (var ex in exceptions)
-            {
-                // Per-exception subtasks/attachments are emitted as their own snapshot rows; pass
-                // empty inline lists for the exception's own ToSyncDto.
-                var dto = ex.ToSyncDto(
-                    subtasks: Array.Empty<RecurringSubtaskSyncItemDto>(),
-                    attachments: Array.Empty<RecurringAttachmentSyncItemDto>());
-                items.Add(MakeItem(SyncEntityFamily.RecurringTaskException, ex.Id, JsonSerializer.Serialize(dto, JsonOptions)));
-            }
+                items.Add(MakeItem(SyncEntityFamily.RecurringTaskException, ex.Id, JsonSerializer.Serialize(ex.ToSyncDto(), JsonOptions)));
             foreach (var ra in recurringAttachments)
                 items.Add(MakeItem(SyncEntityFamily.RecurringTaskAttachment, ra.Id, JsonSerializer.Serialize(ra.ToSyncDto(), JsonOptions)));
 

@@ -226,15 +226,8 @@ namespace NotesApp.Application.Sync
             };
         }
 
-        /// <summary>
-        /// Maps a <see cref="RecurringTaskException"/> to its sync pull representation.
-        /// Subtasks and attachments are pre-loaded by the caller and passed in.
-        /// </summary>
-        // REFACTORED: added attachments parameter for recurring-task-attachments feature
         public static RecurringExceptionSyncItemDto ToSyncDto(
-            this RecurringTaskException exception,
-            IReadOnlyList<RecurringSubtaskSyncItemDto> subtasks,
-            IReadOnlyList<RecurringAttachmentSyncItemDto> attachments)
+            this RecurringTaskException exception)
         {
             return new RecurringExceptionSyncItemDto
             {
@@ -256,9 +249,9 @@ namespace NotesApp.Application.Sync
                 OverrideReminderAtUtc = exception.OverrideReminderAtUtc,
                 IsCompleted = exception.IsCompleted,
                 MaterializedTaskItemId = exception.MaterializedTaskItemId,
-                Subtasks = subtasks,
+                Subtasks = Array.Empty<RecurringSubtaskSyncItemDto>(),
                 HasAttachmentOverride = exception.HasAttachmentOverride,
-                Attachments = attachments,
+                Attachments = Array.Empty<RecurringAttachmentSyncItemDto>(),
                 Version = exception.Version,
                 CreatedAtUtc = exception.CreatedAtUtc,
                 UpdatedAtUtc = exception.UpdatedAtUtc

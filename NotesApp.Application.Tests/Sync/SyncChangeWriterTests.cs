@@ -119,5 +119,43 @@ namespace NotesApp.Application.Tests.Sync
             captured!.EntityFamily.Should().Be(SyncEntityFamily.Note);
             captured.EntityId.Should().Be(note.Id);
         }
+
+        [Fact]
+        public async Task AddCreated_for_RecurringTaskException_stages_SyncChange_with_correct_family_and_empty_child_lists()
+        {
+            var seriesId = Guid.NewGuid();
+            var exception = RecurringTaskException.CreateDeletion(_userId, seriesId, new DateOnly(2026, 5, 3), null, _utcNow).Value!;
+            SyncChange? captured = null;
+            _repository.Setup(r => r.AddAsync(It.IsAny<SyncChange>(), It.IsAny<CancellationToken>()))
+                       .Callback<SyncChange, CancellationToken>((sc, _) => captured = sc)
+                       .Returns(Task.CompletedTask);
+
+            await Writer().AddCreatedAsync(exception, originDeviceId: null);
+
+            captured.Should().NotBeNull();
+            captured!.UserId.Should().Be(_userId);
+            captured.EntityFamily.Should().Be(SyncEntityFamily.RecurringTaskException);
+            captured.EntityId.Should().Be(exception.Id);
+            captured.Operation.Should().Be(SyncOperation.Created);
+
+            using var doc = JsonDocument.Parse(captured.PayloadJson);
+            doc.RootElement.GetProperty("subtasks").GetArrayLength().Should().Be(0);
+            doc.RootElement.GetProperty("attachments").GetArrayLength().Should().Be(0);
+        }
+
+        [Fact]
+        public async Task AddUpdated_for_RecurringTaskException_stages_SyncChange_with_Updated_operation()
+        {
+            var seriesId = Guid.NewGuid();
+            var exception = RecurringTaskException.CreateDeletion(_userId, seriesId, new DateOnly(2026, 5, 3), null, _utcNow).Value!;
+            SyncChange? captured = null;
+            _repository.Setup(r => r.AddAsync(It.IsAny<SyncChange>(), It.IsAny<CancellationToken>()))
+                       .Callback<SyncChange, CancellationToken>((sc, _) => captured = sc)
+                       .Returns(Task.CompletedTask);
+
+            await Writer().AddUpdatedAsync(exception, originDeviceId: null);
+
+            captured!.Operation.Should().Be(SyncOperation.Updated);
+        }
     }
 }
